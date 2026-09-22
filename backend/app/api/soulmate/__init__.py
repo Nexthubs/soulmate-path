@@ -1,0 +1,1 @@
+"""Soulmate API route package."""

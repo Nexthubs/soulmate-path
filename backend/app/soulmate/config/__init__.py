@@ -1,0 +1,1 @@
+"""Soulmate quiz configuration module."""
