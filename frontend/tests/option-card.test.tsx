@@ -97,7 +97,7 @@ describe("SP-103: OptionCard Component Variants & Semantics", () => {
   });
 
   describe("Disabled & Interaction Locking (DEV-SPEC §4.2)", () => {
-    it("renders disabled state during submission lock", () => {
+    it("renders disabled state during submission lock while preserving selected visual feedback", () => {
       const html = renderToStaticMarkup(
         <OptionCard
           label="Submitting..."
@@ -111,6 +111,24 @@ describe("SP-103: OptionCard Component Variants & Semantics", () => {
       expect(html).toContain('tabindex="-1"');
       expect(html).toContain("opacity-50");
       expect(html).toContain("pointer-events-none");
+      // Preserves selected border and checkmark per DEV-SPEC §4.2 & Audit M-1
+      expect(html).toContain("border-[#5c3c4f]");
+      expect(html).toContain("data-testid=\"option-checkmark\"");
+    });
+
+    it("renders disabled state while preserving error border", () => {
+      const html = renderToStaticMarkup(
+        <OptionCard
+          label="Submitting with error..."
+          selected={false}
+          hasError={true}
+          disabled={true}
+          onClick={() => {}}
+        />
+      );
+
+      expect(html).toContain("opacity-50");
+      expect(html).toContain("border-red-400");
     });
   });
 

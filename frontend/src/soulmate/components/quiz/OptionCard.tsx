@@ -85,7 +85,7 @@ export function OptionCard({
   }
 
   if (disabled) {
-    stateClasses = "opacity-50 cursor-not-allowed pointer-events-none bg-white/40 border-2 border-transparent";
+    stateClasses += " opacity-50 cursor-not-allowed pointer-events-none";
   }
 
   return (
