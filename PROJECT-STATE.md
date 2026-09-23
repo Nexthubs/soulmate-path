@@ -21,6 +21,7 @@ Shared Quiz layout (`SP-102`) completed and evidenced in `docs/handoffs/SP-102.m
 OptionCard variants (`SP-103`) completed and evidenced in `docs/handoffs/SP-103.md`.
 Transition layout & interstitials (`SP-104`) completed and evidenced in `docs/handoffs/SP-104.md`.
 Email capture variants (`SP-105`) completed and evidenced in `docs/handoffs/SP-105.md`.
+Result cards fixture UI (`SP-106`) completed and evidenced in `docs/handoffs/SP-106.md`.
 
 ## 2. Milestone status
 
@@ -35,7 +36,7 @@ Email capture variants (`SP-105`) completed and evidenced in `docs/handoffs/SP-1
 
 ## 3. Active / blocked work
 
-Active tasks: SP-106 (Result cards fixture UI), SP-201 (Quiz engine UI / step framework).
+Active tasks: SP-107 (Sketch viewer fixture UI), SP-201 (Quiz engine UI / step framework).
 
 Blocking decision IDs:
 
@@ -74,7 +75,7 @@ Report production provider: disabled / decision pending
 ## 6. Next safe tasks
 
 ```text
-1. SP-106 — Result cards fixture UI
+1. SP-107 — Sketch viewer fixture UI
 2. SP-201 — quiz engine UI / step framework
 ```
 

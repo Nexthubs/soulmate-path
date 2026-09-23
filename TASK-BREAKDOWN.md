@@ -359,7 +359,7 @@ Render summary from:
 
 **Priority:** P1  
 **Depends:** SP-101  
-**Status:** TODO
+**Status:** DONE
 **Context refs:** DEV-SPEC §2, §10 | Decisions: TIME-01 | Dependency handoffs: SP-101
 
 
