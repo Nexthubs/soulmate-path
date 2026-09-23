@@ -1,6 +1,6 @@
 from decimal import Decimal
 from typing import List, Optional
-from pydantic import Field, field_validator
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -60,9 +60,9 @@ class Settings(BaseSettings):
     paypal_soulmate_standard_plan_id: Optional[str] = None
 
     soulmate_currency: str = "USD"
-    # Centralized Decimal pricing (PAY-01)
-    soulmate_intro_price: Optional[Decimal] = Decimal("19.00")
-    soulmate_regular_price: Optional[Decimal] = Decimal("29.00")
+    # Centralized Decimal pricing (PAY-01: no hardcoded defaults)
+    soulmate_intro_price: Optional[Decimal] = None
+    soulmate_regular_price: Optional[Decimal] = None
 
     # --------------------------------------------------------------------------
     # 5. AI Image Generation / Sketch (Spec §11, ASSET-01, PROMPT-01)

@@ -10,13 +10,38 @@ def test_default_settings_loaded():
     assert settings.is_production is False
     assert settings.is_sandbox is True
     assert settings.is_report_generation_enabled is False
-    assert settings.intro_price == Decimal("19.00")
-    assert settings.regular_price == Decimal("29.00")
-    assert isinstance(settings.intro_price, Decimal)
-    assert isinstance(settings.regular_price, Decimal)
+    assert settings.intro_price is None
+    assert settings.regular_price is None
 
     # In development mode, validation does not fail
     settings.validate_production_config()
+
+
+def test_app_startup_fails_in_production_with_missing_config(monkeypatch):
+    """Verify FastAPI application lifespan startup fails immediately when mandatory production config is missing (C-1, H-1)."""
+    from starlette.testclient import TestClient
+    from app.main import app
+
+    monkeypatch.setattr(settings, "environment", "production")
+    monkeypatch.setattr(settings, "paypal_client_id", None)
+
+    with pytest.raises(ConfigurationError) as exc_info:
+        with TestClient(app):
+            pass
+
+    err_msg = str(exc_info.value)
+    assert "Production environment configuration validation failed" in err_msg
+    assert "PAYPAL_CLIENT_ID" in err_msg
+
+
+def test_app_startup_succeeds_in_development_mode():
+    """Verify FastAPI application starts cleanly in development mode."""
+    from starlette.testclient import TestClient
+    from app.main import app
+
+    with TestClient(app) as client:
+        response = client.get("/")
+        assert response.status_code == 200
 
 
 def test_production_validation_fails_on_missing_keys():
