@@ -402,7 +402,7 @@ Create fixture-driven cards for:
 
 **Priority:** P1  
 **Depends:** SP-101  
-**Status:** TODO
+**Status:** DONE
 **Context refs:** DEV-SPEC §2, §13, §16 | Decisions: REPORT-01, REPORT-02 | Dependency handoffs: SP-101
 
 
