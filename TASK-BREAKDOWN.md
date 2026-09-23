@@ -263,7 +263,7 @@ Establish consistent errors before API surface grows.
 
 **Priority:** P1  
 **Depends:** SP-101  
-**Status:** TODO
+**Status:** DONE
 **Context refs:** DEV-SPEC §2.1, §4.2–4.4, §16 | Decisions: QUIZ-01 | Dependency handoffs: SP-101
 
 
