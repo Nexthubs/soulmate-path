@@ -1,0 +1,29 @@
+# ADR-<NNN> — <Title>
+
+- **Status:** Proposed | Accepted | Superseded
+- **Date:** YYYY-MM-DD
+- **Decision owner/approver:** ...
+
+## Context
+...
+
+## Decision
+...
+
+## Alternatives considered
+...
+
+## Consequences
+### Positive
+...
+### Negative / trade-offs
+...
+
+## Rollback / migration implications
+...
+
+## Affected Task IDs / contracts
+...
+
+## References
+...

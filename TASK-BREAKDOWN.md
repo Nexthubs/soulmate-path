@@ -1,19 +1,31 @@
-# TASK-BREAKDOWN.md — Soulmate Path V1
+# TASK-BREAKDOWN.md — Soulmate Path V1.2
 
-> Executable work plan derived from `Soulmate-Path-DEV-SPEC-v1.md`.
-> This document decomposes the original SP epics into bounded tasks while preserving the original IDs.
+> Executable scope/dependency/acceptance plan derived from `Soulmate-Path-DEV-SPEC-v1.2.md`.
+> Model assignment is intentionally not part of this file.
 
 ## 0. How to use this file
 
-Every task has:
+For an assigned Task, load **this Task block only** first, then follow its context metadata:
 
-- **Priority**: `P0` release/security critical, `P1` core product, `P2` polish/ops.
-- **Lane**: This is a dispatch convention; use a stronger lane whenever risk/ambiguity warrants it.
-- **Depends**: Task IDs that must be complete or have stable interfaces.
-- **Status**: initialize as `TODO`; allowed values are `TODO`, `IN_PROGRESS`, `BLOCKED`, `REVIEW`, `DONE`.
-- **Deliverables** and **Acceptance**: the actual completion contract.
+- **Priority** — delivery/security importance.
+- **Depends** — direct prerequisite Task IDs/interfaces.
+- **Status** — `TODO | IN_PROGRESS | BLOCKED | REVIEW | DONE`.
+- **Context refs** — exact DEV-SPEC sections and decision entries needed for the task.
+- **Acceptance / Tests** — completion contract.
 
-Do not mark a parent task `DONE` until all mandatory subtasks are done and its acceptance criteria pass.
+Context rule:
+
+```text
+AGENTS.md + PROJECT-STATE.md
+        ↓
+assigned Task block
+        ↓
+Spec refs + Decision refs + direct dependency handoffs only
+```
+
+Do not read the full DEV-SPEC, all decisions, all handoffs, or all reviews unless this task is explicitly cross-cutting/release review.
+
+Task evidence/handoff format is owned by `AGENTS.md`; this file does not repeat it.
 
 ## 1. Global dependency map
 
@@ -68,6 +80,8 @@ After interfaces are stable:
 **Priority:** P1  
 **Depends:** none  
 **Status:** DONE
+**Context refs:** DEV-SPEC §3, §16–17, §22 | Decisions: DOMAIN-01 | Dependency handoffs: —
+
 
 ### Goal
 Create the minimal Soulmate feature boundary without imposing a new framework or folder convention.
@@ -96,6 +110,8 @@ Create the minimal Soulmate feature boundary without imposing a new framework or
 **Priority:** P0  
 **Depends:** repository discovery  
 **Status:** TODO
+**Context refs:** DEV-SPEC §14, §15, §20 | Decisions: PAY-AUTH-01, TIME-01, ASSET-01 | Dependency handoffs: —
+
 
 ### Goal
 Create the V1 persistence model using the repository's existing DB conventions.
@@ -141,6 +157,8 @@ Mandatory high-risk review before merge.
 **Priority:** P1  
 **Depends:** SP-001, preferably SP-002  
 **Status:** TODO
+**Context refs:** DEV-SPEC §4.1–4.6 | Decisions: QUIZ-01 | Dependency handoffs: SP-001, SP-002
+
 
 ### Goal
 Turn the approved Q02–Q18 configuration into an immutable, reviewable runtime artifact.
@@ -169,6 +187,8 @@ Turn the approved Q02–Q18 configuration into an immutable, reviewable runtime 
 **Priority:** P0  
 **Depends:** SP-001  
 **Status:** TODO
+**Context refs:** DEV-SPEC §22 | Decisions: DOMAIN-01, PAY-01 | Dependency handoffs: SP-001
+
 
 ### Goal
 Define config surface without hard-coded production values.
@@ -194,6 +214,8 @@ Define config surface without hard-coded production values.
 **Priority:** P1  
 **Depends:** SP-001  
 **Status:** TODO
+**Context refs:** DEV-SPEC §19 | Decisions: — | Dependency handoffs: SP-001
+
 
 ### Goal
 Establish consistent errors before API surface grows.
@@ -217,6 +239,8 @@ Establish consistent errors before API surface grows.
 **Priority:** P1  
 **Depends:** SP-001  
 **Status:** TODO
+**Context refs:** DEV-SPEC §1–3, §21 | Decisions: LEGAL-01, DOMAIN-01 | Dependency handoffs: SP-001
+
 
 ### Figma
 `102:44`
@@ -240,6 +264,8 @@ Establish consistent errors before API surface grows.
 **Priority:** P1  
 **Depends:** SP-101  
 **Status:** TODO
+**Context refs:** DEV-SPEC §2.1, §4.2–4.4, §16 | Decisions: QUIZ-01 | Dependency handoffs: SP-101
+
 
 ### Figma
 `102:121`, `102:201`
@@ -264,6 +290,8 @@ Create shared shell for:
 **Priority:** P1  
 **Depends:** SP-102  
 **Status:** TODO
+**Context refs:** DEV-SPEC §2.1, §4.2–4.3 | Decisions: — | Dependency handoffs: SP-102
+
 
 ### Work
 Implement reusable unselected/selected/disabled/focus/error-compatible option card.
@@ -281,6 +309,8 @@ Implement reusable unselected/selected/disabled/focus/error-compatible option ca
 **Priority:** P1  
 **Depends:** SP-101  
 **Status:** TODO
+**Context refs:** DEV-SPEC §5 | Decisions: COPY-02, COPY-03 | Dependency handoffs: SP-101
+
 
 ### Figma
 `102:245`, `102:304`, `102:320`, `102:345`, `102:372`, `102:386`, `102:425`, `102:466`, `102:445`
@@ -304,6 +334,8 @@ Implement reusable unselected/selected/disabled/focus/error-compatible option ca
 **Priority:** P1  
 **Depends:** SP-102  
 **Status:** TODO
+**Context refs:** DEV-SPEC §2, §8 | Decisions: QUIZ-01 | Dependency handoffs: SP-102
+
 
 ### Figma
 `102:486`, `102:557`
@@ -328,6 +360,8 @@ Render summary from:
 **Priority:** P1  
 **Depends:** SP-101  
 **Status:** TODO
+**Context refs:** DEV-SPEC §2, §10 | Decisions: TIME-01 | Dependency handoffs: SP-101
+
 
 ### Figma
 `102:1201`, `102:1332`
@@ -351,6 +385,8 @@ Create fixture-driven cards for:
 **Priority:** P1  
 **Depends:** SP-101  
 **Status:** TODO
+**Context refs:** DEV-SPEC §2, §11 | Decisions: ASSET-01, PROMPT-01 | Dependency handoffs: SP-101
+
 
 ### Figma
 `102:461`
@@ -367,6 +403,8 @@ Create fixture-driven cards for:
 **Priority:** P1  
 **Depends:** SP-101  
 **Status:** TODO
+**Context refs:** DEV-SPEC §2, §13, §16 | Decisions: REPORT-01, REPORT-02 | Dependency handoffs: SP-101
+
 
 ### Figma
 `102:1358`
@@ -389,6 +427,8 @@ Render `ReportV1` structured JSON only; do not render arbitrary AI Markdown/HTML
 **Priority:** P1  
 **Depends:** SP-002, SP-003  
 **Status:** TODO
+**Context refs:** DEV-SPEC §6, §15.1 | Decisions: — | Dependency handoffs: SP-002, SP-003
+
 
 ### Work
 - create anonymous Soulmate session;
@@ -414,6 +454,8 @@ Render `ReportV1` structured JSON only; do not render arbitrary AI Markdown/HTML
 **Priority:** P1  
 **Depends:** SP-201, SP-003  
 **Status:** TODO
+**Context refs:** DEV-SPEC §4, §15.3 | Decisions: QUIZ-01 | Dependency handoffs: SP-201, SP-003
+
 
 ### Work
 - validate question exists in session version;
@@ -435,6 +477,8 @@ Render `ReportV1` structured JSON only; do not render arbitrary AI Markdown/HTML
 **Priority:** P0  
 **Depends:** SP-202  
 **Status:** TODO
+**Context refs:** DEV-SPEC §4–6 | Decisions: QUIZ-01, COPY-02, COPY-03 | Dependency handoffs: SP-202
+
 
 ### Goal
 Centralize the authoritative state machine for Questions, Transitions, Interstitials, Email.
@@ -455,6 +499,8 @@ Table-driven coverage of every edge in Q02–Q18 and Transition-0–5.
 **Priority:** P1  
 **Depends:** SP-202  
 **Status:** TODO
+**Context refs:** DEV-SPEC §4.4, §5.5 | Decisions: AGE-01 | Dependency handoffs: SP-202
+
 
 ### Acceptance
 - server computes zodiac using product-defined boundaries;
@@ -469,6 +515,8 @@ Table-driven coverage of every edge in Q02–Q18 and Transition-0–5.
 **Priority:** P1  
 **Depends:** SP-202, SP-204  
 **Status:** TODO
+**Context refs:** DEV-SPEC §7 | Decisions: QUIZ-01 | Dependency handoffs: SP-202, SP-204
+
 
 ### Goal
 Map raw versioned answers into the normalized profile consumed by Email summary, Sketch, Report.
@@ -495,6 +543,8 @@ At minimum preserve the mappings defined in spec §7, including:
 **Priority:** P2  
 **Depends:** SP-203  
 **Status:** TODO
+**Context refs:** DEV-SPEC §5.7, §15.4 | Decisions: — | Dependency handoffs: SP-203
+
 
 ### Work
 Store answers for spiritual/Psychic Artistry/warning interstitial flow as defined in spec, without mixing them into Q02–Q18 identifiers.
@@ -510,6 +560,8 @@ Store answers for spiritual/Psychic Artistry/warning interstitial flow as define
 **Priority:** P1  
 **Depends:** SP-102/103/104, SP-201/202/203  
 **Status:** TODO
+**Context refs:** DEV-SPEC §4–6, §15–16 | Decisions: QUIZ-01, COPY-02, COPY-03, AGE-01 | Dependency handoffs: SP-102, SP-201
+
 
 ### Work
 - session bootstrap;
@@ -535,6 +587,8 @@ Store answers for spiritual/Psychic Artistry/warning interstitial flow as define
 **Priority:** P0  
 **Depends:** SP-201, SP-205  
 **Status:** TODO
+**Context refs:** DEV-SPEC §8, §15.5, §20 | Decisions: — | Dependency handoffs: SP-201, SP-205
+
 
 ### Work
 - validate and normalize email;
@@ -554,6 +608,8 @@ Store answers for spiritual/Psychic Artistry/warning interstitial flow as define
 **Priority:** P1  
 **Depends:** SP-205  
 **Status:** TODO
+**Context refs:** DEV-SPEC §8 | Decisions: QUIZ-01 | Dependency handoffs: SP-205
+
 
 ### Acceptance
 Returns display-ready Q3/Q5/Q6 values or equivalent normalized profile fields, without frontend guessing labels from raw codes.
@@ -565,6 +621,8 @@ Returns display-ready Q3/Q5/Q6 values or equivalent normalized profile fields, w
 **Priority:** P1  
 **Depends:** SP-301, SP-004  
 **Status:** TODO
+**Context refs:** DEV-SPEC §9.1–9.2, §15.6, §21–22 | Decisions: PAY-01, PAY-02 | Dependency handoffs: SP-301, SP-004
+
 
 ### Goal
 Expose the current offer safely to UI.
@@ -589,6 +647,8 @@ Expose the current offer safely to UI.
 **Priority:** P0  
 **Depends:** SP-203, SP-301  
 **Status:** TODO
+**Context refs:** DEV-SPEC §3, §10, §20 | Decisions: PAY-AUTH-01, TIME-01 | Dependency handoffs: SP-203, SP-301
+
 
 ### Acceptance
 Matches spec §3 for Quiz/Email/Subscribe/Result/Sketch/Report, with server-side authorization as final authority.
@@ -602,6 +662,8 @@ Matches spec §3 for Quiz/Email/Subscribe/Result/Sketch/Report, with server-side
 **Priority:** P0  
 **Depends:** SP-004  
 **Status:** TODO (Production pricing blocked by PAY-01)
+**Context refs:** DEV-SPEC §9.1–9.2, §22, §25 | Decisions: PAY-01, PAY-02 | Dependency handoffs: SP-004
+
 
 ### Goal
 Provision reusable PayPal billing objects for monthly subscription.
@@ -632,6 +694,8 @@ Mandatory high-risk review.
 **Priority:** P0  
 **Depends:** SP-303, SP-401, SP-105 or subscription page UI  
 **Status:** TODO
+**Context refs:** DEV-SPEC §9.3, §15.6, §21 | Decisions: PAY-01, PAY-02, PAY-AUTH-01 | Dependency handoffs: SP-303, SP-401, SP-105
+
 
 ### Work
 - render PayPal subscription action in existing frontend framework;
@@ -652,6 +716,8 @@ Mandatory high-risk review.
 **Priority:** P0  
 **Depends:** SP-402  
 **Status:** TODO
+**Context refs:** DEV-SPEC §9.3–9.4, §15.7 | Decisions: PAY-AUTH-01 | Dependency handoffs: SP-402
+
 
 ### Goal
 Associate approved provider subscription with the authorized user/session and expose pending/confirmed state.
@@ -669,6 +735,8 @@ Associate approved provider subscription with the authorized user/session and ex
 **Priority:** P0  
 **Depends:** SP-002, SP-004  
 **Status:** TODO
+**Context refs:** DEV-SPEC §9.5–9.6 | Decisions: PAY-AUTH-01 | Dependency handoffs: SP-002, SP-004
+
 
 ### Acceptance
 - raw request data required for provider verification is preserved according to framework;
@@ -683,6 +751,8 @@ Associate approved provider subscription with the authorized user/session and ex
 **Priority:** P0  
 **Depends:** SP-404  
 **Status:** TODO
+**Context refs:** DEV-SPEC §9.6 | Decisions: PAY-AUTH-01 | Dependency handoffs: SP-404
+
 
 ### Acceptance
 - official verification mechanism is used;
@@ -696,6 +766,8 @@ Associate approved provider subscription with the authorized user/session and ex
 **Priority:** P0  
 **Depends:** SP-405  
 **Status:** TODO
+**Context refs:** DEV-SPEC §9.5–9.6, §14 | Decisions: PAY-AUTH-01 | Dependency handoffs: SP-405
+
 
 ### Work
 - persist provider event ID before/with processing transaction;
@@ -714,6 +786,8 @@ Associate approved provider subscription with the authorized user/session and ex
 **Priority:** P0  
 **Depends:** SP-406  
 **Status:** TODO
+**Context refs:** DEV-SPEC §9.4–9.7, §14 | Decisions: PAY-AUTH-01 | Dependency handoffs: SP-406
+
 
 ### Acceptance
 - each completed provider payment has durable provider payment ID, amount, currency, paid time, subscription link, cycle context when available;
@@ -727,6 +801,8 @@ Associate approved provider subscription with the authorized user/session and ex
 **Priority:** P0  
 **Depends:** SP-403, SP-406, SP-407  
 **Status:** TODO
+**Context refs:** DEV-SPEC §9.4–9.8, §10 | Decisions: PAY-AUTH-01 | Dependency handoffs: SP-403, SP-406, SP-407
+
 
 ### Goal
 Map provider state into application subscription/entitlement state without trusting only one webhook.
@@ -744,6 +820,8 @@ Map provider state into application subscription/entitlement state without trust
 **Priority:** P1  
 **Depends:** SP-408, SP-803  
 **Status:** TODO
+**Context refs:** DEV-SPEC §9.8, §15.9 | Decisions: PAY-AUTH-01 | Dependency handoffs: SP-408, SP-803
+
 
 ### Acceptance
 - cancellation uses server-side provider API;
@@ -758,6 +836,8 @@ Map provider state into application subscription/entitlement state without trust
 **Priority:** P1  
 **Depends:** SP-403, SP-408  
 **Status:** TODO
+**Context refs:** DEV-SPEC §9.3–9.4 | Decisions: PAY-AUTH-01 | Dependency handoffs: SP-403, SP-408
+
 
 ### Acceptance
 - after PayPal approval, UI polls/refetches server state;
@@ -773,6 +853,8 @@ Map provider state into application subscription/entitlement state without trust
 **Priority:** P0  
 **Depends:** SP-408, SP-002  
 **Status:** TODO
+**Context refs:** DEV-SPEC §9.4, §10, §14 | Decisions: PAY-AUTH-01, TIME-01 | Dependency handoffs: SP-408, SP-002
+
 
 ### Work
 On first successful payment, transactionally create/ensure:
@@ -792,6 +874,8 @@ On first successful payment, transactionally create/ensure:
 **Priority:** P0  
 **Depends:** SP-501  
 **Status:** TODO
+**Context refs:** DEV-SPEC §10 | Decisions: TIME-01 | Dependency handoffs: SP-501
+
 
 ### Acceptance
 - derived from server time + persisted timestamps;
@@ -806,6 +890,8 @@ On first successful payment, transactionally create/ensure:
 **Priority:** P1  
 **Depends:** SP-502  
 **Status:** TODO
+**Context refs:** DEV-SPEC §10.4, §15.8 | Decisions: TIME-01 | Dependency handoffs: SP-502
+
 
 ### Goal
 Single API supplies Result page with subscription + sketch + report status and server time.
@@ -822,6 +908,8 @@ Single API supplies Result page with subscription + sketch + report status and s
 **Priority:** P1  
 **Depends:** SP-503, SP-106  
 **Status:** TODO
+**Context refs:** DEV-SPEC §10.4, §16 | Decisions: TIME-01 | Dependency handoffs: SP-503, SP-106
+
 
 ### Acceptance
 - countdown uses server-time offset or returned remaining time;
@@ -835,6 +923,8 @@ Single API supplies Result page with subscription + sketch + report status and s
 **Priority:** P1  
 **Depends:** SP-503  
 **Status:** TODO
+**Context refs:** DEV-SPEC §10.4 | Decisions: TIME-01 | Dependency handoffs: SP-503
+
 
 ### Acceptance
 - bounded/appropriate polling while payment/generation pending;
@@ -850,6 +940,8 @@ Single API supplies Result page with subscription + sketch + report status and s
 **Priority:** P1  
 **Depends:** SP-205  
 **Status:** TODO
+**Context refs:** DEV-SPEC §11.2–11.3, §12 | Decisions: PROMPT-01 | Dependency handoffs: SP-205
+
 
 ### Goal
 Implement the PRD-provided prompt as a versioned template with explicit inputs.
@@ -873,6 +965,8 @@ Implement the PRD-provided prompt as a versioned template with explicit inputs.
 **Priority:** P1  
 **Depends:** SP-004, SP-601  
 **Status:** TODO
+**Context refs:** DEV-SPEC §11–12, §22, §25 | Decisions: PROMPT-01, ASSET-01 | Dependency handoffs: SP-004, SP-601
+
 
 ### Acceptance
 - provider call is isolated behind app-owned interface;
@@ -888,6 +982,8 @@ Implement the PRD-provided prompt as a versioned template with explicit inputs.
 **Priority:** P0  
 **Depends:** SP-501, SP-602  
 **Status:** TODO
+**Context refs:** DEV-SPEC §11.4, §11.6 | Decisions: ASSET-01 | Dependency handoffs: SP-501, SP-602
+
 
 ### Work
 Use existing job system if present. If not, implement the smallest repo-consistent async mechanism.
@@ -904,6 +1000,8 @@ Use existing job system if present. If not, implement the smallest repo-consiste
 **Priority:** P0  
 **Depends:** SP-603  
 **Status:** TODO
+**Context refs:** DEV-SPEC §11.4–11.6, §19 | Decisions: ASSET-01 | Dependency handoffs: SP-603
+
 
 ### Acceptance
 - transient failures retry with bounded attempts/backoff;
@@ -921,6 +1019,8 @@ Use existing job system if present. If not, implement the smallest repo-consiste
 **Priority:** P0  
 **Depends:** SP-602/603  
 **Status:** TODO
+**Context refs:** DEV-SPEC §11.7 | Decisions: ASSET-01 | Dependency handoffs: SP-602
+
 
 ### Acceptance
 - successful provider output is copied to project-owned storage;
@@ -935,6 +1035,8 @@ Use existing job system if present. If not, implement the smallest repo-consiste
 **Priority:** P0  
 **Depends:** SP-301, SP-604, SP-002  
 **Status:** TODO
+**Context refs:** DEV-SPEC §11.5, §14 | Decisions: ASSET-01 | Dependency handoffs: SP-301, SP-604, SP-002
+
 
 ### Goal
 Enforce the PRD rule at DB/domain level, not only UI.
@@ -954,6 +1056,8 @@ If existing account semantics make user-ID uniqueness safer than email uniquenes
 **Priority:** P1  
 **Depends:** SP-107, SP-503, SP-605, SP-606  
 **Status:** TODO
+**Context refs:** DEV-SPEC §2, §10–11 | Decisions: ASSET-01, TIME-01 | Dependency handoffs: SP-107, SP-503, SP-605, SP-606
+
 
 ### Acceptance
 - locked users route to Result;
@@ -971,6 +1075,8 @@ If existing account semantics make user-ID uniqueness safer than email uniquenes
 **Priority:** P1  
 **Depends:** SP-205  
 **Status:** TODO
+**Context refs:** DEV-SPEC §13.2 | Decisions: REPORT-01, REPORT-02 | Dependency handoffs: SP-205
+
 
 ### Acceptance
 Schema supports Figma structure:
@@ -990,6 +1096,8 @@ Validation rejects arbitrary executable HTML/script content.
 **Priority:** P1  
 **Depends:** SP-701, SP-501  
 **Status:** TODO
+**Context refs:** DEV-SPEC §13.2, §14, §15.11 | Decisions: REPORT-01, REPORT-02 | Dependency handoffs: SP-701, SP-501
+
 
 ### Acceptance
 - report JSON/version/status persisted;
@@ -1003,6 +1111,8 @@ Validation rejects arbitrary executable HTML/script content.
 **Priority:** P1  
 **Depends:** SP-108, SP-701  
 **Status:** TODO
+**Context refs:** DEV-SPEC §2, §13, §16 | Decisions: REPORT-01, REPORT-02 | Dependency handoffs: SP-108, SP-701
+
 
 ### Figma
 `102:1358`
@@ -1020,6 +1130,8 @@ Validation rejects arbitrary executable HTML/script content.
 **Priority:** P1  
 **Depends:** SP-701  
 **Status:** TODO
+**Context refs:** DEV-SPEC §13.3–13.4 | Decisions: REPORT-01, REPORT-02 | Dependency handoffs: SP-701
+
 
 ### Goal
 Create a provider interface without choosing unspecced production content.
@@ -1037,6 +1149,8 @@ Create a provider interface without choosing unspecced production content.
 **Priority:** P2  
 **Depends:** SP-701  
 **Status:** TODO
+**Context refs:** DEV-SPEC §13.2–13.3 | Decisions: REPORT-01, REPORT-02 | Dependency handoffs: SP-701
+
 
 ### Acceptance
 - fixture is clearly non-production/test content;
@@ -1050,6 +1164,8 @@ Create a provider interface without choosing unspecced production content.
 **Priority:** P1  
 **Depends:** SP-704 + `REPORT-01` + `REPORT-02`  
 **Status:** BLOCKED
+**Context refs:** DEV-SPEC §13.3–13.4 | Decisions: REPORT-01, REPORT-02 | Dependency handoffs: SP-704
+
 
 ### Do not start until
 Product explicitly provides/approves model/rules, prompt, output constraints, and any safety/compliance requirements.
@@ -1063,6 +1179,8 @@ Product explicitly provides/approves model/rules, prompt, output constraints, an
 **Priority:** P1  
 **Depends:** SP-001  
 **Status:** TODO
+**Context refs:** DEV-SPEC §2–3 | Decisions: DOMAIN-01 | Dependency handoffs: SP-001
+
 
 ### Figma
 `102:14`
@@ -1077,6 +1195,8 @@ Adds `Soulmate Sketch` entry without duplicating global navigation infrastructur
 **Priority:** P1  
 **Depends:** SP-503, SP-801  
 **Status:** TODO
+**Context refs:** DEV-SPEC §3, §10 | Decisions: PAY-AUTH-01, TIME-01 | Dependency handoffs: SP-503, SP-801
+
 
 ### Routing
 ```text
@@ -1096,6 +1216,8 @@ Destination comes from server-authoritative status, not local membership flag on
 **Priority:** P1  
 **Depends:** SP-408  
 **Status:** TODO
+**Context refs:** DEV-SPEC §2, §9.8 | Decisions: PAY-AUTH-01 | Dependency handoffs: SP-408
+
 
 ### Figma
 `102:1423`, `102:1460`
@@ -1110,6 +1232,8 @@ Shows current plan/status/regular monthly price/next billing or paid-through inf
 **Priority:** P1  
 **Depends:** SP-409, SP-803  
 **Status:** TODO
+**Context refs:** DEV-SPEC §9.8, §15.9 | Decisions: PAY-AUTH-01 | Dependency handoffs: SP-409, SP-803
+
 
 ### Acceptance
 - confirmation state;
@@ -1124,6 +1248,8 @@ Shows current plan/status/regular monthly price/next billing or paid-through inf
 **Priority:** P1  
 **Depends:** SP-408, SP-803  
 **Status:** TODO
+**Context refs:** DEV-SPEC §9.8, §10 | Decisions: PAY-AUTH-01 | Dependency handoffs: SP-408, SP-803
+
 
 ### Acceptance
 Copy is derived from actual access date/state and does not promise an unsupported refund/renewal behavior.
@@ -1137,6 +1263,8 @@ Copy is derived from actual access date/state and does not promise an unsupporte
 **Priority:** P1  
 **Depends:** stable UI/API flows  
 **Status:** TODO
+**Context refs:** DEV-SPEC §18 | Decisions: — | Dependency handoffs: —
+
 
 ### Minimum events
 - `soulmate_landing_view`
@@ -1173,6 +1301,8 @@ Copy is derived from actual access date/state and does not promise an unsupporte
 **Priority:** P1  
 **Depends:** SP-603/604  
 **Status:** TODO
+**Context refs:** DEV-SPEC §18–19 | Decisions: ASSET-01 | Dependency handoffs: SP-603
+
 
 ### Metrics
 - queue latency;
@@ -1188,6 +1318,8 @@ Copy is derived from actual access date/state and does not promise an unsupporte
 **Priority:** P0  
 **Depends:** SP-406/408  
 **Status:** TODO
+**Context refs:** DEV-SPEC §18–19 | Decisions: PAY-AUTH-01 | Dependency handoffs: SP-406
+
 
 ### Metrics
 - webhook verification failures;
@@ -1204,6 +1336,8 @@ Copy is derived from actual access date/state and does not promise an unsupporte
 **Priority:** P0  
 **Depends:** SP-902/903, existing monitoring  
 **Status:** TODO
+**Context refs:** DEV-SPEC §19 | Decisions: — | Dependency handoffs: SP-902
+
 
 ### Alert candidates
 - sustained PayPal webhook processing failure;
@@ -1222,6 +1356,8 @@ Use existing alerting platform; do not create a second monitoring stack.
 **Priority:** P1  
 **Depends:** core DB + payment + artifact tables  
 **Status:** TODO
+**Context refs:** DEV-SPEC §14, §19–20 | Decisions: PAY-AUTH-01, ASSET-01 | Dependency handoffs: —
+
 
 ### Goal
 Allow authorized support to trace a case by safe identifiers.
@@ -1244,6 +1380,8 @@ Shows timeline/status without exposing provider secrets or unrelated users' data
 **Priority:** P1  
 **Depends:** core UI complete  
 **Status:** TODO
+**Context refs:** DEV-SPEC §2, §23 | Decisions: — | Dependency handoffs: —
+
 
 ### Minimum
 Use the product's supported browser policy; at least validate representative iOS Safari, Android Chrome, desktop Chrome/Safari if supported.
@@ -1258,6 +1396,8 @@ No blocking layout/input/payment UI defects at 390px baseline and supported widt
 **Priority:** P0  
 **Depends:** SP-401..410, SP-501..503  
 **Status:** TODO
+**Context refs:** DEV-SPEC §9, §23, §25 | Decisions: PAY-01, PAY-02, PAY-AUTH-01 | Dependency handoffs: SP-401, SP-501
+
 
 ### Scenario
 Landing/eligible user -> Subscribe -> PayPal approval -> webhook/payment confirmation -> Result.
@@ -1275,6 +1415,8 @@ Landing/eligible user -> Subscribe -> PayPal approval -> webhook/payment confirm
 **Priority:** P0  
 **Depends:** SP-406/408  
 **Status:** TODO
+**Context refs:** DEV-SPEC §9.5–9.6, §23 | Decisions: PAY-AUTH-01 | Dependency handoffs: SP-406
+
 
 ### Cases
 - identical event replay 2x/10x;
@@ -1293,6 +1435,8 @@ No duplicate entitlements/payments and no invalid state regression.
 **Priority:** P0  
 **Depends:** SP-604/606  
 **Status:** TODO
+**Context refs:** DEV-SPEC §11.4–11.6, §23 | Decisions: ASSET-01 | Dependency handoffs: SP-604
+
 
 ### Cases
 - parallel answer upserts;
@@ -1309,6 +1453,8 @@ DB invariants hold; exactly one owned sketch is created for one eligible identit
 **Priority:** P0  
 **Depends:** all user APIs  
 **Status:** TODO
+**Context refs:** DEV-SPEC §20, §23 | Decisions: PAY-AUTH-01, TIME-01 | Dependency handoffs: —
+
 
 ### Cases
 - access another session by ID;
@@ -1328,6 +1474,8 @@ All unauthorized paths denied without leaking target existence/content more than
 **Priority:** P0  
 **Depends:** all release tasks + required TBD closure  
 **Status:** TODO
+**Context refs:** DEV-SPEC §21–23, §26 | Decisions: PAY-01, PAY-02, DOMAIN-01, LEGAL-01, REPORT-01, REPORT-02 | Dependency handoffs: —
+
 
 ### Preconditions
 Close all release-blocking product items:
@@ -1363,6 +1511,8 @@ These are not replacements for implementation tasks; they are explicit quality g
 
 **After:** SP-203, SP-408, SP-502  
 **Status:** TODO
+**Context refs:** DEV-SPEC §6, §9–15, §20 | Decisions: QUIZ-01, PAY-AUTH-01, TIME-01, ASSET-01 | Dependency handoffs: —
+
 
 Review:
 - state transition completeness;
@@ -1377,6 +1527,8 @@ Review:
 
 **After:** SP-401..409  
 **Status:** TODO
+**Context refs:** DEV-SPEC §9–10, §20, §23 | Decisions: PAY-01, PAY-02, PAY-AUTH-01, TIME-01 | Dependency handoffs: —
+
 
 Review:
 - plan selection;
@@ -1393,6 +1545,8 @@ Review:
 
 **After:** SP-601..607  
 **Status:** TODO
+**Context refs:** DEV-SPEC §11–12, §14, §20, §23 | Decisions: PROMPT-01, ASSET-01, TIME-01 | Dependency handoffs: —
+
 
 Review:
 - Q3/Q5/Q6/Q7 mapping;
@@ -1406,9 +1560,10 @@ Review:
 
 ## RV-04 — Release compliance/content review
 
-**Lane:** product + engineering  
 **Before:** SP-1006  
 **Status:** TODO
+**Context refs:** DEV-SPEC §18, §20–23, §26 | Decisions: LEGAL-01, DOMAIN-01, REPORT-01, REPORT-02, PAY-01, PAY-02 | Dependency handoffs: —
+
 
 Verify:
 - no fake testimonials/statistics;
@@ -1418,98 +1573,239 @@ Verify:
 
 ---
 
-# 12. Milestones
+# 11A. Task evidence
+
+Task handoff requirements are defined only in `AGENTS.md §7`. Every Task reaching `REVIEW`/`DONE` must produce `docs/handoffs/<TASK-ID>.md`; do not duplicate the generic handoff schema here.
+
+---
+
+# 12. Milestones and review gates
+
+A milestone is a **review gate**, not a synonym for "all tasks appear finished". Required tasks must first reach `DONE` with durable handoffs. Then the named reviewer inspects the implementation and produces the required review artifact.
+
+Allowed milestone states:
+
+```text
+NOT_STARTED -> IN_PROGRESS -> REVIEW -> PASS
+                              ├-------> CONDITIONAL_PASS
+                              └-------> BLOCKED
+```
+
+`CONDITIONAL_PASS` is allowed only when the remaining condition is explicitly documented, does not conceal an open P0/P1 correctness/security issue, and does not make the next milestone unsafe.
 
 ## M1 — Quiz Funnel Ready
 
-Required:
+**Required:**
 - SP-0 complete;
 - SP-101..105;
 - SP-201..207;
 - SP-301/302/304.
 
-Exit criterion:
+**Exit criterion:**  
 `Landing -> Quiz -> Email` works end-to-end with persistence/recovery.
+
+**Required review artifact:**
+```text
+docs/reviews/M1-QUIZ-FUNNEL-REVIEW.md
+```
+
+**Review owner:** independent reviewer; should not be the primary implementer of the majority of the milestone when avoidable.
+
+**Required evidence:**
+- all required task handoffs present;
+- canonical Q02–Q18 configuration/version verified;
+- Q2/Q3 semantic mapping verified;
+- refresh/back/re-entry recovery evidence;
+- single/multi/date validation tests;
+- zodiac boundary tests and Transition-3 mapping tests;
+- route-guard evidence through Email;
+- 390px core flow visual check against Figma;
+- unresolved COPY/AGE TBDs explicitly listed without guessed production behavior.
 
 ## M2 — Sandbox Revenue Ready
 
-Required:
+**Required:**
 - SP-303;
 - SP-401..410;
-- RV-02 partial review.
+- RV-02 review scope complete.
 
-Exit criterion:
+**Exit criterion:**  
 PayPal Sandbox completes the discounted first monthly payment and backend confirms it correctly.
 
-## M3 — Entitlement/Result Ready
+**Required review artifact:**
+```text
+docs/reviews/M2-PAYPAL-SANDBOX-REVIEW.md
+```
 
-Required:
+**Review owner:** independent high-risk reviewer with payment/webhook/entitlement expertise.
+
+**Required evidence:**
+- PayPal Product/Plan configuration/provisioning evidence with no hard-coded production secrets;
+- intro-month -> regular-month billing cycle verified in Sandbox/config;
+- client approval alone does not grant entitlement;
+- webhook signature verification test/evidence;
+- duplicate webhook replay evidence;
+- out-of-order/provider reconciliation scenario evidence;
+- payment ledger and unique provider event IDs verified;
+- first successful payment timestamp recorded as entitlement source;
+- cancellation/settings path verified to the extent supported by Sandbox;
+- exact unresolved PAY-01/PAY-02 production blockers listed.
+
+## M3 — Entitlement / Result Ready
+
+**Required:**
 - SP-501..505.
 
-Exit criterion:
+**Exit criterion:**  
 12h/24h logic is server-authoritative and all result UI states are testable with a fake/test clock.
+
+**Required review artifact:**
+```text
+docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md
+```
+
+**Review owner:** independent reviewer; entitlement logic requires high-risk correctness review.
+
+**Required evidence:**
+- payment -> artifact entitlement creation evidence;
+- `sketch_unlock_at = first_payment_completed_at + 12h` tests;
+- `report_unlock_at = first_payment_completed_at + 24h` tests;
+- client clock tampering cannot unlock content;
+- LOCKED/READY/GENERATING/COMPLETED/FAILED state coverage where applicable;
+- route authorization/ownership checks;
+- test-clock scenario matrix;
+- Result aggregate API contract checkpoint recorded.
 
 ## M4 — Sketch Ready
 
-Required:
+**Required:**
 - SP-601..607;
 - RV-03.
 
-Exit criterion:
+**Exit criterion:**  
 A paid eligible user receives exactly one durable generated sketch, including retry/recovery paths.
+
+**Required review artifact:**
+```text
+docs/reviews/M4-SKETCH-REVIEW.md
+```
+
+**Review owner:** independent high-risk reviewer for uniqueness/concurrency/idempotency; add visual/provider review as needed.
+
+**Required evidence:**
+- prompt input mapping Q3/Q5/Q6/Q7 verified;
+- prompt/model version metadata persisted;
+- provider failure and bounded retry evidence;
+- concurrent generation trigger produces one durable asset;
+- one-email/identity uniqueness constraint demonstrated at DB/domain boundary;
+- successful result copied into project-owned object storage;
+- revisiting Sketch retrieves same durable asset;
+- loading/completed/failed UI evidence;
+- no temporary provider URL used as permanent asset source.
 
 ## M5 — Report Scaffold Ready
 
-Required:
+**Required:**
 - SP-701..705.
 
-Exit criterion:
+**Exit criterion:**  
 Report can be stored/rendered from validated structured fixture data. Production generation may remain off.
+
+**Required review artifact:**
+```text
+docs/reviews/M5-REPORT-SCAFFOLD-REVIEW.md
+```
+
+**Review owner:** independent reviewer with schema/provider-boundary competence.
+
+**Required evidence:**
+- `ReportV1` schema validation tests;
+- persistence/retrieval tests;
+- renderer covers title/intro/sections/optional points/end mark;
+- 24h entitlement guard verified;
+- provider interface is pluggable;
+- fixture and production provider are clearly separated;
+- `REPORT-01/02` remain explicit production blockers unless `DECISIONS.md` resolves them;
+- no unspecced production soulmate/psychological claims are generated.
 
 ## M6 — Production Ready
 
-Required:
+**Required:**
 - SP-8;
 - SP-9;
 - SP-10;
-- relevant TBDs closed;
-- RV-01..04 complete.
+- relevant production-blocking TBDs closed in `DECISIONS.md`;
+- RV-01..04 complete;
+- prior milestone review conditions closed or explicitly accepted.
 
----
+**Exit criterion:**  
+The production configuration, security, observability, payment, entitlement, generated assets, and core mobile funnel satisfy the V1 Definition of Done.
 
-# 13. Mandatory review escalation
-
-Regardless of initial implementer, escalate these for high-risk review:
-
+**Required review artifact:**
 ```text
-DB uniqueness/migrations involving payments
-PayPal webhook verification/idempotency/reconciliation
-Entitlement activation
-Sketch uniqueness/concurrency
-Authorization/IDOR
-Production release config
+docs/reviews/M6-PRODUCTION-READINESS-REVIEW.md
 ```
 
+**Review owner:** independent release reviewer plus QA evidence; product approval is required for unresolved product/legal copy decisions.
+
+**Required evidence:**
+- full E2E happy path in production-like environment;
+- PayPal production plan IDs/prices checked against approved decision/config without exposing secrets;
+- webhook replay/out-of-order suite;
+- concurrency suite;
+- authorization/IDOR suite;
+- production smoke test;
+- analytics funnel event check;
+- alerting/operational lookup check;
+- mobile browser matrix;
+- database migration/recovery/rollback notes;
+- no P0/P1 open findings unless explicitly waived by named owner;
+- fake testimonials/unverified statistics absent from production;
+- `PROJECT-STATE.md` updated to production-ready/released state.
+
+### Milestone review protocol
+
+For every milestone:
+
+1. Implementers finish required tasks and write `docs/handoffs/SP-xxx.md`.
+2. Milestone moves to `REVIEW`, not directly to `PASS`.
+3. Reviewer reads the current code/diffs, handoffs, test output, migrations/config, and executes/repeats critical checks as appropriate.
+4. Reviewer creates the named `docs/reviews/Mx-*.md` from `docs/templates/MILESTONE-REVIEW-TEMPLATE.md`.
+5. Reviewer records `PASS`, `CONDITIONAL_PASS`, or `BLOCKED`.
+6. Reviewer updates `PROJECT-STATE.md` with the accepted milestone state and next safe Task IDs.
+7. Any newly resolved cross-task decision is recorded in `DECISIONS.md`; major architecture choices use an ADR.
+
 ---
 
-# 14. Completion checklist for every Task ID
 
-Before a task moves to `REVIEW` or `DONE`:
+# 13. Completion protocol
 
-- [ ] Read `AGENTS.md` and relevant spec section.
-- [ ] Confirm dependencies exist in the actual branch.
-- [ ] Follow existing repo stack/patterns.
-- [ ] No documented TBD was guessed.
-- [ ] No secrets/price/plan IDs hard-coded incorrectly.
-- [ ] Happy path implemented.
-- [ ] Error/loading/retry path implemented where applicable.
-- [ ] Authorization boundary checked where applicable.
-- [ ] Idempotency checked for externally-triggered writes.
-- [ ] Unit/integration/UI tests added as required.
-- [ ] Relevant tests pass.
-- [ ] Lint/typecheck/build pass or failure is documented.
-- [ ] Handoff uses the format in `AGENTS.md`.
+Generic task completion/handoff rules are owned by `AGENTS.md §7–9`. Task-specific completion is determined by each Task's `Acceptance` / `Tests` plus its required handoff artifact.
 
 ---
 
-**End of `TASK-BREAKDOWN.md`**
+# 14. Recommended first task sequence
+
+For a new repository/branch, start narrowly and expand after contracts stabilize:
+
+```text
+1. SP-001 — repository architecture inventory / feature boundary
+2. SP-002 — schema review + migration foundation
+3. SP-003 — canonical quiz config
+4. SP-101..104 — fixture UI shell may proceed once the feature boundary is stable
+5. SP-201..203 — session + answer + flow resolver
+6. SP-207 — live Quiz integration
+7. SP-301 — email identity binding
+8. SP-401..408 — PayPal foundation
+9. SP-501..505 — Result / entitlement state machine
+10. SP-601..606 — Sketch backend
+11. SP-607 — Sketch UI integration
+12. SP-701..705 — Report scaffold
+13. SP-8 / SP-9 / SP-10 — account, ops, hardening, release
+```
+
+This sequence proves identity, payment, and state-machine correctness before production AI/release work.
+
+---
+
+**End of `TASK-BREAKDOWN.md` — v1.2**

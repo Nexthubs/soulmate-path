@@ -1,442 +1,255 @@
 # AGENTS.md — Soulmate Path
 
-> Repository-level execution contract for agents working on **Soulmate Path**.
-> Keep this file at the repository root (or at the nearest common parent of the Soulmate feature).
-> If a deeper directory contains its own `AGENTS.md`, the deeper file may add narrower rules but must not weaken payment, privacy, idempotency, or source-of-truth requirements in this file.
+> **Governance version:** 1.2
+> **Purpose:** concise execution contract for coding/review agents. Product and technical behavior lives in the DEV-SPEC, not here.
 
-## 1. Read this before changing code
+## 1. Document ownership — one fact, one owner
 
-For every Soulmate task, read in this order:
+Do not duplicate canonical rules across files. Use these owners:
 
-1. `AGENTS.md` — execution rules and guardrails.
-2. `Soulmate-Path-DEV-SPEC-v1.md` — product/technical source of truth.
-3. `TASK-BREAKDOWN.md` — task scope, dependency, acceptance criteria, and recommended execution lane.
-4. Existing repository conventions — framework, routing, DB/migration style, auth, payments, jobs, storage, analytics, tests.
-5. Figma source only when the task changes a user-visible screen or component.
+| File | Owns |
+|---|---|
+| `AGENTS.md` | how an agent loads context, executes, tests, hands off, and reviews |
+| `Soulmate-Path-DEV-SPEC-v1.2.md` | stable product + technical contract |
+| `TASK-BREAKDOWN.md` | task scope, dependency, acceptance, context refs, milestone gates |
+| `DECISIONS.md` | resolved/open decisions that override or extend the baseline spec |
+| `PROJECT-STATE.md` | current milestone, blockers, checkpoints, next safe work |
+| `docs/handoffs/SP-xxx.md` | what one task actually changed and verified |
+| `docs/reviews/Mx-*.md` | milestone evidence and review conclusion |
+| `docs/adr/*.md` | material architecture decisions that are difficult to reverse |
 
-Do not start implementation from a task title alone.
+If the same behavior appears in more than one file, treat the owner above as canonical and replace other copies with references when editing documentation.
 
-## 2. Source-of-truth hierarchy
+## 2. Context-loading protocol — selective by default
 
-Use the hierarchy defined in the development spec:
+### 2.1 Always load
 
-- **Business rules**: PRD / `Soulmate-Path-DEV-SPEC-v1.md`.
-- **Quiz wording, answer meaning, question numbering**: `灵魂伴侣问题&选项.xlsx` as normalized into `soulmate-quiz-v1`.
-- **User-visible layout and visual states**: Figma Soulmate Path.
-- **Third-party API semantics**: current official PayPal/OpenAI API behavior, adapted through project-owned provider interfaces.
-- **Repository implementation style**: the existing codebase.
+For every implementation/review task, read only:
 
-If two sources conflict and the development spec already records the conflict, follow the recorded decision/TBD. If the conflict is new, stop that narrow part of the task and report it; do not invent a product decision.
+1. `AGENTS.md`.
+2. `PROJECT-STATE.md`.
+3. The assigned Task block in `TASK-BREAKDOWN.md`.
 
-## 3. Non-negotiable product semantics
+### 2.2 Then load only task-referenced context
 
-The following meanings must never drift:
+From the Task block, follow:
 
-- `q02 -> user_gender` = the user's own gender.
-- `q03 -> preferred_partner_gender` = the requested soulmate gender and the person shown in the sketch.
-- `q05 -> preferred_partner_age_range`.
-- `q06 -> preferred_partner_ethnicity`.
-- `q07 -> key_soulmate_quality`; V1 passes this value into the sketch prompt's `features` slot only because the current PRD requires it. Do not reinterpret the question.
-- `q08 -> birth_date`; zodiac is calculated on the server.
-- `q10 -> decision_style`; it drives Transition-3 copy.
-- `q18` is multi-select; all other configured choice questions are single-select.
-- Quiz version is immutable per session: `soulmate-quiz-v1`.
+- `Spec refs` → read only those DEV-SPEC sections.
+- `Decision refs` → read only those entries in `DECISIONS.md`.
+- `Depends` → read handoffs only for direct dependencies that are actually complete.
+- `Figma` → inspect only when the task changes user-visible UI.
+- Current milestone review → read only when the task depends on a prior accepted milestone or you are performing review/release work.
 
-Do not rename these result keys casually. They are API/data contracts.
+### 2.3 Do not eagerly load
 
-## 4. Known TBDs are blockers, not invitations to improvise
+Unless the assigned task is cross-cutting architecture/release review, do **not** load:
 
-Do not silently resolve these items:
+- the full DEV-SPEC;
+- the full TASK-BREAKDOWN;
+- every decision;
+- every handoff;
+- every milestone review;
+- unrelated Figma screens.
 
-- `PAY-01`: concrete first-month promotional price.
-- `PAY-02`: whether re-subscribers can receive the introductory price again.
-- `AGE-01`: DOB/minimum-age rule.
-- `COPY-02`: Transition-2 copy variants beyond the confirmed example.
-- `COPY-03`: Transition-4 dynamic-copy rules.
-- `REPORT-01`: production report generation model/rules.
-- `REPORT-02`: production report prompt/content specification.
-- `PROMPT-01`: whether Q7 remains mapped to sketch `features` long term.
-- `DOMAIN-01`: canonical production domain.
-- `LEGAL-01`: final truthful testimonials/statistics.
+If a referenced section is insufficient, expand context incrementally and record any newly discovered contract dependency in the task handoff.
 
-A task may build infrastructure around a TBD if the interface is already specified. Production behavior that requires the unresolved decision must remain feature-gated, configured, mocked, or blocked as stated in `TASK-BREAKDOWN.md`.
+## 3. Precedence and conflict handling
 
-## 5. First action for every implementation task: inspect the repo
+For implementation behavior:
 
-Before coding, identify and reuse:
+1. A `RESOLVED` entry in `DECISIONS.md` overrides the corresponding older DEV-SPEC baseline when it explicitly says so.
+2. Otherwise `Soulmate-Path-DEV-SPEC-v1.2.md` is the product/technical contract.
+3. `TASK-BREAKDOWN.md` determines the scope and acceptance of the assigned work; it does not redefine product semantics.
+4. Existing repository code/conventions determine implementation style, but do not silently override product/payment/security contracts.
+5. Handoffs/reviews are implementation evidence, not a place to invent new business rules.
 
-- framework and language;
-- route conventions;
-- auth/session/user identity model;
-- DB ORM/query layer and migration style;
-- configuration/secrets system;
-- existing payment/provider abstractions;
-- background job/queue infrastructure;
-- object storage wrapper;
-- component library/design tokens;
-- analytics abstraction;
-- logging/error monitoring;
-- test stack and fixtures.
+If sources conflict and there is no resolved decision, isolate the conflict, mark the narrow work `BLOCKED` or `PARTIAL`, and add/update a decision entry. Do not guess.
 
-Do **not** introduce React, Tailwind, Prisma, FastAPI, BullMQ, Redis, S3 SDK wrappers, analytics SDKs, or any other major dependency merely because an example in the spec resembles that technology.
+## 4. Task execution protocol
 
-Prefer the repository's existing primitive unless it cannot satisfy the requirement. If a new dependency is genuinely required, explain why before adding it.
+### Before coding
 
-## 6. Scope discipline
+- Confirm the Task ID, `Depends`, `Spec refs`, `Decision refs`, and current status.
+- Verify prerequisite code exists in the actual branch; a handoff alone is not proof.
+- Inspect the repository's existing framework, routing, DB/migration style, auth/session model, config/secrets, payment abstractions, jobs/queues, storage, analytics, logging, UI primitives, and tests **only as relevant to this task**.
+- Reuse existing abstractions before adding dependencies or parallel infrastructure.
 
-Implement the assigned Task ID(s), their direct prerequisites, and the minimum integration needed to make them correct.
+### While coding
+
+- Implement the assigned Task plus the minimum direct integration required for correctness.
+- Keep domain rules in domain/service code rather than scattering them through views.
+- Use stable typed contracts where the repository supports them.
+- Persist timestamps in UTC; localize only for presentation.
+- Make externally triggered writes idempotent.
+- Use DB constraints/transactions for uniqueness and financial/entitlement state where practical.
+- Do not hard-code secrets, production prices, provider IDs, or canonical hosts.
+- Do not make product decisions to simplify implementation.
+
+### Before finishing
+
+- Re-check every task acceptance criterion.
+- Run the narrowest relevant tests, then broader lint/typecheck/build checks required by the repo.
+- Verify failure/retry/authorization/idempotency paths when relevant.
+- Create/update the mandatory task handoff.
+- Update `PROJECT-STATE.md` only if current state/critical path changed.
+- Update `DECISIONS.md` only if a cross-task decision/TBD changed.
+
+## 5. Scope discipline
 
 Do not:
 
 - refactor unrelated modules for style;
-- rename existing public APIs without need;
-- change quiz wording outside a product-approved copy task;
-- modify payment prices or PayPal plan IDs in source code;
-- turn mock/fake testimonials into production claims;
-- implement production report content from model imagination;
-- regenerate a completed sketch because a page is revisited;
-- rely on browser time for unlock authorization;
-- treat a client callback as proof of payment.
+- rename public contracts without need;
+- change Quiz wording/meaning outside approved source/decision changes;
+- treat a client payment callback as proof of payment;
+- use browser time as authorization for unlocks;
+- regenerate an already completed durable Sketch on revisit;
+- ship production Report content while its production generator/prompt decisions remain open;
+- ship fake/unverified testimonials or statistics;
+- weaken tests just to obtain green output.
 
-If a task exposes a pre-existing bug that blocks correct implementation, fix the smallest safe surface and record it in the handoff.
+If a pre-existing bug blocks the task, make the smallest safe fix and record it in the handoff.
 
-## 7. Multi-agent / multi-model working agreement
+## 6. High-risk invariants
 
-This project may be implemented by multiple Codex models. Treat Task IDs and contracts as the coordination layer.
+These are guardrails, not full domain definitions. Read the referenced DEV-SPEC sections before changing them.
 
-### 7.1 Recommended routing convention
-
-This is a project dispatch convention, not a hard requirement. If model names or capabilities change, route by **task risk/complexity**, not by label.
-
-| Task class | Recommended lane | Typical work |
+| Area | Invariant | Canonical refs |
 |---|---|---|
-| Architecture / high-risk correctness | **Astra** | schema design review, PayPal state/reconciliation, idempotency, auth/IDOR, concurrency, release review, cross-module refactor |
-| Complex end-to-end implementation | **Sol** | session/flow engine, payment integration, result aggregation, worker/provider integration, complex Figma page integration |
-| Bounded feature implementation | **Terra** | CRUD endpoints, UI components, route guards, settings integration, analytics wiring, integration tests |
-| Small/localized work | **Luna** | fixtures, copy-safe UI states, simple unit tests, config plumbing, documentation, low-risk cleanup |
+| Payment | client approval is not entitlement authority; provider/server-confirmed successful payment is required | DEV-SPEC §9–10; `PAY-AUTH-01` |
+| Webhooks | verify authenticity; deduplicate provider event IDs; tolerate retry/out-of-order delivery | DEV-SPEC §9.5–9.6 |
+| Unlocks | server-persisted time is authoritative | DEV-SPEC §10; `TIME-01` |
+| Identity | derive ownership server-side; prevent IDOR | DEV-SPEC §20 |
+| Sketch | generation and durable asset creation must be idempotent; revisit returns the same stored asset | DEV-SPEC §11; `ASSET-01` |
+| DB | uniqueness required by payment/webhook/answer/artifact contracts should be enforced at DB level where practical | DEV-SPEC §14 |
+| Report | production generation stays disabled until its open decisions are resolved | DEV-SPEC §13; `REPORT-01/02` |
 
-Rules:
+Any change to payment, entitlement, webhook verification, DB uniqueness, authorization, generation concurrency, or production configuration requires explicit high-risk review evidence.
 
-- Payment, entitlement, concurrency, authorization, and migration tasks should receive a **high-risk review** even if initially implemented in a lighter lane.
-- A lighter model may implement a well-specified bounded task; do not let it redefine architecture to make the task easier.
-- Reviews must inspect actual diffs/tests, not merely restate the spec.
+## 7. Task states and durable handoff
 
-### 7.2 Parallel work rules
-
-Parallelize only tasks with non-overlapping ownership or stable interfaces.
-
-Good parallelization examples:
-
-- UI fixture implementation vs. DB/session foundation.
-- PayPal provider adapter vs. Result UI against fixtures.
-- Report renderer vs. report generator interface.
-- Analytics event definitions vs. visual QA.
-
-Avoid parallel edits to the same high-churn files, especially:
-
-- central route registries;
-- shared API schema/type files;
-- the same DB migration;
-- the same payment webhook handler;
-- the same Quiz flow resolver.
-
-When parallel work is unavoidable, agree the shared interface first and keep one agent responsible for integration.
-
-## 8. Task execution protocol
-
-### Before coding
-
-1. Locate the Task ID in `TASK-BREAKDOWN.md`.
-2. Read its dependencies and blockers.
-3. Verify prerequisite code actually exists; do not assume another agent completed it.
-4. Inspect the relevant existing modules.
-5. State internally the exact acceptance criteria to be satisfied.
-
-### While coding
-
-- Keep business rules in domain/service code, not scattered across views.
-- Use typed/stable API schemas when the stack supports them.
-- Make externally-triggered writes idempotent.
-- Make state transitions explicit and auditable.
-- Use UTC timestamps in persistence/API contracts; localize only for display.
-- Use transactions around multi-table financial/entitlement changes when supported.
-- Prefer deterministic pure functions for zodiac, flow resolution, status derivation, and prompt input mapping.
-- Preserve provider payload/event IDs for debugging without exposing secrets.
-
-### Before finishing
-
-1. Run the narrowest relevant tests, then broader tests if affordable.
-2. Run lint/typecheck/build commands required by the repo.
-3. Re-check acceptance criteria.
-4. Re-check authorization, idempotency, retry behavior, and failure states where relevant.
-5. Do not mark a task complete if tests are skipped without explicitly saying why.
-
-## 9. Mandatory handoff format
-
-Every completed task should end with a concise handoff containing:
+Task lifecycle:
 
 ```text
-Task: SP-xxx
-Status: DONE | PARTIAL | BLOCKED
-
-Changed:
-- <important files/modules>
-
-Implemented:
-- <behavior>
-
-Tests:
-- <commands and result>
-
-Decisions:
-- <only implementation decisions that do not change product semantics>
-
-Blockers / follow-ups:
-- <TBD or known issue>
+TODO -> IN_PROGRESS -> REVIEW -> DONE
+          |             |
+          +-> BLOCKED   +-> IN_PROGRESS  # changes requested
 ```
 
-Do not report `DONE` when a required migration, test, provider verification, or acceptance criterion remains incomplete.
+`DONE` means implementation **and evidence** are complete. It does not mean the milestone passed.
 
-## 10. Database and migration rules
-
-- Follow existing migration tooling and naming.
-- Prefer additive migrations in active development; avoid destructive schema rewrites unless explicitly approved.
-- Financial/provider IDs that require uniqueness must have DB-level constraints where practical.
-- Enforce one answer per `session_id + question_code`.
-- Enforce webhook event idempotency by provider event ID.
-- Enforce sketch uniqueness at the strongest stable identity available per the spec; do not rely only on an in-memory check.
-- Store provider state separately from derived application entitlement state when needed for reconciliation.
-- Never store PayPal or OpenAI secrets in DB rows or logs.
-
-If the repo already has generic user/subscription/payment tables, extend/reuse them rather than duplicating Soulmate-specific versions unless the domain model requires separation.
-
-## 11. Quiz engine rules
-
-The UI is data-driven. Do not create one component/page per question.
-
-Required behavior:
-
-- single choice: save then auto-advance;
-- multi choice: selection first, explicit Next;
-- date: validated date submission;
-- Back restores prior selection;
-- refresh/return restores server-side session state;
-- old sessions continue using the quiz version captured at creation;
-- unrecognized question/option values are rejected server-side;
-- server is authoritative for current/next step.
-
-Keep flow resolution testable without a browser.
-
-## 12. Figma implementation rules
-
-For user-visible Figma tasks:
-
-- Use the Figma design as visual reference and existing repo design tokens/components as implementation primitives.
-- Do not paste generated React/Tailwind from Figma MCP verbatim unless it already matches the repository stack and conventions.
-- Reuse shared `OptionCard`, quiz layout, transition shell, result card, typography, spacing, and button primitives.
-- Do not commit temporary Figma MCP asset URLs; export/host stable assets through the project's normal asset path.
-- Verify at the 390px mobile design baseline and at least one wider responsive viewport.
-- Implement loading, disabled, selected, error, and completed states—not only the screenshot's happy state.
-
-## 13. PayPal rules — high risk
-
-PayPal is monthly subscription billing with:
-
-- first billing month at promotional `INTRO_PRICE`;
-- subsequent months at `REGULAR_PRICE`;
-- recurring until cancelled/expired according to configured plan behavior.
-
-Rules:
-
-- Product/Plan IDs and prices are config/provider data, never literals embedded in UI business logic.
-- Prefer provisioned PayPal Product/Plan objects; do not create a new plan per user.
-- The first successful payment, not merely client `onApprove`, activates Soulmate entitlement.
-- Use server-side/webhook-confirmed payment state.
-- Verify webhook authenticity using the project's correct raw-body/signature flow.
-- Store and deduplicate PayPal event IDs.
-- Webhook handlers must tolerate retry and out-of-order delivery.
-- Maintain a payment ledger sufficient for support/reconciliation.
-- Cancellation must not delete already generated/owned artifacts.
-- Route/UI state must be derived from server subscription + entitlement state.
-
-Any change touching webhook handling, entitlement creation, reconciliation, or cancellation needs tests for duplicate events and failure/retry behavior.
-
-## 14. Result and entitlement rules
-
-Use server timestamps as authority.
+Every Task moving to `REVIEW` or `DONE` must create/update:
 
 ```text
-sketch_unlock_at = first_payment_completed_at + 12h
-report_unlock_at = first_payment_completed_at + 24h
+docs/handoffs/<TASK-ID>.md
 ```
 
-The browser may render a countdown from server-provided time, but cannot authorize access.
+Use `docs/templates/TASK-HANDOFF-TEMPLATE.md`.
 
-Support explicit states such as:
+The handoff must record only task-specific evidence:
+
+- scope completed / explicitly excluded;
+- files/modules changed;
+- API/type/schema/config/migration impact;
+- acceptance criteria status;
+- exact automated/manual checks and results;
+- relevant authorization/idempotency/failure-path evidence;
+- implementation deviations;
+- new risks/TBDs/known limitations;
+- direct notes for dependent tasks.
+
+Do not copy large DEV-SPEC sections into a handoff. Link the Task's `Spec refs` instead.
+
+## 8. Milestone review
+
+Milestone requirements/evidence are owned by `TASK-BREAKDOWN.md`. A milestone can become `PASS` only after its required tasks are `DONE` and a durable review exists:
 
 ```text
-LOCKED -> READY -> GENERATING -> COMPLETED
-                         \-> FAILED
+docs/reviews/Mx-<name>-REVIEW.md
 ```
 
-Do not conflate `unlocked` with `generated`.
+Use `docs/templates/MILESTONE-REVIEW-TEMPLATE.md`.
 
-## 15. Sketch generation rules — high risk
-
-Canonical V1 prompt inputs:
+Allowed results:
 
 ```text
-Q3 -> gender
-Q5 -> age_range
-Q6 -> ethnicity
-Q7 -> features (temporary PRD mapping)
+PASS | CONDITIONAL_PASS | BLOCKED
 ```
 
-Rules:
+The reviewer must inspect current code/diffs plus relevant handoffs/tests/config/migrations. A review that only restates the DEV-SPEC is invalid.
 
-- Model/provider calls happen on the server/worker, never directly from the browser.
-- Use the configured image model; current spec target is `gpt-image-2`.
-- Prompt is versioned (`soulmate_sketch_v1` or repository-equivalent).
-- Generation is asynchronous when repository infrastructure supports jobs.
-- Job creation and generation are idempotent.
-- Retry transient provider failures with bounded attempts/backoff.
-- Persist successful output in project-owned object storage; do not depend on a temporary provider URL.
-- Revisiting `/soulmate/sketch` returns the persisted asset, not a new generation.
-- Record generation model, prompt version, provider request ID if available, attempt count, and final error category.
+Prefer an independent reviewer for milestone gates. High-risk milestones/changes require a reviewer capable of checking payment/security/concurrency correctness. Model selection is intentionally outside this repository contract.
 
-Do not change demographic constraints or prompt semantics under the guise of “quality improvement” without a product task.
+## 9. Evidence quality
 
-## 16. Report rules
+Never write only `tests pass`, `PayPal works`, `Figma matched`, or `idempotency verified`.
 
-V1 must support:
-
-- `ReportV1` structured JSON schema;
-- persistence;
-- 24h entitlement guard;
-- renderer matching Figma;
-- pluggable generation interface;
-- mock/fixture content for development/tests.
-
-Production AI generation is blocked by `REPORT-01` / `REPORT-02` until those are explicitly closed. Do not generate and ship unspecced soulmate/psychological claims.
-
-## 17. Analytics rules
-
-Use the repository analytics abstraction. Do not call vendor SDKs directly from feature components if a wrapper exists.
-
-Minimum funnel must allow reconstruction of:
+Record reproducible evidence, for example:
 
 ```text
-Landing view
--> Start
--> Quiz started
--> Quiz completed
--> Email submitted
--> Subscribe viewed
--> Checkout started
--> First payment succeeded
--> Result viewed
--> Sketch unlocked/viewed/completed
--> Report unlocked/viewed
+pnpm test -- soulmate/session.test.ts   PASS 18/18
+pnpm typecheck                          PASS
+PayPal Sandbox PP-SUB-01                PASS
+same webhook replayed x3                1 stored event / 1 business effect
+concurrent sketch trigger x10           1 durable artifact
+390px visual check                      no P1 mismatch; P2 items linked
 ```
 
-Avoid sending raw email, DOB, full answer payloads, provider secrets, or AI prompts as analytics properties unless an approved analytics schema explicitly requires and permits them.
+If credentials/environment/provider/browser access is unavailable, record `NOT_RUN` and the reason. Missing verification cannot be converted into `PASS`.
 
-## 18. Security and privacy checklist
+## 10. `PROJECT-STATE.md`
 
-For every relevant endpoint:
+This is a short operational index, not a second spec. Update it only when one of these changes:
 
-- derive user/session ownership server-side;
-- prevent IDOR by arbitrary session/user IDs;
-- validate inputs against quiz/config schema;
-- do not trust client-supplied payment status, entitlement status, unlock times, or user IDs;
-- protect webhook endpoints with provider verification, not app-user auth;
-- protect user endpoints with the repo's normal auth/session mechanism;
-- avoid sensitive PII in logs;
-- normalize email consistently before identity/uniqueness logic;
-- apply rate limiting/abuse controls through existing platform primitives where appropriate.
+- current milestone/status;
+- active or critically blocked tasks;
+- latest accepted API/DB/config checkpoint;
+- production-disabled capabilities;
+- latest accepted review;
+- next safe task sequence.
 
-## 19. Testing expectations
+For decision details, link IDs from `DECISIONS.md` rather than repeating their rules.
 
-Use the repo's native test framework. At minimum, cover the surfaces relevant to the task.
+## 11. `DECISIONS.md`
 
-### Unit
+Use it only for cross-task decisions or TBD closure.
 
-- zodiac boundaries;
-- Quiz answer validation;
-- next-step resolver;
-- profile mapping;
-- subscription/result status derivation;
-- prompt input mapping;
-- retry/idempotency helpers.
-
-### Integration
-
-- session create/recover;
-- answer upsert;
-- email binding;
-- PayPal webhook signature + duplicate event handling;
-- payment -> entitlement/artifact creation;
-- cancellation/reconciliation;
-- sketch job -> storage -> retrieval;
-- report persistence/retrieval.
-
-### E2E
-
-- Landing -> Quiz -> Email;
-- PayPal Sandbox checkout -> confirmed Result;
-- 12h/24h state transitions with controllable test clock;
-- refresh/back/recovery;
-- duplicate webhook/replay;
-- concurrent sketch trigger produces one durable asset;
-- unauthorized cross-user access denied.
-
-Do not weaken assertions merely to make flaky tests pass. Fix the source of nondeterminism when possible.
-
-## 20. Review severity
-
-Treat findings in these areas as release-blocking unless explicitly waived:
-
-**P0**
-- payment can be spoofed;
-- entitlement can be obtained without successful payment;
-- webhook forgery accepted;
-- cross-user sketch/report exposure;
-- duplicate charging caused by our integration logic;
-- destructive data loss of paid artifacts.
-
-**P1**
-- duplicate sketch generation despite idempotency requirement;
-- wrong Q2/Q3 gender mapping;
-- 12h/24h bypass using client clock;
-- wrong recurring price/plan displayed or selected;
-- session answers lost on refresh;
-- production fake testimonial/statistic shipped.
-
-**P2**
-- non-blocking visual mismatch;
-- analytics gaps;
-- recoverable copy/spacing defects.
-
-## 21. Standard task prompt
-
-For consistent execution across Agents, tasks may be launched with this template:
+Status values:
 
 ```text
-Implement Task <SP-ID> from TASK-BREAKDOWN.md for Soulmate Path.
+OPEN | RESOLVED | SUPERSEDED
+```
+
+A resolved decision should identify affected Task IDs/contracts. For a large architecture choice, create an ADR and link it; do not turn the decision register into an essay.
+
+## 12. Review severity
+
+- **P0:** payment/entitlement spoofing, forged webhook acceptance, cross-user data exposure, duplicate charging caused by our logic, destructive loss of paid artifacts.
+- **P1:** duplicate Sketch despite uniqueness requirement, wrong Q2/Q3 semantics, client-clock unlock bypass, wrong plan/renewal presentation, lost Quiz recovery, unapproved fake marketing content in production.
+- **P2:** non-blocking visual/polish/analytics defects.
+
+An open unwaived P0/P1 blocks milestone/release `PASS` when it affects that gate.
+
+## 13. Standard task prompt
+
+```text
+Implement <TASK-ID> from TASK-BREAKDOWN.md.
 
 Mandatory:
-1. Read AGENTS.md first.
-2. Read the relevant sections of Soulmate-Path-DEV-SPEC-v1.md.
-3. Inspect and reuse the repository's existing stack and abstractions.
-4. Implement only this task plus required direct prerequisites.
-5. Do not resolve documented TBDs by guessing.
-6. Add/update tests required by the task acceptance criteria.
-7. Run relevant lint/typecheck/tests/build.
-8. Finish with the AGENTS.md handoff format.
+1. Read AGENTS.md and PROJECT-STATE.md.
+2. Read only the assigned Task block first.
+3. Follow that Task's Spec refs / Decision refs / direct dependency handoffs.
+4. Inspect and reuse the repository's existing implementation patterns.
+5. Do not resolve open decisions by guessing.
+6. Implement only assigned scope + minimum direct prerequisites.
+7. Add/update tests required by Acceptance.
+8. Run relevant checks and record exact results.
+9. Create/update docs/handoffs/<TASK-ID>.md.
+10. Update PROJECT-STATE.md / DECISIONS.md only when their owned facts changed.
 
-If the task is blocked by missing product input, implement only the non-blocked scaffolding explicitly allowed by TASK-BREAKDOWN.md and report BLOCKED/PARTIAL rather than inventing behavior.
+Do not load unrelated project documentation unless the task reveals a concrete dependency on it.
 ```
 
-## 22. Final rule
+## 14. Final rule
 
-Correctness of payment, entitlement, identity, persistence, and generated-asset ownership is more important than finishing a Task ID quickly. When uncertain, preserve the existing stable contract, isolate the ambiguity, and surface it in the handoff.
+Optimize context for relevance, not completeness. Load the smallest sufficient set of contracts, then expand only when implementation evidence shows it is necessary. Correctness of identity, payment, entitlement, persistence, authorization, and durable generated assets takes priority over task speed.

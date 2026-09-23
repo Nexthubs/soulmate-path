@@ -1,13 +1,24 @@
-# Soulmate Path Development Specification v1
+# Soulmate Path Development Specification v1.2
 
-> **文档状态**：Ready for implementation  
-> **目标读者**：Agents / 前端 / 后端 / QA / DevOps / 产品  
-> **基准日期**：2026-09-22  
+> **文档状态**：Ready for implementation — context-optimized source-of-truth edition  
+> **目标读者**：前端 / 后端 / QA / DevOps / 产品 / coding agents  
+> **基准日期**：2026-09-23  
 > **Figma**：Soulmate Path — `KJJj7uT7uQfmsbRt55nwMn`  
-> **产品源文件**：`灵魂伴侣PRD.md`、`灵魂伴侣问题&选项.xlsx`
+> **产品源文件**：`灵魂伴侣PRD.md`、`灵魂伴侣问题&选项.xlsx`  
+> **执行配套**：`AGENTS.md`、`TASK-BREAKDOWN.md`、`PROJECT-STATE.md`、`DECISIONS.md`
+
+### v1.2 变更摘要
+
+- DEV-SPEC 只保留产品与技术契约，不再重复 Task 拆解、Agent 执行规则、Milestone Governance 与当前 TBD 状态表。
+- 任务范围/依赖/验收/Milestone Gate 统一由 `TASK-BREAKDOWN.md` 管理。
+- Agent 工作方式、handoff/review 证据协议统一由 `AGENTS.md` 管理。
+- 当前决策状态统一由 `DECISIONS.md` 管理；`RESOLVED` decision 可显式覆盖旧 baseline。
+- 当前进度与下一安全任务统一由 `PROJECT-STATE.md` 管理。
+- 采用 selective context loading：任务通过 `Spec refs / Decision refs / Depends` 精确加载上下文。
+
+> **重要：** 本文不再包含开发任务列表和 Agent Governance。不要把它们重新复制进本文；请分别维护 `TASK-BREAKDOWN.md` 与 `AGENTS.md`。
 
 ---
-
 ## 0. 文档约定与来源优先级
 
 本规格把三类材料合并成一套可执行实现：
@@ -44,6 +55,19 @@
 **REPORT-01**：PRD/Figma 有 Soulmate Report 页面，但没有定义报告生成模型、Prompt、答案映射规则。V1 必须先实现 Report 数据结构、状态机和渲染器；AI 报告生成 Provider 做成可插拔接口，正式 Prompt/Model 未确认前不得自行生成生产文案。
 
 ---
+
+
+### 0.2 Companion document ownership
+
+本文只定义稳定业务/技术 contract。其他事实的唯一维护位置：
+
+- Task / dependency / acceptance / milestone → `TASK-BREAKDOWN.md`
+- Agent execution / evidence / review protocol → `AGENTS.md`
+- Current decision status / overrides → `DECISIONS.md`
+- Current implementation state → `PROJECT-STATE.md`
+
+任务应通过 `TASK-BREAKDOWN.md` 中的 `Spec refs` 按需读取本文相关章节，不要求默认全文加载。
+
 
 # 1. V1 产品范围
 
@@ -2317,203 +2341,9 @@ Landing
 
 ---
 
-# 25. 开发任务拆解
-
-## EPIC SP-0 — Foundation
-
-**SP-001** 建 Soulmate module / route namespace  
-**SP-002** 建 DB migration  
-**SP-003** 导入 `soulmate-quiz-v1` JSON  
-**SP-004** 环境变量与 secret 配置  
-**SP-005** 统一 error codes / request id
-
-验收：服务启动后能创建 session、读取 quiz config。
-
-## EPIC SP-1 — Figma UI Shell
-
-**SP-101** Landing  
-**SP-102** Quiz shared layout  
-**SP-103** OptionCard variants  
-**SP-104** Transition shared layout  
-**SP-105** Email male/female variants  
-**SP-106** Result cards  
-**SP-107** Sketch viewer  
-**SP-108** Report renderer
-
-验收：用 fixture 数据可走完全流程，不接真实 API。
-
-## EPIC SP-2 — Quiz Backend
-
-**SP-201** Session create/recover  
-**SP-202** Answer upsert/validation  
-**SP-203** Flow/next-step resolver  
-**SP-204** DOB/Zodiac  
-**SP-205** Profile builder  
-**SP-206** Interstitial answer storage
-
-验收：API 测试可从 Transition-0 一路完成到 Email。
-
-## EPIC SP-3 — Email & Conversion
-
-**SP-301** Email save/normalize  
-**SP-302** Email summary API  
-**SP-303** Subscribe offer API  
-**SP-304** route guards
-
-验收：匿名 session 可完成到 PayPal page。
-
-## EPIC SP-4 — PayPal
-
-**SP-401** PayPal Product/Plan provisioning script  
-**SP-402** PayPal JS checkout integration  
-**SP-403** confirm subscription API  
-**SP-404** webhook endpoint + raw body  
-**SP-405** signature verification  
-**SP-406** event idempotency  
-**SP-407** payment ledger  
-**SP-408** subscription status reconciliation  
-**SP-409** cancellation/settings
-
-验收：Sandbox 完成首笔优惠支付并成功进入 Result。
-
-## EPIC SP-5 — Countdown / Result
-
-**SP-501** artifact rows on payment success  
-**SP-502** 12h/24h unlock logic  
-**SP-503** result aggregate API  
-**SP-504** frontend countdown using server time  
-**SP-505** status polling
-
-验收：测试时钟能验证所有状态转换。
-
-## EPIC SP-6 — Sketch
-
-**SP-601** Prompt v1 template  
-**SP-602** OpenAI image adapter  
-**SP-603** generation queue/worker  
-**SP-604** retry/idempotency  
-**SP-605** object storage  
-**SP-606** one-email-one-sketch constraint  
-**SP-607** Sketch page loading/completed/failed UI
-
-验收：并发请求只产生一张图，刷新后仍读同一 asset。
-
-## EPIC SP-7 — Report
-
-**SP-701** ReportV1 schema  
-**SP-702** report storage  
-**SP-703** renderer parity with Figma  
-**SP-704** generation provider interface  
-**SP-705** mock fixture  
-**SP-706** 正式 Prompt/Model（BLOCKED by REPORT-01/02）
-
-验收：即使 AI 未最终确认，前后端结构已可接入。
-
-## EPIC SP-8 — Drawer / Settings
-
-**SP-801** Soulmate Sketch menu item  
-**SP-802** status-aware destination  
-**SP-803** subscription details  
-**SP-804** cancel action  
-**SP-805** paid-through access display
-
-Drawer routing：
-
-```text
-无成功付款           → /soulmate
-已付款、Sketch 未解锁 → /soulmate/result
-已解锁但未完成         → /soulmate/result 或 /soulmate/sketch
-Sketch completed      → /soulmate/sketch
-```
-
-## EPIC SP-9 — Analytics / Ops
-
-**SP-901** Funnel events  
-**SP-902** generation metrics  
-**SP-903** payment/webhook metrics  
-**SP-904** error alert  
-**SP-905** admin support lookup by session/email/subscription id
-
-## EPIC SP-10 — QA / Release
-
-**SP-1001** mobile browser matrix  
-**SP-1002** PayPal Sandbox full test  
-**SP-1003** webhook replay/out-of-order  
-**SP-1004** concurrency test  
-**SP-1005** security/IDOR test  
-**SP-1006** production smoke test
-
 ---
 
-# 26. Recommended Implementation Order
-
-```text
-1. SP-0 Foundation
-2. SP-1 UI fixture implementation
-3. SP-2 Quiz backend
-4. SP-3 Email
-5. SP-4 PayPal
-6. SP-5 Result
-7. SP-6 Sketch
-8. SP-7 Report scaffold
-9. SP-8 Account integration
-10. SP-9 Analytics
-11. SP-10 QA
-```
-
-关键里程碑：
-
-```text
-M1: Landing → Quiz → Email 可完整跑通
-M2: Sandbox 可真实完成月订阅首月优惠支付
-M3: Result 12h/24h 状态机完整
-M4: Sketch 真实 AI 生成 + 持久化
-M5: Report renderer + generator 接口完成
-M6: Production-ready
-```
-
----
-
-# 27. 执行约束
-
-交给Agents时，建议把下面内容作为任务总约束：
-
-```text
-1. 先扫描现有仓库技术栈、路由、用户系统、支付系统、数据库 migration 风格、
-   UI component library 和 analytics 封装；优先复用现有能力。
-2. 不因本规格示例而强行引入 React/Tailwind/FastAPI/Prisma 等新技术。
-3. Figma 代码只作为视觉参考，不直接复制 MCP 生成的 React/Tailwind。
-4. 每个 Epic 单独提交，migration/API/types/tests 同步完成。
-5. 不硬编码 PayPal price、plan id、OpenAI key。
-6. 所有支付与生成操作做 idempotency。
-7. 不把客户端状态当成 payment/unlock 的 authority。
-8. 不自行填补 REPORT-01/02、COPY-02/03、AGE-01 等 TBD。
-9. 不上线 PRD 标记为“假评价”的 testimonial。
-10. 每个 Epic 完成时更新本规格中的 checklist 或项目进度文件。
-```
-
----
-
-# 28. 上线前必须由产品确认的 TBD
-
-| ID | 问题 | 阻塞范围 |
-|---|---|---|
-| `PAY-01` | 首月优惠具体金额 | PayPal Production |
-| `PAY-02` | 重新订阅是否再次享受首月优惠 | Eligibility / Standard Plan |
-| `AGE-01` | DOB 是否有年龄限制 | Quiz / Legal |
-| `COPY-02` | Transition-2 非 Intelligence 的动态文案 | UI |
-| `COPY-03` | Transition-4 是否有动态规则 | UI |
-| `REPORT-01` | Report 由什么模型/规则生成 | AI Report |
-| `REPORT-02` | Report Prompt 与输出内容规范 | AI Report |
-| `PROMPT-01` | Q7 personality quality 作为 `features` 是否继续 | Sketch quality |
-| `DOMAIN-01` | canonical production domain | Deploy |
-| `LEGAL-01` | testimonial / 统计数字最终真实素材 | Subscription/Landing |
-
-这些 TBD 不阻塞 Quiz、Email、Sandbox PayPal、Result 状态机与 Sketch 基础架构的开发；只在对应上线节点前必须关闭。
-
----
-
-# 29. External Technical References
+# 25. External Technical References
 
 ### PayPal
 
@@ -2533,7 +2363,9 @@ M6: Production-ready
 
 ---
 
-# 30. Definition of Done
+---
+
+# 26. Definition of Done
 
 Soulmate Path V1 可以被定义为完成，当且仅当：
 
@@ -2551,7 +2383,11 @@ Soulmate Path V1 可以被定义为完成，当且仅当：
 - [ ] Analytics 能还原 Landing → Payment → Sketch funnel。
 - [ ] 所有 P0/P1 QA case 通过。
 - [ ] Production 不包含虚假 testimonial 或无依据统计数字。
+- [ ] 所有 DONE Task 均有 `docs/handoffs/<TASK-ID>.md`。
+- [ ] M1–M6（适用范围）均有对应 Review Artifact，最终生产 Gate 为 PASS。
+- [ ] `PROJECT-STATE.md` 与实际仓库/发布状态一致。
+- [ ] 所有生产阻塞 TBD 已在 `DECISIONS.md` 关闭或明确批准为非阻塞。
 
 ---
 
-**End of `Soulmate-Path-DEV-SPEC-v1`**
+**End of `Soulmate-Path-DEV-SPEC-v1.2`**
