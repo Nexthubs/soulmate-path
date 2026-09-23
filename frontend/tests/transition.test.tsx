@@ -7,6 +7,7 @@ import {
   InterstitialModal,
   WarningModal,
   getTransition2Copy,
+  getTransition3Copy,
   TRANSITION_2_CONFIRMED_COPY,
   TRANSITION_2_FALLBACK_COPY,
   TRANSITION_4_STATIC_COPY,
@@ -251,14 +252,34 @@ describe("SP-104: Transition Shared Layout + Interstitial Shells", () => {
     });
 
     it("COPY-02: falls back explicitly without guessing unapproved copy for other options", () => {
-      // Unmapped qualities should fall back to confirmed fallback rather than inventing copy
+      // Unmapped qualities should fall back to neutral placeholder copy per audit fix H-5
       const copyKindness = getTransition2Copy("kindness");
       const copyEmpty = getTransition2Copy(null);
 
-      expect(copyKindness).toBe(TRANSITION_2_FALLBACK_COPY);
-      expect(copyEmpty).toBe(TRANSITION_2_FALLBACK_COPY);
+      expect(TRANSITION_2_FALLBACK_COPY).toBe("Your answer will be used to personalize this step.");
+      expect(copyKindness).toBe("Your answer will be used to personalize this step.");
+      expect(copyEmpty).toBe("Your answer will be used to personalize this step.");
       // Ensure no invented keys exist in confirmed copy
       expect(Object.keys(TRANSITION_2_CONFIRMED_COPY)).toEqual(["intelligence"]);
+    });
+
+    it("Transition-3: dynamically derives copy from zodiac and decision style (DEV-SPEC §5.5)", () => {
+      const heartResult = getTransition3Copy({ zodiacLabel: "Leo Sun", decisionStyle: "heart" });
+      expect(heartResult.zodiacLabel).toBe("Leo Sun");
+      expect(heartResult.decisionCopy).toBe("people make decisions using their heart.");
+      expect(heartResult.subtitle).toContain("Leo Sun");
+      expect(heartResult.subtitle).toContain("using their heart");
+
+      const headResult = getTransition3Copy({ zodiacLabel: "Scorpio Sun", decisionStyle: "head" });
+      expect(headResult.decisionCopy).toBe("people make decisions using their head.");
+
+      const bothResult = getTransition3Copy({ zodiacLabel: "Virgo Sun", decisionStyle: "both" });
+      expect(bothResult.decisionCopy).toBe("people make decisions using their heart and head.");
+
+      // Default fallback
+      const defaultResult = getTransition3Copy(null);
+      expect(defaultResult.zodiacLabel).toBe("Your Zodiac");
+      expect(defaultResult.decisionCopy).toBe("people make decisions using their heart and head.");
     });
 
     it("COPY-03: static Figma text is preserved and not invented", () => {

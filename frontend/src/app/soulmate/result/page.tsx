@@ -6,12 +6,24 @@ import { SoulmateResultView } from "@/soulmate/components/result";
 
 function ResultContent() {
   const searchParams = useSearchParams();
-  const emailParam = searchParams.get("email") || "weijialin0827@gmail.com";
+  const [email, setEmail] = React.useState<string>(
+    searchParams.get("email") || "weijialin0827@gmail.com"
+  );
+
+  React.useEffect(() => {
+    if (typeof window !== "undefined") {
+      const stored = sessionStorage.getItem("soulmate_user_email");
+      if (stored) {
+        setEmail(stored);
+      }
+    }
+  }, []);
+
   const showToolbar = searchParams.get("fixture") === "true" || process.env.NODE_ENV !== "production";
 
   return (
     <SoulmateResultView
-      userEmail={emailParam}
+      userEmail={email}
       showFixtureToolbar={showToolbar}
     />
   );

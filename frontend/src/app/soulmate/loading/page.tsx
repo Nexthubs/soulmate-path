@@ -1,16 +1,17 @@
 "use client";
 
-import React, { Suspense, useState } from "react";
+import React, { useState, Suspense } from "react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
-import { TransitionShell } from "@/soulmate/components/transition/TransitionShell";
-import { Transition5Progress } from "@/soulmate/components/transition/Transition5Progress";
 import {
+  TransitionShell,
+  Transition5Progress,
   InterstitialModal,
   InterstitialType,
-} from "@/soulmate/components/transition/InterstitialModal";
+} from "@/soulmate/components/transition";
 import {
   getTransition2Copy,
+  getTransition3Copy,
   TRANSITION_4_STATIC_COPY,
 } from "@/soulmate/components/transition/copy";
 
@@ -22,11 +23,25 @@ function LoadingContent() {
   const stepParam = parseInt(searchParams.get("step") || "0", 10);
   const step = isNaN(stepParam) || stepParam < 0 || stepParam > 5 ? 0 : stepParam;
 
+  // Marketing Claims Compliance Gate (DEV-SPEC §21, LEGAL-01)
+  const shouldShowMarketingClaims =
+    searchParams.get("claims") === "true" ||
+    (process.env.NEXT_PUBLIC_ENABLE_MARKETING_CLAIMS === "true" &&
+      process.env.NODE_ENV !== "production");
+
   // Dynamic copy injection parameters
   const qualityParam = searchParams.get("quality");
   const transition2Subtitle = getTransition2Copy(qualityParam);
   const customTitle4 = searchParams.get("title");
   const customSubtitle4 = searchParams.get("subtitle");
+
+  // Transition-3 Zodiac & Decision Style (DEV-SPEC §5.5)
+  const zodiacParam = searchParams.get("zodiac") || "Virgo Sun";
+  const decisionParam = searchParams.get("decision") || "both";
+  const transition3Data = getTransition3Copy({
+    zodiacLabel: zodiacParam,
+    decisionStyle: decisionParam,
+  });
 
   // State for sequential Transition-5 popups
   const [activePopup, setActivePopup] = useState<InterstitialType | null>(null);
@@ -76,42 +91,72 @@ function LoadingContent() {
 
   return (
     <>
-      {/* Transition-0 (Figma 102:245) */}
+      {/* Transition-0 (Figma 102:245; LEGAL-01 Compliance Gate) */}
       {step === 0 && (
         <TransitionShell
           step={0}
           title={
-            <span>
-              <span className="text-[#6b38c2]">3 Million+ people</span> have seen their Soulmate with Stella
-            </span>
+            shouldShowMarketingClaims ? (
+              <span>
+                <span className="text-[#6b38c2]">3 Million+ people</span> have seen their Soulmate with Stella
+              </span>
+            ) : (
+              <span>
+                <span className="text-[#6b38c2]">Astrological Guidance</span> to Meet Your Soulmate
+              </span>
+            )
           }
           onContinue={handleContinue}
         >
-          <div className="space-y-4 my-2 text-left">
-            <div className="p-5 rounded-2xl bg-white/80 shadow-xs border border-neutral-100 space-y-2">
-              <div className="flex justify-between items-center text-xs">
-                <span className="font-semibold text-neutral-900">Vickibeasly</span>
-                <span className="text-amber-500">★★★★★</span>
+          {shouldShowMarketingClaims ? (
+            <div className="space-y-4 my-2 text-left">
+              <div className="p-5 rounded-2xl bg-white/80 shadow-xs border border-neutral-100 space-y-2">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="font-semibold text-neutral-900">Vickibeasly</span>
+                  <span className="text-amber-500">★★★★★</span>
+                </div>
+                <p className="text-xs font-semibold text-neutral-800">
+                  &ldquo;I couldn&apos;t believe my eyes!&rdquo;
+                </p>
+                <p className="text-xs text-neutral-600 leading-relaxed">
+                  My soulmate sketch tremendously resembles the man I met three months ago and almost instantly fell in love with!
+                </p>
               </div>
-              <p className="text-xs font-semibold text-neutral-800">
-                &ldquo;I couldn&apos;t believe my eyes!&rdquo;
-              </p>
-              <p className="text-xs text-neutral-600 leading-relaxed">
-                My soulmate sketch tremendously resembles the man I met three months ago and almost instantly fell in love with!
-              </p>
-            </div>
 
-            <div className="space-y-2.5 pt-2">
-              <div className="flex items-center gap-3 text-xs text-neutral-700">
-                <span className="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-xs">👥</span>
-                <span><strong>900+ users</strong> have seen their soulmate today.</span>
-              </div>
-              <div className="flex items-center gap-3 text-xs text-neutral-700">
-                <span className="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-xs">✨</span>
-                <span>Trusted by over <strong>3 million</strong> people.</span>
+              <div className="space-y-2.5 pt-2">
+                <div className="flex items-center gap-3 text-xs text-neutral-700">
+                  <span className="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-xs">👥</span>
+                  <span><strong>900+ users</strong> have seen their soulmate today.</span>
+                </div>
+                <div className="flex items-center gap-3 text-xs text-neutral-700">
+                  <span className="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-xs">✨</span>
+                  <span>Trusted by over <strong>3 million</strong> people.</span>
+                </div>
               </div>
             </div>
-          </div>
+          ) : (
+            <div className="space-y-4 my-2 text-left">
+              <div className="p-5 rounded-2xl bg-white/80 shadow-xs border border-neutral-100 space-y-2">
+                <h3 className="text-xs font-semibold text-neutral-900">
+                  Intuitive Astrological Matching
+                </h3>
+                <p className="text-xs text-neutral-600 leading-relaxed">
+                  Stella combines personalized astrology, intuitive portrait artistry, and behavioral insights to reveal the deep resonance of your true soulmate.
+                </p>
+              </div>
+
+              <div className="space-y-2.5 pt-2">
+                <div className="flex items-center gap-3 text-xs text-neutral-700">
+                  <span className="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-xs">✨</span>
+                  <span>Hand-crafted pencil portrait &amp; comprehensive personality reading.</span>
+                </div>
+                <div className="flex items-center gap-3 text-xs text-neutral-700">
+                  <span className="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-xs">🔒</span>
+                  <span>Private, confidential, and tailored to your energy.</span>
+                </div>
+              </div>
+            </div>
+          )}
         </TransitionShell>
       )}
 
@@ -160,15 +205,16 @@ function LoadingContent() {
         />
       )}
 
-      {/* Transition-3 (Figma 102:345 & Zodiac) */}
+      {/* Transition-3 (Figma 102:345 & DEV-SPEC §5.5) */}
       {step === 3 && (
         <TransitionShell
           step={3}
           title="Good to know!"
           subtitle={
             <span>
-              Based on our data, only the top 22% of{" "}
-              <strong className="text-[#6b38c2]">Virgo Sun</strong> people make decisions using their heart and head.
+              Based on intuitive guidance, many{" "}
+              <strong className="text-[#6b38c2]">{transition3Data.zodiacLabel}</strong>{" "}
+              {transition3Data.decisionCopy}
             </span>
           }
           illustration={
@@ -193,10 +239,10 @@ function LoadingContent() {
           subtitle={customSubtitle4 || TRANSITION_4_STATIC_COPY.subtitle}
           illustration={
             <Image
-              src="/images/transitions/heart-support.png"
-              alt="Heart support comforting hands"
-              width={140}
-              height={140}
+              src="/images/transitions/heart-hands.png"
+              alt="Hands holding heart icon"
+              width={128}
+              height={128}
               className="w-28 h-28 object-contain my-3"
               priority
             />
@@ -205,14 +251,19 @@ function LoadingContent() {
         />
       )}
 
-      {/* Transition-5 (Figma 102:386 + 3 Popups) */}
+      {/* Transition-5 (Figma 102:386 & Experiential Progress) */}
       {step === 5 && (
-        <TransitionShell step={5} onContinue={handleContinue} continueLabel="Continue">
-          <Transition5Progress onAnimationComplete={() => {}} />
+        <TransitionShell
+          step={5}
+          title="Connecting to the universe"
+          continueLabel="See Results"
+          onContinue={handleContinue}
+        >
+          <Transition5Progress />
         </TransitionShell>
       )}
 
-      {/* Active Interstitial Modal */}
+      {/* Sequential Interstitial Modals (Figma 102:425, 102:466, 102:445) */}
       {activePopup && (
         <InterstitialModal
           type={activePopup}
@@ -226,13 +277,7 @@ function LoadingContent() {
 
 export default function SoulmateLoadingPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="flex items-center justify-center min-h-screen text-neutral-400">
-          Loading...
-        </div>
-      }
-    >
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
       <LoadingContent />
     </Suspense>
   );

@@ -3,6 +3,7 @@
 import React, { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { EmailCaptureView } from "@/soulmate/components/email";
+import { SOULMATE_ROUTES } from "@/soulmate/domain";
 
 function EmailPageContent() {
   const router = useRouter();
@@ -20,12 +21,21 @@ function EmailPageContent() {
   const partnerEthnicity = searchParams.get("ethnicity") || "Latino";
 
   const handleSubmit = async (email: string) => {
-    // In production, persists email to session via POST /api/soulmate/sessions/:sessionId/email
-    // Navigate to /soulmate/subscribe upon successful email capture (DEV-SPEC §8.2)
+    // DEV-SPEC §20 PII Boundary: Email is PII and must never be exposed in URL query parameters.
+    // In Wave 1 fixture mode, store in client session storage.
+    // In Wave 2 (SP-201/SP-301), this will call POST /api/soulmate/sessions/:sessionId/email.
+    if (typeof window !== "undefined") {
+      try {
+        sessionStorage.setItem("soulmate_user_email", email);
+      } catch {
+        // Storage restricted
+      }
+    }
+
     router.push(
-      `/soulmate/subscribe?preferred_partner_gender=${encodeURIComponent(
+      `${SOULMATE_ROUTES.RESULT}?preferred_partner_gender=${encodeURIComponent(
         preferredPartnerGender
-      )}&email=${encodeURIComponent(email)}`
+      )}`
     );
   };
 

@@ -31,6 +31,12 @@ export interface SoulmateResultViewProps {
   onAction?: (type: ArtifactType) => void;
 
   /**
+   * Optional accelerated checkout offer price (e.g. from server offer config).
+   * Per PAY-01, defaults to undefined (no hardcoded production price).
+   */
+  acceleratedPrice?: string;
+
+  /**
    * Optional custom container class name.
    */
   className?: string;
@@ -65,6 +71,7 @@ export function SoulmateResultView({
   userEmail = "weijialin0827@gmail.com",
   showFixtureToolbar = false,
   onAction,
+  acceleratedPrice,
   className = "",
 }: SoulmateResultViewProps) {
   const router = useRouter();
@@ -250,7 +257,7 @@ export function SoulmateResultView({
           onRetry={handleRetry}
         />
 
-        {/* Accelerated Early-Access Teaser Banner (Figma 102:1201) */}
+        {/* Accelerated Early-Access Teaser Banner (Figma 102:1201; PAY-01 Compliance Gate) */}
         <section
           data-testid="accelerated-teaser"
           className="w-full pt-4 border-t border-neutral-100 flex flex-col items-center text-center space-y-3"
@@ -263,17 +270,32 @@ export function SoulmateResultView({
             </p>
           </div>
 
-          <div className="text-xs font-semibold text-neutral-600">
-            Proceed to Payment: <strong className="text-neutral-900 text-sm">$3.99</strong>
-          </div>
+          {acceleratedPrice ? (
+            <div data-testid="accelerated-pricing-line" className="text-xs font-semibold text-neutral-600">
+              Proceed to Payment: <strong className="text-neutral-900 text-sm">{acceleratedPrice}</strong>
+            </div>
+          ) : (
+            <div data-testid="accelerated-pricing-line" className="text-xs font-medium text-neutral-500">
+              Accelerated Access Coming Soon
+            </div>
+          )}
 
           <button
             type="button"
             data-testid="accelerated-cta-button"
-            onClick={() => handleAction("sketch")}
-            className="w-full h-[52px] rounded-2xl bg-gradient-to-r from-[#ff6b6b] to-[#ff5252] hover:from-[#ff5b5b] hover:to-[#ff4242] active:scale-[0.99] text-white font-sans font-bold text-[16px] shadow-lg shadow-rose-200 transition-all flex items-center justify-center gap-2 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
+            onClick={() => {
+              if (acceleratedPrice) {
+                handleAction("sketch");
+              }
+            }}
+            disabled={!acceleratedPrice}
+            className={`w-full h-[52px] rounded-2xl font-sans font-bold text-[16px] transition-all flex items-center justify-center gap-2 ${
+              acceleratedPrice
+                ? "bg-gradient-to-r from-[#ff6b6b] to-[#ff5252] hover:from-[#ff5b5b] hover:to-[#ff4242] active:scale-[0.99] text-white shadow-lg shadow-rose-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
+                : "bg-neutral-100 text-neutral-400 border border-neutral-200 cursor-not-allowed shadow-none"
+            }`}
           >
-            <span>Accelerated</span>
+            <span>{acceleratedPrice ? "Accelerated" : "Accelerated (Coming Soon)"}</span>
             <span aria-hidden="true">✦</span>
           </button>
         </section>

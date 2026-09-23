@@ -281,13 +281,24 @@ describe("SP-106: Result Cards Fixture UI (DEV-SPEC §2, §10; DECISIONS TIME-01
       expect(html).toContain("data-testid=\"result-card-sketch\"");
       expect(html).toContain("data-testid=\"result-card-report\"");
 
-      // Verify accelerated teaser matching Figma 102:1201
+      // Verify accelerated teaser matching Figma 102:1201 (PAY-01: no hardcoded $3.99 by default)
       expect(html).toContain("data-testid=\"accelerated-teaser\"");
       expect(html).toContain("Just 5 minutes");
       expect(html).toContain("Get an early look at");
-      expect(html).toContain("Proceed to Payment: ");
-      expect(html).toContain("$3.99");
-      expect(html).toContain("Accelerated");
+      expect(html).toContain("Accelerated Access Coming Soon");
+      expect(html).not.toContain("$3.99");
+      expect(html).toContain("disabled=\"\"");
+
+      // When acceleratedPrice is supplied via prop (e.g. from offer API)
+      const htmlWithOffer = renderToStaticMarkup(
+        <SoulmateResultView
+          initialData={aggregateData}
+          acceleratedPrice="$3.99"
+        />
+      );
+      expect(htmlWithOffer).toContain("Proceed to Payment: ");
+      expect(htmlWithOffer).toContain("$3.99");
+      expect(htmlWithOffer).not.toContain("disabled=\"\"");
     });
   });
 
