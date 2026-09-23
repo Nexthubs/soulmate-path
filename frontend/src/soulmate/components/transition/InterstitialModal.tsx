@@ -4,6 +4,24 @@ import React, { useEffect, useRef } from "react";
 
 export type InterstitialType = "spiritual" | "psychic_artistry" | "warning";
 
+/**
+ * Sequential Transition-5 popup order per DEV-SPEC §5.7 & Figma:
+ * spiritual (Popup-1, 102:425) -> psychic_artistry (Popup-2, 102:466) -> warning (Popup-3, 102:445) -> null (complete)
+ */
+export const INTERSTITIAL_POPUP_SEQUENCE: readonly InterstitialType[] = [
+  "spiritual",
+  "psychic_artistry",
+  "warning",
+] as const;
+
+export function getNextInterstitialPopup(current: InterstitialType): InterstitialType | null {
+  const idx = INTERSTITIAL_POPUP_SEQUENCE.indexOf(current);
+  if (idx >= 0 && idx < INTERSTITIAL_POPUP_SEQUENCE.length - 1) {
+    return INTERSTITIAL_POPUP_SEQUENCE[idx + 1];
+  }
+  return null;
+}
+
 export interface InterstitialModalProps {
   /**
    * Modal variant:

@@ -8,6 +8,7 @@ import {
   Transition5Progress,
   InterstitialModal,
   InterstitialType,
+  getNextInterstitialPopup,
 } from "@/soulmate/components/transition";
 import {
   getTransition2Copy,
@@ -78,12 +79,13 @@ function LoadingContent() {
   };
 
   const handleModalAnswer = (_answer: boolean) => {
-    if (activePopup === "spiritual") {
-      setActivePopup("psychic_artistry");
-    } else if (activePopup === "psychic_artistry") {
-      setActivePopup("warning");
+    if (!activePopup) return;
+    const nextPopup = getNextInterstitialPopup(activePopup);
+    if (nextPopup) {
+      setActivePopup(nextPopup);
+    } else {
       setActivePopup(null);
-      // All popups completed -> proceed to Email Capture, forwarding quiz parameters (M-1)
+      // All popups completed (spiritual -> psychic_artistry -> warning) -> proceed to Email Capture, forwarding quiz parameters (M-1)
       const params = new URLSearchParams();
       ["preferred_partner_gender", "partner_gender", "user_gender", "age_range", "ethnicity"].forEach((key) => {
         const val = searchParams.get(key);

@@ -6,6 +6,8 @@ import {
   Transition5Progress,
   InterstitialModal,
   WarningModal,
+  INTERSTITIAL_POPUP_SEQUENCE,
+  getNextInterstitialPopup,
   getTransition2Copy,
   getTransition3Copy,
   TRANSITION_2_CONFIRMED_COPY,
@@ -233,6 +235,15 @@ describe("SP-104: Transition Shared Layout + Interstitial Shells", () => {
 
       expect(html).toContain("ATTENTION");
       expect(html).toContain("Custom warning notice text");
+    });
+
+    it("enforces sequential Transition-5 popup order (spiritual -> psychic_artistry -> warning -> null)", () => {
+      // DEV-SPEC §5.7 & H-NEW-1: Popups must be sequential without skipping warning
+      expect(INTERSTITIAL_POPUP_SEQUENCE).toEqual(["spiritual", "psychic_artistry", "warning"]);
+
+      expect(getNextInterstitialPopup("spiritual")).toBe("psychic_artistry");
+      expect(getNextInterstitialPopup("psychic_artistry")).toBe("warning");
+      expect(getNextInterstitialPopup("warning")).toBeNull();
     });
   });
 
