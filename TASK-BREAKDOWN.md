@@ -289,7 +289,7 @@ Create shared shell for:
 
 **Priority:** P1  
 **Depends:** SP-102  
-**Status:** TODO
+**Status:** DONE
 **Context refs:** DEV-SPEC §2.1, §4.2–4.3 | Decisions: — | Dependency handoffs: SP-102
 
 

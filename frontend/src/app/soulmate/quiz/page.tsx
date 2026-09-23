@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { QuizShell, QuizNextButton } from "@/soulmate/components/quiz/QuizShell";
+import { OptionCard } from "@/soulmate/components/quiz/OptionCard";
 import quizData from "@/soulmate/quiz/soulmate-quiz-v1.json";
 
 type PreviewQuestionType = "single" | "date" | "multi";
@@ -84,37 +85,18 @@ export default function SoulmateQuizPage() {
           isLoading={isLoading}
           error={error ? { message: error, onRetry: () => setError(null) } : null}
         >
-          {q02.options?.map((opt) => {
-            const isSelected = singleValue === opt.code;
-            return (
-              <button
-                key={opt.code}
-                type="button"
-                onClick={() => {
-                  setSingleValue(opt.code);
-                  setTimeout(() => handleNext(), 200);
-                }}
-                className={`w-full p-5 rounded-2xl flex items-center justify-between text-left transition-all ${
-                  isSelected
-                    ? "bg-white/80 border-2 border-[#5c3c4f] shadow-sm"
-                    : "bg-white/60 hover:bg-white/90 border border-transparent shadow-xs"
-                }`}
-              >
-                <span className="font-medium text-[15px] text-neutral-900">{opt.label}</span>
-                <span
-                  className={`w-6 h-6 rounded-full flex items-center justify-center border ${
-                    isSelected ? "bg-[#5c3c4f] border-[#5c3c4f]" : "border-neutral-300"
-                  }`}
-                >
-                  {isSelected && (
-                    <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                    </svg>
-                  )}
-                </span>
-              </button>
-            );
-          })}
+          {q02.options?.map((opt) => (
+            <OptionCard
+              key={opt.code}
+              label={opt.label}
+              selected={singleValue === opt.code}
+              selectionType="single"
+              onClick={() => {
+                setSingleValue(opt.code);
+                setTimeout(() => handleNext(), 200);
+              }}
+            />
+          ))}
         </QuizShell>
       )}
 
@@ -165,38 +147,21 @@ export default function SoulmateQuizPage() {
             />
           }
         >
-          {q18.options?.map((opt) => {
-            const isSelected = multiValues.includes(opt.code);
-            return (
-              <button
-                key={opt.code}
-                type="button"
-                onClick={() => {
-                  setMultiValues((prev) =>
-                    isSelected ? prev.filter((c) => c !== opt.code) : [...prev, opt.code]
-                  );
-                }}
-                className={`w-full p-5 rounded-2xl flex items-center justify-between text-left transition-all ${
-                  isSelected
-                    ? "bg-white/80 border-2 border-[#5c3c4f] shadow-sm"
-                    : "bg-white/60 hover:bg-white/90 border border-transparent shadow-xs"
-                }`}
-              >
-                <span className="font-medium text-[15px] text-neutral-900">{opt.label}</span>
-                <span
-                  className={`w-6 h-6 rounded-full flex items-center justify-center border ${
-                    isSelected ? "bg-[#5c3c4f] border-[#5c3c4f]" : "border-neutral-300"
-                  }`}
-                >
-                  {isSelected && (
-                    <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                    </svg>
-                  )}
-                </span>
-              </button>
-            );
-          })}
+          {q18.options?.map((opt) => (
+            <OptionCard
+              key={opt.code}
+              label={opt.label}
+              selected={multiValues.includes(opt.code)}
+              selectionType="multi"
+              onClick={() => {
+                setMultiValues((prev) =>
+                  prev.includes(opt.code)
+                    ? prev.filter((c) => c !== opt.code)
+                    : [...prev, opt.code]
+                );
+              }}
+            />
+          ))}
         </QuizShell>
       )}
     </div>

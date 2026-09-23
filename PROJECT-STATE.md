@@ -18,6 +18,7 @@ Environment & secrets baseline (`SP-004`) completed and evidenced in `docs/hando
 Error codes & request correlation (`SP-005`) completed and evidenced in `docs/handoffs/SP-005.md`.
 Landing page (`SP-101`) completed and evidenced in `docs/handoffs/SP-101.md`.
 Shared Quiz layout (`SP-102`) completed and evidenced in `docs/handoffs/SP-102.md`.
+OptionCard variants (`SP-103`) completed and evidenced in `docs/handoffs/SP-103.md`.
 
 ## 2. Milestone status
 
@@ -32,7 +33,7 @@ Shared Quiz layout (`SP-102`) completed and evidenced in `docs/handoffs/SP-102.m
 
 ## 3. Active / blocked work
 
-Active tasks: SP-103 (Single choice question), SP-104 (Multi choice question).
+Active tasks: SP-104 (Transition shared layout + interstitial shells), SP-201 (Quiz engine UI / step framework).
 
 Blocking decision IDs:
 
@@ -71,9 +72,8 @@ Report production provider: disabled / decision pending
 ## 6. Next safe tasks
 
 ```text
-1. SP-103 — Single choice question
-2. SP-104 — Multi choice question
-3. SP-201 — quiz engine UI / step framework
+1. SP-104 — Transition shared layout + interstitial shells
+2. SP-201 — quiz engine UI / step framework
 ```
 
 Do not fan out broad implementation until SP-001 documents the repository's real stack and reusable abstractions.
