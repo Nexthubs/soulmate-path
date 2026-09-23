@@ -74,4 +74,21 @@ describe("Canonical Quiz Configuration (soulmate-quiz-v1)", () => {
       }
     });
   });
+
+  it("maintains exact byte-level and semantic parity with root canonical config (Medium-1)", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const canonicalPath = path.resolve(__dirname, "../../config/quiz/soulmate-quiz-v1.json");
+    const frontendPath = path.resolve(__dirname, "../src/soulmate/quiz/soulmate-quiz-v1.json");
+
+    expect(fs.existsSync(canonicalPath)).toBe(true);
+    expect(fs.existsSync(frontendPath)).toBe(true);
+
+    const canonicalRaw = fs.readFileSync(canonicalPath, "utf-8").trim();
+    const frontendRaw = fs.readFileSync(frontendPath, "utf-8").trim();
+
+    expect(frontendRaw).toBe(canonicalRaw);
+    expect(JSON.parse(frontendRaw)).toEqual(JSON.parse(canonicalRaw));
+  });
 });
+

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models.quiz import SoulmateQuizVersion
 from app.db.session import SessionLocal
-from app.quiz.loader import load_quiz_config
+from app.quiz.loader import invalidate_quiz_config_cache, load_quiz_config
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -19,7 +19,7 @@ def seed_quiz_version(
 ) -> SoulmateQuizVersion:
     """
     Validate and seed the canonical quiz version into soulmate_quiz_versions table.
-    Ensures database runtime has the validated immutable JSON config.
+    Ensures database runtime has the validated immutable JSON config and clears memory cache.
     """
     config = load_quiz_config(config_path)
     config_dict = config.model_dump(mode="json")
@@ -43,6 +43,7 @@ def seed_quiz_version(
 
     db.commit()
     db.refresh(record)
+    invalidate_quiz_config_cache()
     return record
 
 

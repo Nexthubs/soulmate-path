@@ -1,11 +1,12 @@
 import copy
+from pathlib import Path
 import uuid
 import pytest
 from app.db.models.quiz import SoulmateQuizVersion
 from app.db.models.session import SoulmateSession
 from app.db.session import SessionLocal
 from app.quiz.constants import CANONICAL_QUIZ_VERSION
-from app.quiz.loader import load_quiz_config, get_cached_quiz_config
+from app.quiz.loader import get_cached_quiz_config, invalidate_quiz_config_cache, load_quiz_config
 from app.quiz.schema import QuestionType, QuizConfig, QuizOption, QuizQuestion
 from app.quiz.seed import seed_quiz_version
 from app.quiz.validator import QuizValidationError, validate_quiz_config
@@ -227,3 +228,43 @@ def test_session_creation_pins_canonical_quiz_version(db_session):
     db_session.commit()
     db_session.refresh(sess)
     assert sess.quiz_version == CANONICAL_QUIZ_VERSION
+
+
+def test_canonical_and_frontend_quiz_json_exact_parity():
+    """Audit Medium-1: Ensure root canonical config and frontend bundled mirror remain byte-for-byte identical."""
+    root_dir = Path(__file__).resolve().parents[2]
+    canonical_path = root_dir / "config" / "quiz" / "soulmate-quiz-v1.json"
+    frontend_path = root_dir / "frontend" / "src" / "soulmate" / "quiz" / "soulmate-quiz-v1.json"
+
+    assert canonical_path.exists(), f"Canonical quiz file missing at {canonical_path}"
+    assert frontend_path.exists(), f"Frontend quiz mirror missing at {frontend_path}"
+
+    with open(canonical_path, "r", encoding="utf-8") as f1, open(frontend_path, "r", encoding="utf-8") as f2:
+        canonical_text = f1.read().strip()
+        frontend_text = f2.read().strip()
+
+    assert canonical_text == frontend_text, "Frontend quiz JSON has drifted from root canonical quiz JSON!"
+
+
+def test_quiz_config_cache_invalidation():
+    """Audit Medium-2: Verify get_cached_quiz_config caches and invalidate_quiz_config_cache clears it."""
+    # Ensure cache is fresh
+    invalidate_quiz_config_cache()
+    assert get_cached_quiz_config.cache_info().currsize == 0
+
+    c1 = get_cached_quiz_config()
+    assert get_cached_quiz_config.cache_info().currsize == 1
+
+    c2 = get_cached_quiz_config()
+    assert c1 is c2
+    assert get_cached_quiz_config.cache_info().hits == 1
+
+    # Invalidate cache
+    invalidate_quiz_config_cache()
+    assert get_cached_quiz_config.cache_info().currsize == 0
+    assert get_cached_quiz_config.cache_info().hits == 0
+
+    c3 = get_cached_quiz_config()
+    assert c3 == c1
+    assert get_cached_quiz_config.cache_info().currsize == 1
+

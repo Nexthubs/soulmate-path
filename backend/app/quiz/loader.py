@@ -33,3 +33,9 @@ def load_quiz_config(path: Optional[Path] = None) -> QuizConfig:
 def get_cached_quiz_config() -> QuizConfig:
     """Return in-memory cached copy of validated canonical quiz config."""
     return load_quiz_config()
+
+
+def invalidate_quiz_config_cache() -> None:
+    """Clear in-memory cached copy of the quiz configuration."""
+    get_cached_quiz_config.cache_clear()
+

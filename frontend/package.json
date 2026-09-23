@@ -4,6 +4,8 @@
   "private": true,
   "packageManager": "npm@11.19.0",
   "scripts": {
+    "sync:quiz": "node -e \"const fs=require('fs'); fs.copyFileSync('../config/quiz/soulmate-quiz-v1.json', 'src/soulmate/quiz/soulmate-quiz-v1.json'); console.log('Synced quiz config from canonical root.');\"",
+    "prebuild": "npm run sync:quiz",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
