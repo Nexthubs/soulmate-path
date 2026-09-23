@@ -238,7 +238,7 @@ Establish consistent errors before API surface grows.
 
 **Priority:** P1  
 **Depends:** SP-001  
-**Status:** TODO
+**Status:** DONE
 **Context refs:** DEV-SPEC §1–3, §21 | Decisions: LEGAL-01, DOMAIN-01 | Dependency handoffs: SP-001
 
 

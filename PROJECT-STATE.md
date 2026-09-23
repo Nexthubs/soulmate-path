@@ -16,6 +16,7 @@ Database migration foundation (`SP-002`) completed and evidenced in `docs/handof
 Canonical quiz config (`SP-003`) completed and evidenced in `docs/handoffs/SP-003.md`.
 Environment & secrets baseline (`SP-004`) completed and evidenced in `docs/handoffs/SP-004.md`.
 Error codes & request correlation (`SP-005`) completed and evidenced in `docs/handoffs/SP-005.md`.
+Landing page (`SP-101`) completed and evidenced in `docs/handoffs/SP-101.md`.
 
 ## 2. Milestone status
 
@@ -30,7 +31,7 @@ Error codes & request correlation (`SP-005`) completed and evidenced in `docs/ha
 
 ## 3. Active / blocked work
 
-Active tasks: SP-101 (Session / state machine / profile service), SP-201 (Quiz engine UI / step framework).
+Active tasks: SP-102 (Shared Quiz layout), SP-201 (Quiz engine UI / step framework).
 
 Blocking decision IDs:
 
@@ -69,7 +70,7 @@ Report production provider: disabled / decision pending
 ## 6. Next safe tasks
 
 ```text
-1. SP-101 — session / state machine / profile service
+1. SP-102 — Shared Quiz layout
 2. SP-201 — quiz engine UI / step framework
 ```
 
