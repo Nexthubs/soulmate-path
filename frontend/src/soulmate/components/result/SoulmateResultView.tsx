@@ -1,0 +1,283 @@
+"use client";
+
+import React, { useState } from "react";
+import { useRouter } from "next/navigation";
+import { ResultItemCard } from "./ResultItemCard";
+import {
+  ArtifactType,
+  CombinedUIState,
+  ResultAggregateData,
+} from "./types";
+
+export interface SoulmateResultViewProps {
+  /**
+   * Aggregate result data from GET /api/soulmate/result.
+   */
+  initialData?: ResultAggregateData;
+
+  /**
+   * User email to display in top bar.
+   */
+  userEmail?: string;
+
+  /**
+   * Whether to enable developer fixture toggle toolbar. Defaults to false.
+   */
+  showFixtureToolbar?: boolean;
+
+  /**
+   * Action handler override.
+   */
+  onAction?: (type: ArtifactType) => void;
+
+  /**
+   * Optional custom container class name.
+   */
+  className?: string;
+}
+
+// Default fixture matching DEV-SPEC §10.4 and Figma 102:1201
+export const DEFAULT_RESULT_FIXTURE: ResultAggregateData = {
+  server_time: new Date().toISOString(),
+  subscription: {
+    provider: "paypal",
+    provider_status: "ACTIVE",
+    first_payment_at: new Date().toISOString(),
+    next_billing_at: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+  },
+  sketch: {
+    unlock_at: new Date(Date.now() + 11 * 3600 * 1000 + 58 * 60 * 1000 + 4 * 1000).toISOString(),
+    availability: "LOCKED",
+    generation: "NOT_STARTED",
+  },
+  report: {
+    unlock_at: new Date(Date.now() + 11 * 3600 * 1000 + 58 * 60 * 1000 + 4 * 1000).toISOString(),
+    availability: "LOCKED",
+    generation: "NOT_STARTED",
+  },
+};
+
+/**
+ * Full Result Screen Container (Figma Nodes 102:1201 & 102:1332; DEV-SPEC §2, §10).
+ */
+export function SoulmateResultView({
+  initialData = DEFAULT_RESULT_FIXTURE,
+  userEmail = "weijialin0827@gmail.com",
+  showFixtureToolbar = false,
+  onAction,
+  className = "",
+}: SoulmateResultViewProps) {
+  const router = useRouter();
+  const [data, setData] = useState<ResultAggregateData>(initialData);
+
+  const handleAction = (type: ArtifactType) => {
+    if (onAction) {
+      onAction(type);
+      return;
+    }
+    if (type === "sketch") {
+      router.push("/soulmate/sketch");
+    } else {
+      router.push("/soulmate/report");
+    }
+  };
+
+  const handleRetry = (type: ArtifactType) => {
+    // Simulate re-triggering generation
+    setData((prev) => ({
+      ...prev,
+      [type]: {
+        ...prev[type],
+        generation: "PROCESSING",
+        error_message: undefined,
+      },
+    }));
+  };
+
+  // Fixture toggle helper for testing all 5 states
+  const setPresetState = (stateName: CombinedUIState) => {
+    setData((prev) => {
+      switch (stateName) {
+        case "countdown":
+          return {
+            ...prev,
+            sketch: {
+              ...prev.sketch,
+              availability: "LOCKED",
+              generation: "NOT_STARTED",
+              unlock_at: new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
+            },
+            report: {
+              ...prev.report,
+              availability: "LOCKED",
+              generation: "NOT_STARTED",
+              unlock_at: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
+            },
+          };
+        case "ready":
+          return {
+            ...prev,
+            sketch: {
+              ...prev.sketch,
+              availability: "UNLOCKED",
+              generation: "NOT_STARTED",
+            },
+            report: {
+              ...prev.report,
+              availability: "UNLOCKED",
+              generation: "NOT_STARTED",
+            },
+          };
+        case "generating":
+          return {
+            ...prev,
+            sketch: {
+              ...prev.sketch,
+              availability: "UNLOCKED",
+              generation: "PROCESSING",
+            },
+            report: {
+              ...prev.report,
+              availability: "UNLOCKED",
+              generation: "PROCESSING",
+            },
+          };
+        case "completed":
+          return {
+            ...prev,
+            sketch: {
+              ...prev.sketch,
+              availability: "UNLOCKED",
+              generation: "COMPLETED",
+              artifact_url: "/images/email/sketch-female.png",
+            },
+            report: {
+              ...prev.report,
+              availability: "UNLOCKED",
+              generation: "COMPLETED",
+            },
+          };
+        case "failed":
+          return {
+            ...prev,
+            sketch: {
+              ...prev.sketch,
+              availability: "UNLOCKED",
+              generation: "FAILED",
+              error_message: "Network timeout while generating sketch image.",
+            },
+            report: {
+              ...prev.report,
+              availability: "UNLOCKED",
+              generation: "FAILED",
+              error_message: "Failed to compile astrological chart insights.",
+            },
+          };
+      }
+    });
+  };
+
+  return (
+    <div
+      data-testid="soulmate-result-view"
+      className={`min-h-screen w-full max-w-[390px] mx-auto bg-gradient-to-b from-[#fbfaff] via-[#fff5f6] to-[#fff7eb] text-neutral-900 px-4 py-8 flex flex-col items-center justify-between ${className}`}
+    >
+      {/* Dev / QA Fixture State Switcher Toolbar */}
+      {showFixtureToolbar && (
+        <div
+          data-testid="fixture-toolbar"
+          className="w-full mb-4 p-2 bg-neutral-900/90 text-white rounded-xl text-xs space-y-1"
+        >
+          <div className="font-semibold text-neutral-300">Fixture State Preview:</div>
+          <div className="flex flex-wrap gap-1">
+            {(["countdown", "ready", "generating", "completed", "failed"] as CombinedUIState[]).map(
+              (s) => (
+                <button
+                  key={s}
+                  type="button"
+                  data-testid={`fixture-btn-${s}`}
+                  onClick={() => setPresetState(s)}
+                  className="px-2 py-1 rounded bg-neutral-700 hover:bg-neutral-600 capitalize cursor-pointer text-[11px]"
+                >
+                  {s}
+                </button>
+              )
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Top Bar with Brand & User Email */}
+      <header className="w-full flex items-center justify-between pb-6 px-2">
+        <span className="font-serif italic font-bold text-[26px] tracking-tight text-[#2c1e4a]">
+          Hint
+        </span>
+        <span
+          data-testid="user-email-header"
+          className="font-sans text-[13px] text-neutral-500 font-medium truncate max-w-[200px]"
+        >
+          {userEmail}
+        </span>
+      </header>
+
+      {/* Heading Section (Figma 102:1216) */}
+      <div className="w-full text-left px-2 mb-4 flex items-center gap-2">
+        <span className="text-[#a855f7] text-lg" aria-hidden="true">
+          ✦
+        </span>
+        <h1 className="font-sans font-extrabold text-[24px] leading-[32px] text-neutral-900 tracking-tight">
+          Your Soulmate Sketch
+        </h1>
+      </div>
+
+      {/* Main Elevated Container (Figma 102:1201) */}
+      <main className="w-full rounded-[32px] bg-white/95 shadow-xl border border-neutral-100 p-5 space-y-6">
+        {/* Sketch Status Card */}
+        <ResultItemCard
+          type="sketch"
+          state={data.sketch}
+          serverTime={data.server_time}
+          onAction={handleAction}
+          onRetry={handleRetry}
+        />
+
+        {/* Report Status Card (Figma 102:1332) */}
+        <ResultItemCard
+          type="report"
+          state={data.report}
+          serverTime={data.server_time}
+          onAction={handleAction}
+          onRetry={handleRetry}
+        />
+
+        {/* Accelerated Early-Access Teaser Banner (Figma 102:1201) */}
+        <section
+          data-testid="accelerated-teaser"
+          className="w-full pt-4 border-t border-neutral-100 flex flex-col items-center text-center space-y-3"
+        >
+          <div className="space-y-1">
+            <h4 className="font-sans font-bold text-[18px] text-neutral-900">Just 5 minutes</h4>
+            <p className="font-sans font-bold text-[15px] leading-snug text-neutral-800">
+              Get an early look at<br />
+              your portrait &amp; report!
+            </p>
+          </div>
+
+          <div className="text-xs font-semibold text-neutral-600">
+            Proceed to Payment: <strong className="text-neutral-900 text-sm">$3.99</strong>
+          </div>
+
+          <button
+            type="button"
+            data-testid="accelerated-cta-button"
+            onClick={() => handleAction("sketch")}
+            className="w-full h-[52px] rounded-2xl bg-gradient-to-r from-[#ff6b6b] to-[#ff5252] hover:from-[#ff5b5b] hover:to-[#ff4242] active:scale-[0.99] text-white font-sans font-bold text-[16px] shadow-lg shadow-rose-200 transition-all flex items-center justify-center gap-2 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
+          >
+            <span>Accelerated</span>
+            <span aria-hidden="true">✦</span>
+          </button>
+        </section>
+      </main>
+    </div>
+  );
+}
