@@ -109,8 +109,8 @@ Create the minimal Soulmate feature boundary without imposing a new framework or
 
 **Priority:** P0  
 **Depends:** repository discovery  
-**Status:** TODO
-**Context refs:** DEV-SPEC §14, §15, §20 | Decisions: PAY-AUTH-01, TIME-01, ASSET-01 | Dependency handoffs: —
+**Status:** DONE
+**Context refs:** DEV-SPEC §14, §15, §20 | Decisions: PAY-AUTH-01, TIME-01, ASSET-01 | Dependency handoffs: docs/handoffs/SP-001.md
 
 
 ### Goal

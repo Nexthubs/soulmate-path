@@ -12,6 +12,7 @@ Latest accepted review: none
 ```
 
 Repository architecture & boundary (`SP-001`) completed and evidenced in `docs/handoffs/SP-001.md`.
+Database migration foundation (`SP-002`) completed and evidenced in `docs/handoffs/SP-002.md`.
 
 ## 2. Milestone status
 
@@ -26,7 +27,7 @@ Repository architecture & boundary (`SP-001`) completed and evidenced in `docs/h
 
 ## 3. Active / blocked work
 
-Active tasks: none.
+Active tasks: SP-003 (Canonical soulmate-quiz-v1 config).
 
 Blocking decision IDs:
 
@@ -48,7 +49,7 @@ Details and current handling → `DECISIONS.md`.
 
 ```text
 Quiz config: soulmate-quiz-v1
-DB migration checkpoint: none
+DB migration checkpoint: 0001_initial (Alembic initial schema with 9 tables and high-risk invariants)
 API checkpoint: DEV-SPEC v1.2 baseline; no repository implementation evidenced yet
 Payment provider: PayPal monthly subscription with intro first month + regular monthly renewal
 Sketch target model: gpt-image-2 via provider adapter
@@ -64,9 +65,9 @@ Report production provider: disabled / decision pending
 ## 6. Next safe tasks
 
 ```text
-1. SP-002 — database migration foundation (DDL / schema design)
-2. SP-003 — canonical quiz config (soulmate-quiz-v1)
-3. SP-004 — configuration & secrets baseline
+1. SP-003 — canonical quiz config (soulmate-quiz-v1)
+2. SP-004 — configuration & secrets baseline
+3. SP-101 — session / state machine / profile service
 ```
 
 Do not fan out broad implementation until SP-001 documents the repository's real stack and reusable abstractions.
