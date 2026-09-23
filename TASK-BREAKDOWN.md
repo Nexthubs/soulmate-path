@@ -186,8 +186,8 @@ Turn the approved Q02–Q18 configuration into an immutable, reviewable runtime 
 
 **Priority:** P0  
 **Depends:** SP-001  
-**Status:** TODO
-**Context refs:** DEV-SPEC §22 | Decisions: DOMAIN-01, PAY-01 | Dependency handoffs: SP-001
+**Status:** DONE
+**Context refs:** DEV-SPEC §22 | Decisions: DOMAIN-01, PAY-01 | Dependency handoffs: SP-001, SP-004
 
 
 ### Goal
