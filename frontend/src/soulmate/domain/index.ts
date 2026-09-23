@@ -16,6 +16,35 @@ export const SOULMATE_ROUTES = {
   REPORT: "/soulmate/report",
 } as const;
 
+export const ALLOWED_BACK_ROUTES = [
+  SOULMATE_ROUTES.LANDING,
+  SOULMATE_ROUTES.QUIZ,
+  SOULMATE_ROUTES.LOADING,
+  SOULMATE_ROUTES.EMAIL,
+  SOULMATE_ROUTES.SUBSCRIBE,
+  SOULMATE_ROUTES.RESULT,
+  SOULMATE_ROUTES.SKETCH,
+  SOULMATE_ROUTES.REPORT,
+  "/login",
+] as const;
+
+/**
+ * Validates and sanitizes internal back navigation targets to prevent open redirect vulnerabilities (M-2).
+ */
+export function sanitizeInternalRoute(
+  route?: string | null,
+  fallback: string = SOULMATE_ROUTES.RESULT
+): string {
+  if (!route) return fallback;
+  // Disallow protocol-relative '//', scheme '://', or non-root starts
+  if (!route.startsWith("/") || route.startsWith("//") || route.includes("://")) {
+    return fallback;
+  }
+  const pathOnly = route.split("?")[0].split("#")[0];
+  const isAllowed = ALLOWED_BACK_ROUTES.some((allowed) => allowed === pathOnly);
+  return isAllowed ? route : fallback;
+}
+
 export const RESULT_KEYS = {
   USER_GENDER: "user_gender",
   PREFERRED_PARTNER_GENDER: "preferred_partner_gender",

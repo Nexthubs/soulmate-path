@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { SOULMATE_ROUTES } from "@/soulmate/domain";
+import { SOULMATE_ROUTES, sanitizeInternalRoute } from "@/soulmate/domain";
 import { SketchViewerProps, SketchViewState } from "./types";
 
 /**
@@ -33,7 +33,7 @@ export function SketchViewer({
     if (onBack) {
       onBack();
     } else {
-      router.push(backUrl || SOULMATE_ROUTES.RESULT);
+      router.push(sanitizeInternalRoute(backUrl));
     }
   };
 

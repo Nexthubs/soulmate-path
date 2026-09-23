@@ -236,4 +236,25 @@ describe("SP-105: Email Capture Male/Female Variants (DEV-SPEC §2, §8; QUIZ-01
       expect(formatGender(undefined)).toBe("Female");
     });
   });
+
+  describe("Sample Data Transparency (M-1)", () => {
+    it("renders sample data preview badge when isSampleData is true", () => {
+      const html = renderToStaticMarkup(
+        <EmailCaptureView isSampleData={true} />
+      );
+
+      expect(html).toContain("data-sample-data=\"true\"");
+      expect(html).toContain("data-testid=\"sample-data-badge\"");
+      expect(html).toContain("Demo Preview (No Quiz Answers Submitted)");
+    });
+
+    it("omits sample data preview badge when isSampleData is false", () => {
+      const html = renderToStaticMarkup(
+        <EmailCaptureView isSampleData={false} />
+      );
+
+      expect(html).toContain("data-sample-data=\"false\"");
+      expect(html).not.toContain("data-testid=\"sample-data-badge\"");
+    });
+  });
 });

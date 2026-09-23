@@ -82,10 +82,15 @@ function LoadingContent() {
       setActivePopup("psychic_artistry");
     } else if (activePopup === "psychic_artistry") {
       setActivePopup("warning");
-    } else if (activePopup === "warning") {
       setActivePopup(null);
-      // All popups completed -> proceed to Email Capture
-      router.push("/soulmate/email");
+      // All popups completed -> proceed to Email Capture, forwarding quiz parameters (M-1)
+      const params = new URLSearchParams();
+      ["preferred_partner_gender", "partner_gender", "user_gender", "age_range", "ethnicity"].forEach((key) => {
+        const val = searchParams.get(key);
+        if (val) params.set(key, val);
+      });
+      const query = params.toString();
+      router.push(`/soulmate/email${query ? `?${query}` : ""}`);
     }
   };
 

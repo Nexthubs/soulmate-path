@@ -3,15 +3,21 @@
 import React, { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { SketchViewer, SketchViewState } from "@/soulmate/components/sketch";
-import { SOULMATE_ROUTES } from "@/soulmate/domain";
+import { SOULMATE_ROUTES, sanitizeInternalRoute } from "@/soulmate/domain";
 
 function SketchPageContent() {
   const searchParams = useSearchParams();
 
-  const stateParam = (searchParams.get("state") || "completed") as SketchViewState;
+  // DEV-SPEC §3: Production access requires entitlement confirmation.
+  // In development or when fixture=true, default to "completed" fixture; otherwise default to "loading".
+  const isFixture =
+    searchParams.get("fixture") === "true" || process.env.NODE_ENV !== "production";
+  const defaultState: SketchViewState = isFixture ? "completed" : "loading";
+
+  const stateParam = (searchParams.get("state") || defaultState) as SketchViewState;
   const validState: SketchViewState = ["loading", "completed", "failed"].includes(stateParam)
     ? stateParam
-    : "completed";
+    : defaultState;
 
   const gender = searchParams.get("gender") || "female";
   const defaultUrl =
@@ -20,9 +26,8 @@ function SketchPageContent() {
       : "/images/email/sketch-female.png";
 
   const durableUrl = searchParams.get("url") || defaultUrl;
-  const backUrl = searchParams.get("backUrl") || SOULMATE_ROUTES.RESULT;
-  const showToolbar =
-    searchParams.get("fixture") === "true" || process.env.NODE_ENV !== "production";
+  const backUrl = sanitizeInternalRoute(searchParams.get("backUrl"));
+  const showToolbar = isFixture;
 
   return (
     <SketchViewer

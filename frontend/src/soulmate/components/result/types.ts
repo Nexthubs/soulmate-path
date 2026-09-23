@@ -41,6 +41,9 @@ export interface ResultAggregateData {
 }
 
 /**
+ * TIME-01 Boundary Note: Server-side calculation in SP-502/SP-503 is authoritative.
+ * UI presentation reflects server state; reaching zero countdown never authorizes unlock.
+ *
  * Derives the Combined UI State from orthogonal availability and generation states (DEV-SPEC §10.3).
  *
  * Rules:

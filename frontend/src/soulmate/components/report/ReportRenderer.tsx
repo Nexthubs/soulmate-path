@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { SOULMATE_ROUTES } from "@/soulmate/domain";
+import { SOULMATE_ROUTES, sanitizeInternalRoute } from "@/soulmate/domain";
 import {
   ReportRendererProps,
   SoulmateReportV1,
@@ -11,7 +11,7 @@ import {
 
 /**
  * Editorial Report Renderer Component (Figma Node 102:1358; DEV-SPEC §2, §13, §16; DECISIONS REPORT-01, REPORT-02).
- * Renders structured SoulmateReportV1 JSON with safe wrapping and zero production AI dependencies.
+ * Renders structured SoulmateReportV1 JSON with safe wrapping, prop reactivity (M-3), and sanitized routing (M-2).
  */
 export function ReportRenderer({
   report: initialReport = DEFAULT_REPORT_FIXTURE,
@@ -23,11 +23,16 @@ export function ReportRenderer({
   const router = useRouter();
   const [activeReport, setActiveReport] = useState<SoulmateReportV1>(initialReport);
 
+  // M-3: Respond to new report prop updates dynamically
+  React.useEffect(() => {
+    setActiveReport(initialReport);
+  }, [initialReport]);
+
   const handleBack = () => {
     if (onBack) {
       onBack();
     } else {
-      router.push(backUrl || SOULMATE_ROUTES.RESULT);
+      router.push(sanitizeInternalRoute(backUrl));
     }
   };
 

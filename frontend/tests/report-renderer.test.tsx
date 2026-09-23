@@ -6,7 +6,7 @@ import {
   DEFAULT_REPORT_FIXTURE,
   SoulmateReportV1,
 } from "../src/soulmate/components/report";
-import { SOULMATE_ROUTES } from "../src/soulmate/domain";
+import { SOULMATE_ROUTES, sanitizeInternalRoute } from "../src/soulmate/domain";
 
 // Mock next/navigation
 const mockPush = vi.fn();
@@ -192,6 +192,43 @@ describe("SP-108: Report Renderer Fixture UI (DEV-SPEC §2, §13, §16; DECISION
       );
 
       expect(html).not.toContain("data-testid=\"report-fixture-toolbar\"");
+    });
+  });
+
+  describe("Prop Reactivity & Route Sanitization (M-2 & M-3)", () => {
+    it("M-3: renders updated report data when report prop is updated", () => {
+      const reportA: SoulmateReportV1 = {
+        title: "Initial Report A",
+        intro: "Intro A",
+        sections: [{ index: "01.", title: "Sec A", body: "Body A" }],
+      };
+      const reportB: SoulmateReportV1 = {
+        title: "Updated Report B",
+        intro: "Intro B",
+        sections: [{ index: "01.", title: "Sec B", body: "Body B" }],
+      };
+
+      const htmlA = renderToStaticMarkup(<ReportRenderer report={reportA} />);
+      expect(htmlA).toContain("Initial Report A");
+      expect(htmlA).not.toContain("Updated Report B");
+
+      const htmlB = renderToStaticMarkup(<ReportRenderer report={reportB} />);
+      expect(htmlB).toContain("Updated Report B");
+      expect(htmlB).not.toContain("Initial Report A");
+    });
+
+    it("M-2: sanitizeInternalRoute prevents open redirects and allows whitelist routes", () => {
+      // Malicious external targets sanitized to fallback
+      expect(sanitizeInternalRoute("https://malicious.com")).toBe(SOULMATE_ROUTES.RESULT);
+      expect(sanitizeInternalRoute("//attacker.com")).toBe(SOULMATE_ROUTES.RESULT);
+      expect(sanitizeInternalRoute("javascript:alert(1)")).toBe(SOULMATE_ROUTES.RESULT);
+      expect(sanitizeInternalRoute("/unauthorized-external-path")).toBe(SOULMATE_ROUTES.RESULT);
+
+      // Allowed whitelist routes preserved
+      expect(sanitizeInternalRoute("/soulmate")).toBe("/soulmate");
+      expect(sanitizeInternalRoute("/soulmate/result")).toBe("/soulmate/result");
+      expect(sanitizeInternalRoute("/soulmate/result?tab=report")).toBe("/soulmate/result?tab=report");
+      expect(sanitizeInternalRoute("/login")).toBe("/login");
     });
   });
 });

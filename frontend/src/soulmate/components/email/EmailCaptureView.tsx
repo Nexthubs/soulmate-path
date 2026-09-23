@@ -53,6 +53,11 @@ export interface EmailCaptureViewProps {
   error?: string | null;
 
   /**
+   * Whether the summary values represent fallback sample/demo data rather than user answers (M-1).
+   */
+  isSampleData?: boolean;
+
+  /**
    * Optional custom container class name.
    */
   className?: string;
@@ -109,6 +114,7 @@ export function EmailCaptureView({
   onSubmit,
   loading: externalLoading = false,
   error: externalError = null,
+  isSampleData = false,
   className = "",
 }: EmailCaptureViewProps) {
   // Normalize preferred partner gender (Q3)
@@ -163,6 +169,7 @@ export function EmailCaptureView({
       data-testid="email-capture-view"
       data-variant={isMaleVariant ? "male" : "female"}
       data-user-gender={userGender}
+      data-sample-data={isSampleData ? "true" : "false"}
       className={`relative min-h-screen w-full max-w-[390px] mx-auto bg-gradient-to-b from-[#fbfaff] via-[#f7f5fb] to-[#ffffff] overflow-x-hidden flex flex-col justify-between ${className}`}
     >
       {/* Top Background Section & Sketch Preview */}
@@ -336,8 +343,17 @@ export function EmailCaptureView({
         {/* User Details Footer / Summary Badges (Figma 102:521 / 102:587) */}
         <div
           data-testid="summary-footer"
-          className="mt-10 pt-6 border-t border-neutral-100 flex items-center justify-around text-center w-full"
+          className="mt-10 pt-6 border-t border-neutral-100 flex flex-col items-center w-full space-y-3"
         >
+          {isSampleData && (
+            <span
+              data-testid="sample-data-badge"
+              className="text-[11px] font-semibold text-amber-800/80 bg-amber-100/70 px-2.5 py-0.5 rounded-full"
+            >
+              Demo Preview (No Quiz Answers Submitted)
+            </span>
+          )}
+          <div className="flex items-center justify-around text-center w-full">
           {/* Q3 Gender Summary Badge */}
           <div data-testid="summary-item-gender" className="flex flex-col items-center space-y-1">
             <div className="w-12 h-12 rounded-full bg-[#faf5ff] border border-[#f3e8ff] flex items-center justify-center text-[#5b2f91] shadow-xs">
@@ -389,6 +405,7 @@ export function EmailCaptureView({
             <span data-testid="summary-ethnicity-value" className="text-[14px] font-bold text-neutral-900">
               {ethnicityLabel}
             </span>
+          </div>
           </div>
         </div>
       </div>
