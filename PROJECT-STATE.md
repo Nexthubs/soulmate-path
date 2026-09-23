@@ -15,6 +15,7 @@ Repository architecture & boundary (`SP-001`) completed and evidenced in `docs/h
 Database migration foundation (`SP-002`) completed and evidenced in `docs/handoffs/SP-002.md`.
 Canonical quiz config (`SP-003`) completed and evidenced in `docs/handoffs/SP-003.md`.
 Environment & secrets baseline (`SP-004`) completed and evidenced in `docs/handoffs/SP-004.md`.
+Error codes & request correlation (`SP-005`) completed and evidenced in `docs/handoffs/SP-005.md`.
 
 ## 2. Milestone status
 
@@ -29,7 +30,7 @@ Environment & secrets baseline (`SP-004`) completed and evidenced in `docs/hando
 
 ## 3. Active / blocked work
 
-Active tasks: SP-005 (Error codes / request correlation), SP-101 (Session / state machine / profile service).
+Active tasks: SP-101 (Session / state machine / profile service), SP-201 (Quiz engine UI / step framework).
 
 Blocking decision IDs:
 
@@ -53,7 +54,7 @@ Details and current handling → `DECISIONS.md`.
 Quiz config: soulmate-quiz-v1 (canonical JSON & seeded in DB soulmate_quiz_versions)
 DB migration checkpoint: 0001_initial (Alembic initial schema with 9 tables and high-risk invariants)
 Config checkpoint: DEV-SPEC §22 groups verified, centralized Decimal pricing, production strictness check
-API checkpoint: DEV-SPEC v1.2 baseline; no repository implementation evidenced yet
+API checkpoint: DEV-SPEC v1.2 baseline; error taxonomy, correlation middleware, and structured logging established (SP-005)
 Payment provider: PayPal monthly subscription with intro first month + regular monthly renewal
 Sketch target model: gpt-image-2 via provider adapter
 Report production provider: disabled / decision pending
@@ -68,9 +69,8 @@ Report production provider: disabled / decision pending
 ## 6. Next safe tasks
 
 ```text
-1. SP-005 — error codes / request correlation
-2. SP-101 — session / state machine / profile service
-3. SP-201 — quiz engine UI / step framework
+1. SP-101 — session / state machine / profile service
+2. SP-201 — quiz engine UI / step framework
 ```
 
 Do not fan out broad implementation until SP-001 documents the repository's real stack and reusable abstractions.

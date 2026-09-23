@@ -213,7 +213,7 @@ Define config surface without hard-coded production values.
 
 **Priority:** P1  
 **Depends:** SP-001  
-**Status:** TODO
+**Status:** DONE
 **Context refs:** DEV-SPEC §19 | Decisions: — | Dependency handoffs: SP-001
 
 
