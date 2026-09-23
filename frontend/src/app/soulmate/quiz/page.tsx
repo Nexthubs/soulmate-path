@@ -1,15 +1,20 @@
 "use client";
 
-import React, { useState } from "react";
-import { useRouter } from "next/navigation";
-import { QuizShell, QuizNextButton } from "@/soulmate/components/quiz/QuizShell";
-import { OptionCard } from "@/soulmate/components/quiz/OptionCard";
+import React, { useState, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { QuizShell, QuizNextButton, OptionCard, RadioGroup } from "@/soulmate/components/quiz";
 import quizData from "@/soulmate/quiz/soulmate-quiz-v1.json";
 
 type PreviewQuestionType = "single" | "date" | "multi";
 
-export default function SoulmateQuizPage() {
+function QuizPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const isProduction = process.env.NODE_ENV === "production";
+  const showDevToolbar =
+    !isProduction &&
+    (searchParams.get("fixture") === "true" || process.env.NODE_ENV !== "production");
 
   // In fixture mode, allow switching between the three core question types (Single, Date, Multi)
   const [currentType, setCurrentType] = useState<PreviewQuestionType>("single");
@@ -46,36 +51,53 @@ export default function SoulmateQuizPage() {
 
   return (
     <div className="relative">
-      {/* Dev Switcher for testing all three question types in fixture shell */}
-      <div className="absolute top-2 right-4 z-50 flex gap-1 bg-white/80 backdrop-blur-xs p-1 rounded-lg text-[10px] text-neutral-600 border border-neutral-200">
-        <button
-          type="button"
-          onClick={() => setCurrentType("single")}
-          className={`px-1.5 py-0.5 rounded ${
-            currentType === "single" ? "bg-purple-600 text-white font-semibold" : "hover:bg-neutral-100"
-          }`}
+      {!isProduction && (
+        <div
+          data-testid="quiz-fixture-banner"
+          className="w-full max-w-[390px] mx-auto py-1 px-3 bg-amber-500/10 border-b border-amber-500/30 text-amber-800 text-center text-xs font-semibold"
         >
-          Single
-        </button>
-        <button
-          type="button"
-          onClick={() => setCurrentType("date")}
-          className={`px-1.5 py-0.5 rounded ${
-            currentType === "date" ? "bg-purple-600 text-white font-semibold" : "hover:bg-neutral-100"
-          }`}
+          [Demo Preview (Fixture Shell)]
+        </div>
+      )}
+
+      {/* Dev Switcher for testing all three question types in fixture shell (M-1) */}
+      {showDevToolbar && (
+        <div
+          data-testid="quiz-dev-toolbar"
+          className="absolute top-2 right-4 z-50 flex gap-1 bg-white/80 backdrop-blur-xs p-1 rounded-lg text-[10px] text-neutral-600 border border-neutral-200"
         >
-          Date
-        </button>
-        <button
-          type="button"
-          onClick={() => setCurrentType("multi")}
-          className={`px-1.5 py-0.5 rounded ${
-            currentType === "multi" ? "bg-purple-600 text-white font-semibold" : "hover:bg-neutral-100"
-          }`}
-        >
-          Multi
-        </button>
-      </div>
+          <button
+            type="button"
+            data-testid="quiz-switcher-single"
+            onClick={() => setCurrentType("single")}
+            className={`px-1.5 py-0.5 rounded ${
+              currentType === "single" ? "bg-purple-600 text-white font-semibold" : "hover:bg-neutral-100"
+            }`}
+          >
+            Single
+          </button>
+          <button
+            type="button"
+            data-testid="quiz-switcher-date"
+            onClick={() => setCurrentType("date")}
+            className={`px-1.5 py-0.5 rounded ${
+              currentType === "date" ? "bg-purple-600 text-white font-semibold" : "hover:bg-neutral-100"
+            }`}
+          >
+            Date
+          </button>
+          <button
+            type="button"
+            data-testid="quiz-switcher-multi"
+            onClick={() => setCurrentType("multi")}
+            className={`px-1.5 py-0.5 rounded ${
+              currentType === "multi" ? "bg-purple-600 text-white font-semibold" : "hover:bg-neutral-100"
+            }`}
+          >
+            Multi
+          </button>
+        </div>
+      )}
 
       {currentType === "single" && (
         <QuizShell
@@ -85,18 +107,20 @@ export default function SoulmateQuizPage() {
           isLoading={isLoading}
           error={error ? { message: error, onRetry: () => setError(null) } : null}
         >
-          {q02.options?.map((opt) => (
-            <OptionCard
-              key={opt.code}
-              label={opt.label}
-              selected={singleValue === opt.code}
-              selectionType="single"
-              onClick={() => {
-                setSingleValue(opt.code);
-                setTimeout(() => handleNext(), 200);
-              }}
-            />
-          ))}
+          <RadioGroup label={q02.title} ariaLabelledBy="quiz-header-title">
+            {q02.options?.map((opt) => (
+              <OptionCard
+                key={opt.code}
+                label={opt.label}
+                selected={singleValue === opt.code}
+                selectionType="single"
+                onClick={() => {
+                  setSingleValue(opt.code);
+                  setTimeout(() => handleNext(), 200);
+                }}
+              />
+            ))}
+          </RadioGroup>
         </QuizShell>
       )}
 
@@ -118,14 +142,15 @@ export default function SoulmateQuizPage() {
         >
           <div className="w-full p-6 rounded-2xl bg-white/70 border border-neutral-200/60 shadow-xs flex flex-col items-center gap-4">
             <label htmlFor="birthdate-input" className="text-xs font-medium text-neutral-600">
-              Date of Birth (YYYY-MM-DD)
+              Select your date of birth
             </label>
             <input
               id="birthdate-input"
               type="date"
               value={dateValue}
               onChange={(e) => setDateValue(e.target.value)}
-              className="w-full h-12 px-4 rounded-xl border border-neutral-300 bg-white text-neutral-900 text-center text-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+              className="w-full px-4 py-3 rounded-xl border border-neutral-300 bg-white text-neutral-800 text-center font-medium focus:ring-2 focus:ring-purple-600 focus:outline-none"
+              aria-label="Your birth date"
             />
           </div>
         </QuizShell>
@@ -134,7 +159,7 @@ export default function SoulmateQuizPage() {
       {currentType === "multi" && (
         <QuizShell
           title={q18.title}
-          subtitle="Choose all that apply"
+          subtitle={q18.subtitle}
           onBack={handleBack}
           isLoading={isLoading}
           error={error}
@@ -142,8 +167,8 @@ export default function SoulmateQuizPage() {
             <QuizNextButton
               onClick={handleNext}
               disabled={multiValues.length === 0}
-              label="Next"
-              ariaLabel="Save selected goals and proceed"
+              label={`Next (${multiValues.length})`}
+              ariaLabel="Confirm choices and continue"
             />
           }
         >
@@ -165,5 +190,13 @@ export default function SoulmateQuizPage() {
         </QuizShell>
       )}
     </div>
+  );
+}
+
+export default function SoulmateQuizPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading quiz...</div>}>
+      <QuizPageContent />
+    </Suspense>
   );
 }

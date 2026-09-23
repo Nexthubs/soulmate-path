@@ -57,7 +57,8 @@ export const DEFAULT_RESULT_FIXTURE: ResultAggregateData = {
     generation: "NOT_STARTED",
   },
   report: {
-    unlock_at: new Date(Date.now() + 11 * 3600 * 1000 + 58 * 60 * 1000 + 4 * 1000).toISOString(),
+    // TIME-01: Report unlock schedule is +24h from first payment (DEV-SPEC §10.2, DECISIONS.md)
+    unlock_at: new Date(Date.now() + 23 * 3600 * 1000 + 58 * 60 * 1000 + 4 * 1000).toISOString(),
     availability: "LOCKED",
     generation: "NOT_STARTED",
   },

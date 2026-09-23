@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { OptionCard } from "../src/soulmate/components/quiz/OptionCard";
+import { RadioGroup } from "../src/soulmate/components/quiz/RadioGroup";
 
 describe("SP-103: OptionCard Component Variants & Semantics", () => {
   describe("Visual States (Figma Nodes 102:130, 102:137)", () => {
@@ -163,6 +164,23 @@ describe("SP-103: OptionCard Component Variants & Semantics", () => {
       expect(html).toContain("p-5");
       expect(html).toContain('tabindex="0"');
       expect(html).toContain("focus-visible:ring-2");
+    });
+  });
+
+  describe("RadioGroup Accessible Container & Semantics (M-4)", () => {
+    it("renders container with role='radiogroup' and accessible aria-label", () => {
+      const html = renderToStaticMarkup(
+        <RadioGroup label="What is your gender?" ariaLabelledBy="quiz-title">
+          <OptionCard label="Female" selected={true} onClick={() => {}} selectionType="single" />
+          <OptionCard label="Male" selected={false} onClick={() => {}} selectionType="single" />
+        </RadioGroup>
+      );
+
+      expect(html).toContain('role="radiogroup"');
+      expect(html).toContain('aria-label="What is your gender?"');
+      expect(html).toContain('aria-labelledby="quiz-title"');
+      expect(html).toContain('role="radio"');
+      expect(html).toContain("data-testid=\"quiz-radiogroup\"");
     });
   });
 });
