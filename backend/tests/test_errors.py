@@ -291,3 +291,29 @@ def test_structured_json_logging_fields():
     assert "artifact_id" in parsed
     assert "job_id" in parsed
     assert "provider_request_id" in parsed
+
+
+def test_live_request_emits_structured_json_log(caplog):
+    """Verify live HTTP request through middleware emits a structured log with correlation ID and latency."""
+    formatter = StructuredJsonFormatter()
+    with caplog.at_level(logging.INFO, logger="soulmate"):
+        with TestClient(app) as client:
+            response = client.get("/api/soulmate/health", headers={"X-Request-ID": "test-live-trace-123"})
+            assert response.status_code == 200
+
+    # Find the http_request log record emitted by middleware
+    matching_records = [r for r in caplog.records if getattr(r, "event_type", None) == "http_request"]
+    assert len(matching_records) >= 1
+    record = matching_records[-1]
+
+    # Format using StructuredJsonFormatter and assert JSON output
+    formatted_json = formatter.format(record)
+    parsed = json.loads(formatted_json)
+
+    assert parsed["request_id"] == "test-live-trace-123"
+    assert parsed["event_type"] == "http_request"
+    assert parsed["latency_ms"] is not None
+    assert parsed["latency_ms"] >= 0
+    assert parsed["logger"] == "soulmate"
+    assert parsed["data"]["path"] == "/api/soulmate/health"
+    assert parsed["data"]["status_code"] == 200

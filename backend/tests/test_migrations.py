@@ -333,3 +333,30 @@ def test_unique_provider_payment_id(db_session):
         db_session.commit()
     db_session.rollback()
 
+
+def test_foreign_key_and_query_indexes_exist(db_session):
+    """Verify foreign key and query lookup indexes exist on PostgreSQL tables (SP-002 review fix)."""
+    inspector = inspect(db_session.bind)
+
+    # 1. soulmate_sessions: idx_soulmate_sessions_user_id and idx_soulmate_sessions_email
+    sess_indexes = {idx["name"]: idx["column_names"] for idx in inspector.get_indexes("soulmate_sessions")}
+    assert "idx_soulmate_sessions_user_id" in sess_indexes
+    assert sess_indexes["idx_soulmate_sessions_user_id"] == ["user_id"]
+    assert "idx_soulmate_sessions_email" in sess_indexes
+    assert sess_indexes["idx_soulmate_sessions_email"] == ["email_normalized"]
+
+    # 2. subscriptions: idx_subscriptions_session_id
+    sub_indexes = {idx["name"]: idx["column_names"] for idx in inspector.get_indexes("subscriptions")}
+    assert "idx_subscriptions_session_id" in sub_indexes
+    assert sub_indexes["idx_subscriptions_session_id"] == ["session_id"]
+
+    # 3. subscription_payments: idx_subscription_payments_subscription_id
+    pay_indexes = {idx["name"]: idx["column_names"] for idx in inspector.get_indexes("subscription_payments")}
+    assert "idx_subscription_payments_subscription_id" in pay_indexes
+    assert pay_indexes["idx_subscription_payments_subscription_id"] == ["subscription_id"]
+
+    # 4. ai_generation_jobs: idx_ai_generation_jobs_artifact_id
+    job_indexes = {idx["name"]: idx["column_names"] for idx in inspector.get_indexes("ai_generation_jobs")}
+    assert "idx_ai_generation_jobs_artifact_id" in job_indexes
+    assert job_indexes["idx_ai_generation_jobs_artifact_id"] == ["artifact_id"]
+

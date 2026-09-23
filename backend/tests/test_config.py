@@ -75,6 +75,7 @@ def test_production_validation_passes_when_all_keys_provided():
         environment="production",
         app_base_url="https://soulmate.example.com",
         database_url="postgresql://prod_user:super_secret_pw@db.prod:5432/soulmate_db",
+        paypal_env="production",
         paypal_client_id="paypal_client_123",
         paypal_client_secret="paypal_secret_456",
         paypal_webhook_id="webhook_789",
@@ -90,6 +91,65 @@ def test_production_validation_passes_when_all_keys_provided():
     assert valid_prod_settings.is_production is True
     # Should complete without error
     valid_prod_settings.validate_production_config()
+
+
+def test_production_validation_rejects_insecure_and_loopback_urls():
+    """Verify production rejects non-HTTPS, localhost, 127.0.0.1, or private IP base URLs."""
+    base_kwargs = dict(
+        environment="production",
+        database_url="postgresql://prod_user:super_secret_pw@db.prod:5432/soulmate_db",
+        paypal_env="production",
+        paypal_client_id="paypal_client_123",
+        paypal_client_secret="paypal_secret_456",
+        paypal_webhook_id="webhook_789",
+        paypal_product_id="prod_plan_abc",
+        paypal_soulmate_intro_plan_id="plan_intro_001",
+        soulmate_intro_price=Decimal("19.00"),
+        soulmate_regular_price=Decimal("29.00"),
+        openai_api_key="sk-test-key-openai",
+        object_storage_bucket="soulmate-prod-assets",
+        object_storage_access_key="minio_or_s3_key",
+        object_storage_secret_key="minio_or_s3_secret",
+    )
+
+    # 1. Loopback IP http://127.0.0.1:3000
+    with pytest.raises(ConfigurationError) as exc1:
+        Settings(app_base_url="http://127.0.0.1:3000", **base_kwargs).validate_production_config()
+    assert "APP_BASE_URL" in str(exc1.value)
+
+    # 2. Non-HTTPS http://example.com
+    with pytest.raises(ConfigurationError) as exc2:
+        Settings(app_base_url="http://example.com", **base_kwargs).validate_production_config()
+    assert "HTTPS" in str(exc2.value)
+
+    # 3. Localhost https://localhost:3000
+    with pytest.raises(ConfigurationError) as exc3:
+        Settings(app_base_url="https://localhost:3000", **base_kwargs).validate_production_config()
+    assert "localhost" in str(exc3.value)
+
+
+def test_production_validation_rejects_sandbox_paypal_env():
+    """Verify production requires PAYPAL_ENV=production."""
+    base_kwargs = dict(
+        environment="production",
+        app_base_url="https://soulmate.example.com",
+        database_url="postgresql://prod_user:super_secret_pw@db.prod:5432/soulmate_db",
+        paypal_env="sandbox",
+        paypal_client_id="paypal_client_123",
+        paypal_client_secret="paypal_secret_456",
+        paypal_webhook_id="webhook_789",
+        paypal_product_id="prod_plan_abc",
+        paypal_soulmate_intro_plan_id="plan_intro_001",
+        soulmate_intro_price=Decimal("19.00"),
+        soulmate_regular_price=Decimal("29.00"),
+        openai_api_key="sk-test-key-openai",
+        object_storage_bucket="soulmate-prod-assets",
+        object_storage_access_key="minio_or_s3_key",
+        object_storage_secret_key="minio_or_s3_secret",
+    )
+    with pytest.raises(ConfigurationError) as exc:
+        Settings(**base_kwargs).validate_production_config()
+    assert "PAYPAL_ENV" in str(exc.value)
 
 
 def test_pricing_centralization_and_decimal_types():

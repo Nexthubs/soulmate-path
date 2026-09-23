@@ -5,6 +5,7 @@ import {
   assertClientConfig,
   ClientConfig,
 } from "../src/soulmate/config";
+import { ConfigValidator } from "../src/soulmate/components/ConfigValidator";
 
 describe("Frontend Client Configuration (SP-004)", () => {
   it("exposes centralized client configuration matching contracts", () => {
@@ -54,4 +55,23 @@ describe("Frontend Client Configuration (SP-004)", () => {
     expect(errors).toHaveLength(0);
     expect(() => assertClientConfig(validProdConfig, "production")).not.toThrow();
   });
+
+  it("ConfigValidator component executes validation in browser environment", () => {
+    expect(typeof ConfigValidator).toBe("function");
+    expect(ConfigValidator()).toBeNull();
+
+    // Emulate browser environment with production NODE_ENV
+    const envObj = process.env as Record<string, string | undefined>;
+    const origEnv = envObj["NODE_ENV"];
+    const globalObj = globalThis as unknown as Record<string, unknown>;
+    globalObj["window"] = {};
+    try {
+      envObj["NODE_ENV"] = "production";
+      expect(() => ConfigValidator()).toThrow(/Production client configuration validation failed/);
+    } finally {
+      envObj["NODE_ENV"] = origEnv;
+      delete globalObj["window"];
+    }
+  });
 });
+

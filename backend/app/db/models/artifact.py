@@ -171,3 +171,8 @@ class AIGenerationJob(Base, TimestampMixin):
         "SoulmateArtifact",
         back_populates="jobs",
     )
+
+    __table_args__ = (
+        Index("idx_ai_generation_jobs_artifact_id", "artifact_id"),
+    )
+

@@ -40,7 +40,6 @@ class SoulmateSession(Base, TimestampMixin):
     email_normalized: Mapped[Optional[str]] = mapped_column(
         String(320),
         nullable=True,
-        index=True,
     )
     quiz_version: Mapped[str] = mapped_column(
         String(64),
@@ -92,6 +91,7 @@ class SoulmateSession(Base, TimestampMixin):
 
     __table_args__ = (
         Index("idx_soulmate_sessions_email", "email_normalized"),
+        Index("idx_soulmate_sessions_user_id", "user_id"),
     )
 
 

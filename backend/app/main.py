@@ -1,10 +1,15 @@
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
+from app.core.logging import setup_structured_logging
 from app.core.middleware import RequestCorrelationMiddleware
 from app.core.exception_handlers import register_exception_handlers
 from app.api.soulmate.router import api_router
+
+# Configure structured JSON logging per DEV-SPEC §19.1 & SP-005
+setup_structured_logging(level=logging.DEBUG if settings.debug else logging.INFO)
 
 
 @asynccontextmanager

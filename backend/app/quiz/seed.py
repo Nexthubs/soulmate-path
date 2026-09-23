@@ -28,10 +28,16 @@ def seed_quiz_version(
     record = db.execute(stmt).scalar_one_or_none()
 
     if record:
-        record.config_json = config_dict
-        if activate:
+        if record.config_json != config_dict:
+            raise ValueError(
+                f"Quiz version '{config.version}' is immutable and already exists with different content. "
+                "Changing questions requires publishing a new version identifier (DEV-SPEC §4.5)."
+            )
+        if activate and not record.is_active:
             record.is_active = True
-        logger.info(f"Updated existing QuizVersion '{config.version}' (is_active={record.is_active})")
+            db.commit()
+            db.refresh(record)
+        logger.info(f"Verified existing immutable QuizVersion '{config.version}' (is_active={record.is_active})")
     else:
         record = SoulmateQuizVersion(
             version=config.version,

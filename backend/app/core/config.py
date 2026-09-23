@@ -1,3 +1,5 @@
+import ipaddress
+import urllib.parse
 from decimal import Decimal
 from typing import List, Optional
 from pydantic import Field
@@ -129,12 +131,37 @@ class Settings(BaseSettings):
         missing_keys: List[str] = []
 
         # App Base URL check (DOMAIN-01)
-        if not self.app_base_url or "localhost" in self.app_base_url:
-            missing_keys.append("APP_BASE_URL (must be a valid production URL, not localhost)")
+        if not self.app_base_url:
+            missing_keys.append("APP_BASE_URL (mandatory in production)")
+        else:
+            try:
+                parsed_url = urllib.parse.urlparse(self.app_base_url)
+                if parsed_url.scheme != "https":
+                    missing_keys.append("APP_BASE_URL (must use HTTPS scheme in production)")
+                if not parsed_url.netloc or not parsed_url.hostname:
+                    missing_keys.append("APP_BASE_URL (must have a valid domain hostname in production)")
+                else:
+                    host = parsed_url.hostname.lower()
+                    if host in ("localhost", "0.0.0.0"):
+                        missing_keys.append("APP_BASE_URL (must not be localhost or 0.0.0.0 in production)")
+                    else:
+                        try:
+                            ip = ipaddress.ip_address(host)
+                            if ip.is_loopback or ip.is_private or ip.is_reserved or ip.is_unspecified:
+                                missing_keys.append("APP_BASE_URL (must not use loopback or private IP in production)")
+                        except ValueError:
+                            # Valid domain hostname, which is expected
+                            pass
+            except Exception as e:
+                missing_keys.append(f"APP_BASE_URL (invalid URL: {e})")
 
         # Database credentials check
         if "soulmate_dev_password" in self.database_url:
             missing_keys.append("DATABASE_URL (must not use dev default credentials in production)")
+
+        # PayPal environment check
+        if self.paypal_env.lower() != "production":
+            missing_keys.append("PAYPAL_ENV (must be 'production' when ENVIRONMENT=production)")
 
         # PayPal credentials & plans
         if not self.paypal_client_id:

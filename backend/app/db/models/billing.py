@@ -6,6 +6,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
@@ -94,6 +95,11 @@ class Subscription(Base, TimestampMixin):
         cascade="all, delete-orphan",
     )
 
+    __table_args__ = (
+        Index("idx_subscriptions_session_id", "session_id"),
+    )
+
+
 
 class SubscriptionPayment(Base):
     __tablename__ = "subscription_payments"
@@ -155,6 +161,11 @@ class SubscriptionPayment(Base):
         "Subscription",
         back_populates="payments",
     )
+
+    __table_args__ = (
+        Index("idx_subscription_payments_subscription_id", "subscription_id"),
+    )
+
 
 
 class PayPalWebhookEvent(Base):

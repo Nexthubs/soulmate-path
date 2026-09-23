@@ -8,7 +8,7 @@
 ```text
 Current milestone: PRE-IMPLEMENTATION / M0
 Status: IN_PROGRESS
-Latest accepted review: none
+Latest accepted review: docs/reviews/SP-002-HIGH-RISK-REVIEW.md (PASS)
 ```
 
 Repository architecture & boundary (`SP-001`) completed and evidenced in `docs/handoffs/SP-001.md`.

@@ -1,4 +1,5 @@
 import copy
+import json
 from pathlib import Path
 import uuid
 import pytest
@@ -267,4 +268,33 @@ def test_quiz_config_cache_invalidation():
     c3 = get_cached_quiz_config()
     assert c3 == c1
     assert get_cached_quiz_config.cache_info().currsize == 1
+
+
+def test_seed_quiz_version_rejects_content_mutation_on_same_version(db_session, tmp_path):
+    """DEV-SPEC §4.5 & SP-003: Version definitions are immutable once seeded; mutating content must raise ValueError."""
+    # 1. Seed initial canonical version
+    v1 = seed_quiz_version(db_session, activate=True)
+    assert v1.version == CANONICAL_QUIZ_VERSION
+
+    # 2. Reseed same version with identical content -> passes idempotently
+    v1_reseed = seed_quiz_version(db_session, activate=True)
+    assert v1_reseed.id == v1.id
+
+    # 3. Create modified content for the same version string
+    base_config = load_quiz_config()
+    altered_data = base_config.model_dump(mode="json")
+    # Alter question title (valid schema but different content)
+    altered_data["questions"][0]["title"] = "Altered title attempting to mutate immutable version!"
+
+    tmp_file = tmp_path / "mutated_quiz.json"
+    with open(tmp_file, "w", encoding="utf-8") as f:
+        json.dump(altered_data, f)
+
+    # 4. Attempting to seed altered content under the same version must fail fast
+    with pytest.raises(ValueError) as exc_info:
+        seed_quiz_version(db_session, config_path=tmp_file)
+
+    err_text = str(exc_info.value)
+    assert "is immutable and already exists with different content" in err_text
+    assert "Changing questions requires publishing a new version identifier" in err_text
 
