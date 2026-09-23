@@ -233,3 +233,103 @@ def test_utc_timestamptz_preservation(db_session):
     db_session.refresh(sess)
     assert sess.created_at.tzinfo is not None
     assert sess.updated_at.tzinfo is not None
+
+
+def test_unique_provider_subscription_id(db_session):
+    """High-Risk Invariant: Exactly one record per provider_subscription_id."""
+    sess1 = SoulmateSession(
+        public_id=f"sess_{uuid.uuid4().hex[:12]}",
+        quiz_version="soulmate-quiz-v1",
+        status="COMPLETED",
+        current_step="payment",
+    )
+    sess2 = SoulmateSession(
+        public_id=f"sess_{uuid.uuid4().hex[:12]}",
+        quiz_version="soulmate-quiz-v1",
+        status="COMPLETED",
+        current_step="payment",
+    )
+    db_session.add_all([sess1, sess2])
+    db_session.flush()
+
+    sub_id = f"I-SUB-{uuid.uuid4().hex[:10].upper()}"
+
+    sub1 = Subscription(
+        session_id=sess1.id,
+        provider="paypal",
+        provider_subscription_id=sub_id,
+        provider_plan_id="P-TESTPLAN1",
+        provider_status="ACTIVE",
+        currency="USD",
+        intro_price=Decimal("19.00"),
+        regular_price=Decimal("29.00"),
+    )
+    db_session.add(sub1)
+    db_session.commit()
+
+    # Second subscription with identical provider_subscription_id must fail at DB level
+    sub2 = Subscription(
+        session_id=sess2.id,
+        provider="paypal",
+        provider_subscription_id=sub_id,
+        provider_plan_id="P-TESTPLAN2",
+        provider_status="ACTIVE",
+        currency="USD",
+        intro_price=Decimal("19.00"),
+        regular_price=Decimal("29.00"),
+    )
+    db_session.add(sub2)
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+    db_session.rollback()
+
+
+def test_unique_provider_payment_id(db_session):
+    """High-Risk Invariant: Exactly one record per provider_payment_id."""
+    sess = SoulmateSession(
+        public_id=f"sess_{uuid.uuid4().hex[:12]}",
+        quiz_version="soulmate-quiz-v1",
+        status="COMPLETED",
+        current_step="payment",
+    )
+    db_session.add(sess)
+    db_session.flush()
+
+    sub = Subscription(
+        session_id=sess.id,
+        provider="paypal",
+        provider_subscription_id=f"I-SUB-{uuid.uuid4().hex[:10].upper()}",
+        provider_plan_id="P-TESTPLAN1",
+        provider_status="ACTIVE",
+        currency="USD",
+        intro_price=Decimal("19.00"),
+        regular_price=Decimal("29.00"),
+    )
+    db_session.add(sub)
+    db_session.flush()
+
+    payment_id = f"PAY-{uuid.uuid4().hex[:10].upper()}"
+
+    pay1 = SubscriptionPayment(
+        subscription_id=sub.id,
+        provider_payment_id=payment_id,
+        amount=Decimal("19.00"),
+        currency="USD",
+        status="COMPLETED",
+    )
+    db_session.add(pay1)
+    db_session.commit()
+
+    # Second payment with identical provider_payment_id must fail at DB level
+    pay2 = SubscriptionPayment(
+        subscription_id=sub.id,
+        provider_payment_id=payment_id,
+        amount=Decimal("29.00"),
+        currency="USD",
+        status="COMPLETED",
+    )
+    db_session.add(pay2)
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+    db_session.rollback()
+
