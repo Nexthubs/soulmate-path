@@ -333,7 +333,7 @@ Implement reusable unselected/selected/disabled/focus/error-compatible option ca
 
 **Priority:** P1  
 **Depends:** SP-102  
-**Status:** TODO
+**Status:** DONE
 **Context refs:** DEV-SPEC §2, §8 | Decisions: QUIZ-01 | Dependency handoffs: SP-102
 
 
