@@ -1,0 +1,480 @@
+{
+  "version": "soulmate-quiz-v1",
+  "questions": [
+    {
+      "code": "q02",
+      "order": 2,
+      "type": "single",
+      "title": "Select your gender",
+      "required": true,
+      "result_key": "user_gender",
+      "options": [
+        {
+          "code": "male",
+          "label": "Male"
+        },
+        {
+          "code": "female",
+          "label": "Female"
+        }
+      ]
+    },
+    {
+      "code": "q03",
+      "order": 3,
+      "type": "single",
+      "title": "Who are you interested in?",
+      "required": true,
+      "result_key": "preferred_partner_gender",
+      "options": [
+        {
+          "code": "male",
+          "label": "👨‍Male"
+        },
+        {
+          "code": "female",
+          "label": "👩‍Female"
+        }
+      ]
+    },
+    {
+      "code": "q04",
+      "order": 4,
+      "type": "single",
+      "title": "What best describes your love life right now?",
+      "required": true,
+      "result_key": "love_life_status",
+      "options": [
+        {
+          "code": "single",
+          "label": "🌱Single"
+        },
+        {
+          "code": "in_relationship",
+          "label": "💞In a relationship"
+        },
+        {
+          "code": "engaged_or_married",
+          "label": "💍Engaged or married"
+        },
+        {
+          "code": "recently_out",
+          "label": "💔Recently out of something"
+        },
+        {
+          "code": "complicated",
+          "label": "🌀It's complicated"
+        }
+      ]
+    },
+    {
+      "code": "q05",
+      "order": 5,
+      "type": "single",
+      "title": "Ideal age range for your soulmate?",
+      "required": true,
+      "result_key": "preferred_partner_age_range",
+      "options": [
+        {
+          "code": "age_20_30",
+          "label": "👨‍20-30"
+        },
+        {
+          "code": "age_30_40",
+          "label": "👨‍30-40"
+        },
+        {
+          "code": "age_40_50",
+          "label": "👱‍♂️40-50"
+        },
+        {
+          "code": "age_50_plus",
+          "label": "👨‍🦳50+"
+        }
+      ]
+    },
+    {
+      "code": "q06",
+      "order": 6,
+      "type": "single",
+      "title": "Do you have a preferred ethnic background for your sketch?",
+      "required": true,
+      "result_key": "preferred_partner_ethnicity",
+      "options": [
+        {
+          "code": "caucasian_white",
+          "label": "🧑Caucasian/White"
+        },
+        {
+          "code": "hispanic_latino",
+          "label": "👱Hispanic/Latino"
+        },
+        {
+          "code": "african_african_american",
+          "label": "🧑🏾African/African-American"
+        },
+        {
+          "code": "asian",
+          "label": "🧑🏻Asian"
+        },
+        {
+          "code": "no_preference",
+          "label": "🙄No preference"
+        }
+      ]
+    },
+    {
+      "code": "q07",
+      "order": 7,
+      "type": "single",
+      "title": "What’s the key quality your soulmate should have?",
+      "required": true,
+      "result_key": "key_soulmate_quality",
+      "options": [
+        {
+          "code": "kindness",
+          "label": "😇Kindness"
+        },
+        {
+          "code": "loyalty",
+          "label": "🥹Loyalty"
+        },
+        {
+          "code": "intelligence",
+          "label": "🧐Intelligence"
+        },
+        {
+          "code": "creativity",
+          "label": "🤩Creativity"
+        },
+        {
+          "code": "passion",
+          "label": "🥰Passion"
+        },
+        {
+          "code": "empathy",
+          "label": "😊Empathy"
+        }
+      ]
+    },
+    {
+      "code": "q08",
+      "order": 8,
+      "type": "date",
+      "title": "What's your date of birth?",
+      "required": true,
+      "result_key": "birth_date",
+      "subtitle": "Your birth date reveals your core personality traits, needs and desires."
+    },
+    {
+      "code": "q09",
+      "order": 9,
+      "type": "single",
+      "title": "Which of the four elements match your personality?",
+      "required": true,
+      "result_key": "element",
+      "options": [
+        {
+          "code": "fire",
+          "label": "🔥Fire"
+        },
+        {
+          "code": "water",
+          "label": "🌊Water"
+        },
+        {
+          "code": "earth",
+          "label": "⛰Earth"
+        },
+        {
+          "code": "wind",
+          "label": "💨Wind"
+        }
+      ]
+    },
+    {
+      "code": "q10",
+      "order": 10,
+      "type": "single",
+      "title": "Do you make decisions with your head or your heart?",
+      "required": true,
+      "result_key": "decision_style",
+      "options": [
+        {
+          "code": "heart",
+          "label": "❤Heart"
+        },
+        {
+          "code": "head",
+          "label": "🧠Head"
+        },
+        {
+          "code": "both",
+          "label": "⚖️Both"
+        }
+      ]
+    },
+    {
+      "code": "q11",
+      "order": 11,
+      "type": "single",
+      "title": "What’s your biggest personal challenge?",
+      "required": true,
+      "result_key": "personal_challenge",
+      "options": [
+        {
+          "code": "building_trust",
+          "label": "🤲🏻Building trust"
+        },
+        {
+          "code": "finding_right_person",
+          "label": "👩🏼‍❤️‍👨🏼Finding the right person"
+        },
+        {
+          "code": "keeping_spark_alive",
+          "label": "🔥Keeping the spark alive"
+        },
+        {
+          "code": "understanding_my_needs",
+          "label": "🧘🏻Understanding my needs"
+        },
+        {
+          "code": "letting_go_past",
+          "label": "🌈Letting go of the past"
+        },
+        {
+          "code": "dealing_with_uncertainty",
+          "label": "⛅Dealing with uncertainly"
+        }
+      ]
+    },
+    {
+      "code": "q12",
+      "order": 12,
+      "type": "single",
+      "title": "What is your biggest red flag?",
+      "required": true,
+      "result_key": "red_flag",
+      "options": [
+        {
+          "code": "lack_of_trust",
+          "label": "🙁Lack of trust"
+        },
+        {
+          "code": "poor_communication",
+          "label": "😶Poor communication"
+        },
+        {
+          "code": "jealousy",
+          "label": "🫣Jealousy"
+        },
+        {
+          "code": "disrespect",
+          "label": "😢Disrespect"
+        },
+        {
+          "code": "inconsistency",
+          "label": "🤯Inconsistency"
+        },
+        {
+          "code": "self_centeredness",
+          "label": "😎Self-centeredness"
+        }
+      ]
+    },
+    {
+      "code": "q13",
+      "order": 13,
+      "type": "single",
+      "title": "Do you prefer a similar partner or one who contrasts with you?",
+      "required": true,
+      "result_key": "similarity_preference",
+      "options": [
+        {
+          "code": "similar_to_me",
+          "label": "😌Similar to me"
+        },
+        {
+          "code": "brings_contrast",
+          "label": "🤩Brings contrast"
+        }
+      ]
+    },
+    {
+      "code": "q14",
+      "order": 14,
+      "type": "single",
+      "title": "What’s your ideal relationship dynamic?",
+      "required": true,
+      "result_key": "relationship_dynamic",
+      "options": [
+        {
+          "code": "partnership",
+          "label": "💞Partnership"
+        },
+        {
+          "code": "friendship",
+          "label": "💓Friendship"
+        },
+        {
+          "code": "adventure",
+          "label": "⛵Adventure"
+        },
+        {
+          "code": "deep_connection",
+          "label": "💖Deep connection"
+        },
+        {
+          "code": "balanced_growth",
+          "label": "🎯Balanced growth"
+        }
+      ]
+    },
+    {
+      "code": "q15",
+      "order": 15,
+      "type": "single",
+      "title": "What’s your primary love language?",
+      "required": true,
+      "result_key": "love_language",
+      "options": [
+        {
+          "code": "words_of_affirmation",
+          "label": "💖Words of affirmation"
+        },
+        {
+          "code": "acts_of_service",
+          "label": "💕Acts of service"
+        },
+        {
+          "code": "physical_touch",
+          "label": "💓Physical touch"
+        },
+        {
+          "code": "receiving_gifts",
+          "label": "🎁Receiving gifts"
+        },
+        {
+          "code": "quality_time",
+          "label": "⏳Quality time"
+        }
+      ]
+    },
+    {
+      "code": "q16",
+      "order": 16,
+      "type": "single",
+      "title": "What’s your ideal connection with a partner?",
+      "required": true,
+      "result_key": "connection_style",
+      "options": [
+        {
+          "code": "deep_and_intimate",
+          "label": "💋Deep and intimate"
+        },
+        {
+          "code": "fun_and_adventurous",
+          "label": "🥳Fun and adventurous"
+        },
+        {
+          "code": "balanced_and_supportive",
+          "label": "🪢Balanced and supportive"
+        },
+        {
+          "code": "passionate_and_inspiring",
+          "label": "🌅Passionate and inspiring"
+        },
+        {
+          "code": "calm_and_steady",
+          "label": "🧘🏻Calm and steady"
+        },
+        {
+          "code": "growth_and_learning",
+          "label": "🧠Full of growth and learning"
+        },
+        {
+          "code": "other",
+          "label": "🙄Other"
+        }
+      ]
+    },
+    {
+      "code": "q17",
+      "order": 17,
+      "type": "single",
+      "title": "What’s your biggest relationship fear?",
+      "required": true,
+      "result_key": "relationship_fear",
+      "options": [
+        {
+          "code": "losing_trust",
+          "label": "💔Losing trust"
+        },
+        {
+          "code": "growing_apart",
+          "label": "🏃🏻‍♀️Growing apart"
+        },
+        {
+          "code": "not_being_understood",
+          "label": "🤷Not being understood"
+        },
+        {
+          "code": "lack_of_commitment",
+          "label": "🙅Lack of commitment"
+        },
+        {
+          "code": "being_vulnerable",
+          "label": "🥹Being vulnerable"
+        },
+        {
+          "code": "getting_hurt_again",
+          "label": "😢Getting hurt again"
+        },
+        {
+          "code": "other",
+          "label": "🙄Other"
+        }
+      ]
+    },
+    {
+      "code": "q18",
+      "order": 18,
+      "type": "multi",
+      "title": "What life goals do you hope to achieve with your soulmate?",
+      "required": true,
+      "result_key": "life_goals",
+      "min_select": 1,
+      "max_select": null,
+      "options": [
+        {
+          "code": "building_a_family",
+          "label": "👩‍❤️‍👨Building a family"
+        },
+        {
+          "code": "traveling_the_world",
+          "label": "✈️Traveling the world"
+        },
+        {
+          "code": "creating_a_business",
+          "label": "💼Creating a business"
+        },
+        {
+          "code": "personal_growth",
+          "label": "🚀Personal growth"
+        },
+        {
+          "code": "financial_stability",
+          "label": "💵Financial stability"
+        },
+        {
+          "code": "making_positive_impact",
+          "label": "🎯Making a positive impact"
+        },
+        {
+          "code": "other",
+          "label": "🙄Other"
+        }
+      ]
+    }
+  ]
+}

@@ -156,8 +156,8 @@ Mandatory high-risk review before merge.
 
 **Priority:** P1  
 **Depends:** SP-001, preferably SP-002  
-**Status:** TODO
-**Context refs:** DEV-SPEC §4.1–4.6 | Decisions: QUIZ-01 | Dependency handoffs: SP-001, SP-002
+**Status:** DONE
+**Context refs:** DEV-SPEC §4.1–4.6 | Decisions: QUIZ-01 | Dependency handoffs: SP-001, SP-002, SP-003
 
 
 ### Goal

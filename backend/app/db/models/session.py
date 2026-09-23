@@ -44,8 +44,13 @@ class SoulmateSession(Base, TimestampMixin):
     )
     quiz_version: Mapped[str] = mapped_column(
         String(64),
+        default="soulmate-quiz-v1",
         nullable=False,
     )
+
+    def __init__(self, **kwargs: Any) -> None:
+        kwargs.setdefault("quiz_version", "soulmate-quiz-v1")
+        super().__init__(**kwargs)
     status: Mapped[str] = mapped_column(
         String(32),
         nullable=False,
