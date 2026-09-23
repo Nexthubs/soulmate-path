@@ -8,13 +8,18 @@ import { SOULMATE_ROUTES, sanitizeInternalRoute } from "@/soulmate/domain";
 function SketchPageContent() {
   const searchParams = useSearchParams();
 
-  // DEV-SPEC §3: Production access requires entitlement confirmation.
-  // In development or when fixture=true, default to "completed" fixture; otherwise default to "loading".
+  // DEV-SPEC §3, AGENTS.md §5: Production access requires entitlement confirmation.
+  // In production, client URL parameters (?state=completed&url=...) must NOT bypass entitlement.
+  const isProduction = process.env.NODE_ENV === "production";
   const isFixture =
-    searchParams.get("fixture") === "true" || process.env.NODE_ENV !== "production";
-  const defaultState: SketchViewState = isFixture ? "completed" : "loading";
+    !isProduction &&
+    (searchParams.get("fixture") === "true" || process.env.NODE_ENV !== "production");
 
-  const stateParam = (searchParams.get("state") || defaultState) as SketchViewState;
+  const defaultState: SketchViewState = isFixture ? "completed" : "loading";
+  // In production, state cannot be spoofed via URL query param
+  const stateParam = isFixture
+    ? ((searchParams.get("state") || defaultState) as SketchViewState)
+    : "loading";
   const validState: SketchViewState = ["loading", "completed", "failed"].includes(stateParam)
     ? stateParam
     : defaultState;
@@ -25,17 +30,27 @@ function SketchPageContent() {
       ? "/images/email/sketch-male.png"
       : "/images/email/sketch-female.png";
 
-  const durableUrl = searchParams.get("url") || defaultUrl;
+  const durableUrl = isFixture ? (searchParams.get("url") || defaultUrl) : defaultUrl;
   const backUrl = sanitizeInternalRoute(searchParams.get("backUrl"));
   const showToolbar = isFixture;
 
   return (
-    <SketchViewer
-      state={validState}
-      durableUrl={durableUrl}
-      backUrl={backUrl}
-      showFixtureToolbar={showToolbar}
-    />
+    <>
+      {isFixture && (
+        <div
+          data-testid="sketch-fixture-banner"
+          className="w-full max-w-[390px] mx-auto py-1 px-3 bg-amber-500/10 border-b border-amber-500/30 text-amber-800 text-center text-xs font-semibold"
+        >
+          [Demo Preview (Unauthenticated Fixture Data)]
+        </div>
+      )}
+      <SketchViewer
+        state={validState}
+        durableUrl={durableUrl}
+        backUrl={backUrl}
+        showFixtureToolbar={showToolbar}
+      />
+    </>
   );
 }
 

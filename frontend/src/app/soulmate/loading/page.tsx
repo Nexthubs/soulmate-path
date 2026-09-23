@@ -25,10 +25,12 @@ function LoadingContent() {
   const step = isNaN(stepParam) || stepParam < 0 || stepParam > 5 ? 0 : stepParam;
 
   // Marketing Claims Compliance Gate (DEV-SPEC §21, LEGAL-01)
+  // In production, unverified marketing claims are strictly forbidden and cannot be bypassed via URL params.
+  const isProduction = process.env.NODE_ENV === "production";
   const shouldShowMarketingClaims =
-    searchParams.get("claims") === "true" ||
-    (process.env.NEXT_PUBLIC_ENABLE_MARKETING_CLAIMS === "true" &&
-      process.env.NODE_ENV !== "production");
+    !isProduction &&
+    (searchParams.get("claims") === "true" ||
+      process.env.NEXT_PUBLIC_ENABLE_MARKETING_CLAIMS === "true");
 
   // Dynamic copy injection parameters
   const qualityParam = searchParams.get("quality");
@@ -246,7 +248,7 @@ function LoadingContent() {
           subtitle={customSubtitle4 || TRANSITION_4_STATIC_COPY.subtitle}
           illustration={
             <Image
-              src="/images/transitions/heart-hands.png"
+              src="/images/transitions/heart-support.png"
               alt="Hands holding heart icon"
               width={128}
               height={128}

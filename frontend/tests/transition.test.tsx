@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import React from "react";
+import fs from "fs";
+import path from "path";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   TransitionShell,
@@ -298,6 +300,22 @@ describe("SP-104: Transition Shared Layout + Interstitial Shells", () => {
       expect(TRANSITION_4_STATIC_COPY.subtitle).toBe(
         "Moving on from the past is hard, but so many share this journey. We’ll help you find peace and clarity."
       );
+    });
+  });
+
+  describe("Static Asset Integrity (H-2)", () => {
+    it("verifies all referenced transition illustration assets exist in public directory", () => {
+      const transitionsDir = path.resolve(__dirname, "../public/images/transitions");
+      const requiredAssets = [
+        "artist-sketching.png",
+        "target-bullseye.png",
+        "scale-balance.png",
+        "heart-support.png",
+      ];
+      for (const asset of requiredAssets) {
+        const fullPath = path.join(transitionsDir, asset);
+        expect(fs.existsSync(fullPath)).toBe(true);
+      }
     });
   });
 });

@@ -2,9 +2,14 @@
 
 import React, { Suspense } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { SOULMATE_ROUTES } from "@/soulmate/domain";
 
 function SubscribePlaceholderContent() {
+  const searchParams = useSearchParams();
+  const query = searchParams.toString();
+  const resultUrl = `${SOULMATE_ROUTES.RESULT}${query ? `?${query}` : ""}`;
+
   return (
     <main className="min-h-screen max-w-[390px] mx-auto flex flex-col items-center justify-between p-6 bg-gradient-to-b from-[#fff0f3] via-[#fef4e9] to-[#fef3de] text-neutral-900">
       <header className="w-full flex justify-between items-center py-4">
@@ -20,7 +25,7 @@ function SubscribePlaceholderContent() {
           PayPal monthly subscription checkout will be integrated in Wave 4 (SP-401/SP-402).
         </p>
         <Link
-          href={SOULMATE_ROUTES.RESULT}
+          href={resultUrl}
           className="inline-block w-full py-3 px-4 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-semibold text-sm transition-colors"
         >
           Continue to Result Dashboard

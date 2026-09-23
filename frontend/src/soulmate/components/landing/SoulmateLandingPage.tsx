@@ -40,10 +40,12 @@ export function SoulmateLandingPage({
   const router = useRouter();
 
   // Determine whether to display marketing badges per LEGAL-01 compliance gate
+  // In production, unverified marketing claims are strictly disabled regardless of query or props.
+  const isProduction = process.env.NODE_ENV === "production";
   const shouldShowClaims =
-    showMarketingClaims ??
-    (process.env.NEXT_PUBLIC_ENABLE_MARKETING_CLAIMS === "true" ||
-      process.env.NODE_ENV !== "production");
+    !isProduction &&
+    (showMarketingClaims ??
+      (process.env.NEXT_PUBLIC_ENABLE_MARKETING_CLAIMS === "true"));
 
   const handleStart = () => {
     if (onStartSession) {

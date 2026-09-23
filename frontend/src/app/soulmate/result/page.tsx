@@ -7,7 +7,7 @@ import { SoulmateResultView } from "@/soulmate/components/result";
 function ResultContent() {
   const searchParams = useSearchParams();
   const [email, setEmail] = React.useState<string>(
-    searchParams.get("email") || "weijialin0827@gmail.com"
+    searchParams.get("email") || ""
   );
 
   React.useEffect(() => {
@@ -19,13 +19,24 @@ function ResultContent() {
     }
   }, []);
 
-  const showToolbar = searchParams.get("fixture") === "true" || process.env.NODE_ENV !== "production";
+  const isProduction = process.env.NODE_ENV === "production";
+  const showToolbar = !isProduction && (searchParams.get("fixture") === "true" || process.env.NODE_ENV !== "production");
 
   return (
-    <SoulmateResultView
-      userEmail={email}
-      showFixtureToolbar={showToolbar}
-    />
+    <>
+      {!isProduction && (
+        <div
+          data-testid="result-fixture-banner"
+          className="w-full max-w-[390px] mx-auto py-1 px-3 bg-amber-500/10 border-b border-amber-500/30 text-amber-800 text-center text-xs font-semibold"
+        >
+          [Demo Preview (Fixture Data)]
+        </div>
+      )}
+      <SoulmateResultView
+        userEmail={email || "user@example.com"}
+        showFixtureToolbar={showToolbar}
+      />
+    </>
   );
 }
 

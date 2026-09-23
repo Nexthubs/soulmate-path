@@ -53,11 +53,13 @@ function EmailPageContent() {
       }
     }
 
-    router.push(
-      `${SOULMATE_ROUTES.RESULT}?preferred_partner_gender=${encodeURIComponent(
-        preferredPartnerGender
-      )}`
-    );
+    const params = new URLSearchParams();
+    params.set("preferred_partner_gender", preferredPartnerGender);
+    if (userGender) params.set("user_gender", userGender);
+    if (partnerAgeRange) params.set("age_range", partnerAgeRange);
+    if (partnerEthnicity) params.set("ethnicity", partnerEthnicity);
+
+    router.push(`${SOULMATE_ROUTES.SUBSCRIBE}?${params.toString()}`);
   };
 
   return (

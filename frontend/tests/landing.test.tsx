@@ -72,6 +72,20 @@ describe("SP-101: Soulmate Landing Page Component", () => {
       expect(html).toContain("data-testid=\"marketing-badges\"");
       expect(html).toContain("data-testid=\"featured-in-media\"");
     });
+
+    it("strictly omits marketing claims in production regardless of props (H-1)", () => {
+      const originalEnv = process.env.NODE_ENV;
+      try {
+        (process.env as Record<string, string | undefined>).NODE_ENV = "production";
+        const html = renderToStaticMarkup(<SoulmateLandingPage showMarketingClaims={true} />);
+        expect(html).not.toContain("3M+");
+        expect(html).not.toContain("18K+");
+        expect(html).not.toContain("data-testid=\"marketing-badges\"");
+        expect(html).not.toContain("data-testid=\"featured-in-media\"");
+      } finally {
+        (process.env as Record<string, string | undefined>).NODE_ENV = originalEnv;
+      }
+    });
   });
 
   describe("Keyboard & Accessibility Standards", () => {

@@ -68,7 +68,7 @@ export const DEFAULT_RESULT_FIXTURE: ResultAggregateData = {
  */
 export function SoulmateResultView({
   initialData = DEFAULT_RESULT_FIXTURE,
-  userEmail = "weijialin0827@gmail.com",
+  userEmail = "user@example.com",
   showFixtureToolbar = false,
   onAction,
   acceleratedPrice,

@@ -267,13 +267,13 @@ describe("SP-106: Result Cards Fixture UI (DEV-SPEC §2, §10; DECISIONS TIME-01
       const html = renderToStaticMarkup(
         <SoulmateResultView
           initialData={aggregateData}
-          userEmail="weijialin0827@gmail.com"
+          userEmail="user@example.com"
         />
       );
 
       // Verify page layout and header
       expect(html).toContain("data-testid=\"soulmate-result-view\"");
-      expect(html).toContain("weijialin0827@gmail.com");
+      expect(html).toContain("user@example.com");
       expect(html).toContain("Hint");
       expect(html).toContain("Your Soulmate Sketch");
 
