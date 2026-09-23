@@ -32,11 +32,21 @@ export function validateClientConfig(
   const errors: string[] = [];
 
   if (nodeEnv.toLowerCase() === "production") {
-    if (!config.appBaseUrl || config.appBaseUrl.includes("localhost") || config.appBaseUrl.includes("127.0.0.1")) {
-      errors.push("NEXT_PUBLIC_APP_BASE_URL must be a valid production URL (not localhost)");
+    if (
+      !config.appBaseUrl ||
+      !config.appBaseUrl.startsWith("https://") ||
+      config.appBaseUrl.includes("localhost") ||
+      config.appBaseUrl.includes("127.0.0.1")
+    ) {
+      errors.push("NEXT_PUBLIC_APP_BASE_URL must be a valid production HTTPS URL (not localhost)");
     }
-    if (!config.apiBaseUrl || config.apiBaseUrl.includes("localhost") || config.apiBaseUrl.includes("127.0.0.1")) {
-      errors.push("NEXT_PUBLIC_API_BASE_URL must be a valid production URL (not localhost)");
+    if (
+      !config.apiBaseUrl ||
+      !config.apiBaseUrl.startsWith("https://") ||
+      config.apiBaseUrl.includes("localhost") ||
+      config.apiBaseUrl.includes("127.0.0.1")
+    ) {
+      errors.push("NEXT_PUBLIC_API_BASE_URL must be a valid production HTTPS URL (not localhost)");
     }
     if (!config.paypalClientId || config.paypalClientId.trim() === "") {
       errors.push("NEXT_PUBLIC_PAYPAL_CLIENT_ID is required in production");

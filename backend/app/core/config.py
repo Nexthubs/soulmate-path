@@ -1,9 +1,41 @@
 import ipaddress
+import re
 import urllib.parse
 from decimal import Decimal
 from typing import List, Optional
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+_DOMAIN_LABEL_REGEX = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
+
+
+def _is_valid_domain_hostname(hostname: str) -> bool:
+    """
+    Validates hostname against RFC 1035/1123 domain name syntax:
+    - Overall length <= 253 characters.
+    - No spaces or forbidden characters.
+    - Labels separated by single dots (no empty labels like '..').
+    - At least 2 labels (e.g. 'domain.com', not single-word 'bad host').
+    - Each label 1-63 chars, alphanumeric with optional interior hyphens.
+    - TLD must be >= 2 characters, alphabetic or Punycode ('xn--').
+    """
+    if not hostname or len(hostname) > 253:
+        return False
+    if hostname.endswith("."):
+        hostname = hostname[:-1]
+    labels = hostname.split(".")
+    if len(labels) < 2:
+        return False
+    for label in labels:
+        if not label or len(label) > 63:
+            return False
+        if not _DOMAIN_LABEL_REGEX.match(label):
+            return False
+    tld = labels[-1]
+    if not (tld.isalpha() or tld.startswith("xn--")) or len(tld) < 2:
+        return False
+    return True
 
 
 class ConfigurationError(ValueError):
@@ -150,8 +182,9 @@ class Settings(BaseSettings):
                             if ip.is_loopback or ip.is_private or ip.is_reserved or ip.is_unspecified:
                                 missing_keys.append("APP_BASE_URL (must not use loopback or private IP in production)")
                         except ValueError:
-                            # Valid domain hostname, which is expected
-                            pass
+                            # Not an IP address -> validate as RFC 1123 domain hostname
+                            if any(c.isspace() for c in parsed_url.netloc) or not _is_valid_domain_hostname(host):
+                                missing_keys.append("APP_BASE_URL (must have a valid domain hostname in production)")
             except Exception as e:
                 missing_keys.append(f"APP_BASE_URL (invalid URL: {e})")
 

@@ -1,3 +1,4 @@
+import React from "react";
 import { describe, it, expect } from "vitest";
 import {
   clientConfig,
@@ -6,6 +7,8 @@ import {
   ClientConfig,
 } from "../src/soulmate/config";
 import { ConfigValidator } from "../src/soulmate/components/ConfigValidator";
+import SoulmateLayout from "../src/app/soulmate/layout";
+import SoulmateError from "../src/app/soulmate/error";
 
 describe("Frontend Client Configuration (SP-004)", () => {
   it("exposes centralized client configuration matching contracts", () => {
@@ -72,6 +75,37 @@ describe("Frontend Client Configuration (SP-004)", () => {
       envObj["NODE_ENV"] = origEnv;
       delete globalObj["window"];
     }
+  });
+
+  it("SoulmateLayout executes server-side assertion in production runtime (not in build phase)", () => {
+    const envObj = process.env as Record<string, string | undefined>;
+    const origEnv = envObj["NODE_ENV"];
+    const origPhase = envObj["NEXT_PHASE"];
+    try {
+      envObj["NODE_ENV"] = "production";
+      delete envObj["NEXT_PHASE"];
+      expect(() => SoulmateLayout({ children: null })).toThrow(/Production client configuration validation failed/);
+
+      // In build phase, static page prerendering must pass without throwing
+      envObj["NEXT_PHASE"] = "phase-production-build";
+      expect(() => SoulmateLayout({ children: null })).not.toThrow();
+    } finally {
+      envObj["NODE_ENV"] = origEnv;
+      if (origPhase !== undefined) {
+        envObj["NEXT_PHASE"] = origPhase;
+      } else {
+        delete envObj["NEXT_PHASE"];
+      }
+    }
+  });
+
+  it("SoulmateError component renders user-facing error state with retry action", () => {
+    const mockReset = () => {};
+    const configError = new Error("Production client configuration validation failed:\n  - NEXT_PUBLIC_PAYPAL_CLIENT_ID is required");
+    const element = SoulmateError({ error: configError, reset: mockReset });
+    expect(element).toBeDefined();
+    expect(React.isValidElement(element)).toBe(true);
+    expect(element.type).toBe("div");
   });
 });
 

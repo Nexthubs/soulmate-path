@@ -52,8 +52,8 @@ Details and current handling → `DECISIONS.md`.
 
 ```text
 Quiz config: soulmate-quiz-v1 (canonical JSON & seeded in DB soulmate_quiz_versions)
-DB migration checkpoint: 0001_initial (Alembic initial schema with 9 tables and high-risk invariants)
-Config checkpoint: DEV-SPEC §22 groups verified, centralized Decimal pricing, production strictness check
+DB migration checkpoint: 0002_add_indexes (Alembic schema with 9 tables, foreign key/query indexes, and high-risk invariants)
+Config checkpoint: DEV-SPEC §22 groups verified, centralized Decimal pricing, RFC 1123 domain syntax check, multi-layer frontend gate
 API checkpoint: DEV-SPEC v1.2 baseline; error taxonomy, correlation middleware, and structured logging established (SP-005)
 Payment provider: PayPal monthly subscription with intro first month + regular monthly renewal
 Sketch target model: gpt-image-2 via provider adapter

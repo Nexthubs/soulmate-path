@@ -360,3 +360,10 @@ def test_foreign_key_and_query_indexes_exist(db_session):
     assert "idx_ai_generation_jobs_artifact_id" in job_indexes
     assert job_indexes["idx_ai_generation_jobs_artifact_id"] == ["artifact_id"]
 
+
+def test_alembic_current_revision_is_head(db_session):
+    """Verify that the database migration state is at 0002_add_indexes head."""
+    result = db_session.execute(text("SELECT version_num FROM alembic_version")).scalar()
+    assert result == "0002_add_indexes"
+
+

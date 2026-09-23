@@ -17,7 +17,7 @@ Handoffs:
 Database schema exists, initial migration succeeds against real PostgreSQL, and all high-risk uniqueness/foreign key constraints are verified with automated tests.
 
 ## 3. Current implementation evidence
-The repository implements the canonical 9 PostgreSQL tables defined in DEV-SPEC §14 via Alembic migration `backend/alembic/versions/0001_initial_soulmate_schema.py` and SQLAlchemy ORM models in `backend/app/db/models/`.
+The repository implements the canonical 9 PostgreSQL tables defined in DEV-SPEC §14 via Alembic baseline migration `backend/alembic/versions/0001_initial_soulmate_schema.py` and dedicated index upgrade migration `backend/alembic/versions/0002_add_foreign_key_and_query_indexes.py` with SQLAlchemy ORM models in `backend/app/db/models/`.
 
 Key Invariants Enforced at PostgreSQL Database Engine Level:
 1. **ASSET-01 (Durable Sketch Uniqueness):** Partial unique index `uq_soulmate_one_sketch_per_email` on `soulmate_artifacts (email_normalized)` WHERE `artifact_type = 'SKETCH'`. Prevents duplicate portrait generation across revisits or sessions.
@@ -26,7 +26,7 @@ Key Invariants Enforced at PostgreSQL Database Engine Level:
 4. **AI Job Idempotency:** Unique constraint on `ai_generation_jobs.idempotency_key`. Prevents duplicate AI generation task queuing.
 5. **Subscription & Payment Integrity:** Unique constraints on `subscriptions.provider_subscription_id` and `subscription_payments.provider_payment_id`.
 6. **TIME-01 (Timezone Awareness):** All temporal columns use `TIMESTAMP WITH TIME ZONE` (`DateTime(timezone=True)`).
-7. **Foreign Key and Query Lookup Performance Indexes:**
+7. **Foreign Key and Query Lookup Performance Indexes (Revision: `0002_add_indexes`):**
    - `soulmate_sessions`: `idx_soulmate_sessions_user_id` on `(user_id)` and `idx_soulmate_sessions_email` on `(email_normalized)`
    - `subscriptions`: `idx_subscriptions_session_id` on `(session_id)`
    - `subscription_payments`: `idx_subscription_payments_subscription_id` on `(subscription_id)`
@@ -35,7 +35,7 @@ Key Invariants Enforced at PostgreSQL Database Engine Level:
 ## 4. Accepted contract checkpoint
 - **API:** Internal persistence layer and Alembic schema management
 - **Types / schemas:** SQLAlchemy 2.0 type-annotated DeclarativeBase models matching DEV-SPEC §14
-- **DB migrations:** `backend/alembic/versions/0001_initial_soulmate_schema.py` (Revision: `0001_initial`)
+- **DB migrations:** `backend/alembic/versions/0001_initial_soulmate_schema.py` (Revision: `0001_initial`), `backend/alembic/versions/0002_add_foreign_key_and_query_indexes.py` (Revision: `0002_add_indexes`, Head)
 - **Configuration / provider state:** PostgreSQL 16 on `localhost:5432` with connection URL `postgresql://admin:admin123@localhost:5432/soulmate`
 
 ## 5. Required evidence checklist
@@ -48,14 +48,17 @@ Key Invariants Enforced at PostgreSQL Database Engine Level:
 - [x] Unique provider subscription ID: `test_unique_provider_subscription_id` PASS
 - [x] Unique provider payment ID: `test_unique_provider_payment_id` PASS
 - [x] Foreign key and query lookup indexes: `test_foreign_key_and_query_indexes_exist` PASS
-- [x] Reversible Alembic migration: `alembic downgrade base && alembic upgrade head` PASS
+- [x] Alembic migration head revision check: `test_alembic_current_revision_is_head` PASS
+- [x] Upgrade path from existing 0001_initial to head: `alembic upgrade head` PASS
+- [x] Upgrade path from empty base to head: `alembic downgrade base && alembic upgrade head` PASS
 
 ## 6. Test / manual / provider evidence
 | Check | Result | Evidence/notes |
 |---|---|---|
-| `pytest backend/tests/test_migrations.py` | PASS | 9/9 automated tests passing against live PostgreSQL 16 instance |
-| Schema migration downgrade base | PASS | All 9 tables and indexes cleanly dropped |
-| Schema migration upgrade head | PASS | All 9 tables, partial unique index, and foreign key indexes created |
+| `pytest backend/tests/test_migrations.py` | PASS | 10/10 automated tests passing against live PostgreSQL 16 instance |
+| Upgrade from `0001_initial` to `0002_add_indexes` | PASS | `alembic upgrade head` applied cleanly to database with existing 0001_initial revision |
+| Fresh install from `base` to `0002_add_indexes` | PASS | `alembic downgrade base && alembic upgrade head` applied all 9 tables and 4 indexes |
+| Reversible migration | PASS | `alembic downgrade 0001_initial` dropped 4 indexes cleanly; `alembic downgrade base` dropped all tables |
 | Partial unique index ASSET-01 | PASS | Enforced by PostgreSQL engine; verified rejecting duplicate sketch while allowing report |
 | Timestamps UTC preservation | PASS | Verified `tzinfo` awareness on create and refresh |
 

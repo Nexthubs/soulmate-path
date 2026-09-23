@@ -53,12 +53,6 @@ def upgrade() -> None:
         ["email_normalized"],
         unique=False,
     )
-    op.create_index(
-        "idx_soulmate_sessions_user_id",
-        "soulmate_sessions",
-        ["user_id"],
-        unique=False,
-    )
 
     # 3. soulmate_answers
     op.create_table(
@@ -126,12 +120,6 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
     )
-    op.create_index(
-        "idx_subscriptions_session_id",
-        "subscriptions",
-        ["session_id"],
-        unique=False,
-    )
 
     # 6. subscription_payments
     op.create_table(
@@ -148,12 +136,6 @@ def upgrade() -> None:
         sa.Column("refunded_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("raw_json", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-    )
-    op.create_index(
-        "idx_subscription_payments_subscription_id",
-        "subscription_payments",
-        ["subscription_id"],
-        unique=False,
     )
 
     # 7. paypal_webhook_events
@@ -220,27 +202,15 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
     )
-    op.create_index(
-        "idx_ai_generation_jobs_artifact_id",
-        "ai_generation_jobs",
-        ["artifact_id"],
-        unique=False,
-    )
-
-
 def downgrade() -> None:
-    op.drop_index("idx_ai_generation_jobs_artifact_id", table_name="ai_generation_jobs", if_exists=True)
     op.drop_table("ai_generation_jobs")
     op.drop_index("uq_soulmate_one_sketch_per_email", table_name="soulmate_artifacts", if_exists=True)
     op.drop_table("soulmate_artifacts")
     op.drop_table("paypal_webhook_events")
-    op.drop_index("idx_subscription_payments_subscription_id", table_name="subscription_payments", if_exists=True)
     op.drop_table("subscription_payments")
-    op.drop_index("idx_subscriptions_session_id", table_name="subscriptions", if_exists=True)
     op.drop_table("subscriptions")
     op.drop_table("soulmate_profiles")
     op.drop_table("soulmate_answers")
-    op.drop_index("idx_soulmate_sessions_user_id", table_name="soulmate_sessions", if_exists=True)
     op.drop_index("idx_soulmate_sessions_email", table_name="soulmate_sessions", if_exists=True)
     op.drop_table("soulmate_sessions")
     op.drop_table("soulmate_quiz_versions")

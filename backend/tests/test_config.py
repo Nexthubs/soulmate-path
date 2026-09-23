@@ -127,6 +127,26 @@ def test_production_validation_rejects_insecure_and_loopback_urls():
         Settings(app_base_url="https://localhost:3000", **base_kwargs).validate_production_config()
     assert "localhost" in str(exc3.value)
 
+    # 4. Bad host with spaces: https://bad host/path
+    with pytest.raises(ConfigurationError) as exc4:
+        Settings(app_base_url="https://bad host/path", **base_kwargs).validate_production_config()
+    assert "APP_BASE_URL (must have a valid domain hostname in production)" in str(exc4.value)
+
+    # 5. Consecutive dots / empty label: https://foo..example.com
+    with pytest.raises(ConfigurationError) as exc5:
+        Settings(app_base_url="https://foo..example.com", **base_kwargs).validate_production_config()
+    assert "APP_BASE_URL (must have a valid domain hostname in production)" in str(exc5.value)
+
+    # 6. Label starting with hyphen: https://-invalid.example.com
+    with pytest.raises(ConfigurationError) as exc6:
+        Settings(app_base_url="https://-invalid.example.com", **base_kwargs).validate_production_config()
+    assert "APP_BASE_URL (must have a valid domain hostname in production)" in str(exc6.value)
+
+    # 7. Single-word hostname without TLD: https://singleword
+    with pytest.raises(ConfigurationError) as exc7:
+        Settings(app_base_url="https://singleword", **base_kwargs).validate_production_config()
+    assert "APP_BASE_URL (must have a valid domain hostname in production)" in str(exc7.value)
+
 
 def test_production_validation_rejects_sandbox_paypal_env():
     """Verify production requires PAYPAL_ENV=production."""

@@ -11,6 +11,7 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "check:prod-config": "node scripts/check-prod-config.mjs",
     "test": "vitest run"
   },
   "dependencies": {
