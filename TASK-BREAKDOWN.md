@@ -308,7 +308,7 @@ Implement reusable unselected/selected/disabled/focus/error-compatible option ca
 
 **Priority:** P1  
 **Depends:** SP-101  
-**Status:** TODO
+**Status:** DONE
 **Context refs:** DEV-SPEC §5 | Decisions: COPY-02, COPY-03 | Dependency handoffs: SP-101
 
 
