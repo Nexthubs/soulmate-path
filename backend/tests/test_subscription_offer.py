@@ -250,10 +250,10 @@ async def test_offer_service_configurable_via_settings_pay_01_pay_02(async_db, d
         custom_settings=custom_settings,
     )
 
-    # PAY-01 verification: dynamic configured prices applied
+    # PAY-01 & H-4 verification: returning subscriber on standard plan pays regular price today
     assert offer.intro_price == "12.50"
     assert offer.regular_price == "35.00"
-    assert offer.disclosure.today_text == "Today: $12.50"
+    assert offer.disclosure.today_text == "Today: $35.00"
     assert offer.disclosure.renewal_text == "Then $35.00 / month"
 
     # PAY-02 verification: routed to standard plan instead of blocked or guessed intro
@@ -261,6 +261,52 @@ async def test_offer_service_configurable_via_settings_pay_01_pay_02(async_db, d
     assert offer.eligibility.plan_class == "standard"
     assert offer.eligibility.is_blocked is False
     assert offer.paypal_plan_id == "P-STD-888"
+
+
+@pytest.mark.asyncio
+async def test_standard_plan_blocked_when_unconfigured_h4(async_db, db_session: Session):
+    """H-4: When single_intro policy applies but standard_plan_id is missing, eligibility is blocked."""
+    sess = SoulmateSession(
+        public_id=f"test_h4_sess_{uuid.uuid4().hex[:12]}",
+        quiz_version="soulmate-quiz-v1",
+        status=SessionStatus.QUIZ_IN_PROGRESS.value,
+        current_step="q01",
+    )
+    db_session.add(sess)
+    db_session.commit()
+
+    sub = Subscription(
+        session_id=sess.id,
+        provider="paypal",
+        provider_subscription_id=f"I-TEST-H4-{uuid.uuid4().hex[:8]}",
+        provider_plan_id="P-TEST-INTRO",
+        provider_status="EXPIRED",
+        currency="USD",
+        regular_price=Decimal("29.00"),
+    )
+    db_session.add(sub)
+    db_session.commit()
+
+    # Standard plan ID is None
+    custom_settings = Settings(
+        soulmate_intro_price=Decimal("12.50"),
+        soulmate_regular_price=Decimal("35.00"),
+        paypal_soulmate_intro_plan_id="P-INTRO-999",
+        paypal_soulmate_standard_plan_id=None,
+        soulmate_resubscription_policy="single_intro",
+    )
+
+    offer = await OfferService.get_subscription_offer(
+        db=async_db,
+        session=sess,
+        custom_settings=custom_settings,
+    )
+
+    assert offer.eligibility.plan_class == "standard"
+    assert offer.eligibility.is_blocked is True
+    assert "Standard subscription plan is not configured" in (offer.eligibility.reason or "")
+    assert offer.paypal.plan_id is None
+    assert offer.paypal_plan_id is None
 
 
 # ==============================================================================

@@ -9,6 +9,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.orm import Session
 
+from app.db.base import utc_now
 from app.db.models.billing import Subscription
 from app.db.models.session import SoulmateSession
 from app.db.session import AsyncSessionLocal, SessionLocal
@@ -403,3 +404,67 @@ async def test_api_check_route_guard_with_session_id_and_idor_guard(db_session: 
         resp_idor = await client.get(f"/api/soulmate/guard/check?target_route=/soulmate/quiz&session_id={public_id_b}")
         assert resp_idor.status_code == 403
         assert resp_idor.json()["error_code"] == "FORBIDDEN_OWNERSHIP"
+
+
+@pytest.mark.asyncio
+async def test_guard_service_rejects_active_subscription_without_first_payment_at_h3(async_db, db_session: Session):
+    """
+    H-3, PAY-AUTH-01, TIME-01 Verification:
+    A subscription with provider_status='ACTIVE' but first_payment_at=None must NOT grant access
+    to /soulmate/result or unlocked content. Only server-confirmed first_payment_at authorizes access.
+    """
+    public_id = f"test_h3_guard_{uuid.uuid4().hex[:12]}"
+    sess = SoulmateSession(
+        public_id=public_id,
+        quiz_version="soulmate-quiz-v1",
+        status=SessionStatus.EMAIL_CAPTURED.value,
+        current_step="subscribe",
+        quiz_completed_at=utc_now(),
+        email="seeker_h3@example.com",
+        email_normalized="seeker_h3@example.com",
+    )
+    db_session.add(sess)
+    db_session.commit()
+
+    # Subscription created with provider_status="ACTIVE", but first_payment_at is None
+    sub = Subscription(
+        session_id=sess.id,
+        provider="paypal",
+        provider_subscription_id=f"I-H3-UNPAID-{uuid.uuid4().hex[:8]}",
+        provider_plan_id="P-TEST-H3",
+        provider_status="ACTIVE",
+        currency="USD",
+        regular_price=Decimal("29.00"),
+        first_payment_at=None,
+    )
+    db_session.add(sub)
+    db_session.commit()
+
+    # 1. GuardService evaluation
+    verdict = await GuardService.evaluate_guard(db=async_db, target_route="/soulmate/result", session=sess)
+    assert verdict.allowed is False
+    assert verdict.is_paid is False
+    assert verdict.redirect_to == "/soulmate/subscribe"
+
+    # 2. HTTP Route Guard endpoint evaluation
+    token = generate_session_token(public_id)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        client.cookies.set("soulmate_sid", token)
+        resp = await client.get("/api/soulmate/guard/check?target_route=/soulmate/result")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["allowed"] is False
+        assert body["is_paid"] is False
+        assert body["redirect_to"] == "/soulmate/subscribe"
+
+    # 3. Simulate verified payment webhook populating first_payment_at
+    sub.first_payment_at = utc_now()
+    sess.status = SessionStatus.SUBSCRIBED.value
+    db_session.commit()
+
+    # Now allowed
+    verdict_paid = await GuardService.evaluate_guard(db=async_db, target_route="/soulmate/result", session=sess)
+    assert verdict_paid.allowed is True
+    assert verdict_paid.is_paid is True
+    assert verdict_paid.redirect_to is None

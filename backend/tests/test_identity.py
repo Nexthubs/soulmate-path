@@ -7,6 +7,7 @@ from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.errors import ValidationError
+from app.db.base import utc_now
 from app.db.models.session import SoulmateSession
 from app.db.session import SessionLocal
 from app.main import app
@@ -99,14 +100,23 @@ def test_derive_user_id_for_email_deterministic():
 # ============================================================================
 
 
+def _mark_session_quiz_completed(db_session, public_id: str):
+    sess = db_session.execute(
+        select(SoulmateSession).where(SoulmateSession.public_id == public_id)
+    ).scalar_one()
+    sess.status = SessionStatus.QUIZ_COMPLETED.value
+    sess.quiz_completed_at = utc_now()
+    sess.current_step = "email"
+    db_session.commit()
+
+
 @pytest.mark.asyncio
 async def test_capture_email_and_bind_identity_success(db_session):
     """
     Acceptance:
-    - POST /api/soulmate/sessions/:sessionId/email persists email and email_normalized.
-    - Binds anonymous session to consistent user identity (user_id).
-    - Advances status to EMAIL_CAPTURED.
-    - Advances current_step to subscribe if currently at email.
+    - POST /api/soulmate/sessions/{public_id}/email validates and normalizes email.
+    - Saves raw email, normalized email, and captured timestamp.
+    - Advances status to EMAIL_CAPTURED and step to 'subscribe'.
     - Returns {ok: True, next: "/soulmate/subscribe"}.
     """
     transport = ASGITransport(app=app)
@@ -117,13 +127,8 @@ async def test_capture_email_and_bind_identity_success(db_session):
         assert create_res.status_code == 201
         session_id = create_res.json()["session_id"]
 
-        # 2. Set current_step to email in DB to test step advance
-        rec = db_session.execute(
-            select(SoulmateSession).where(SoulmateSession.public_id == session_id)
-        ).scalar_one()
-        rec.current_step = "email"
-        rec.status = SessionStatus.QUIZ_COMPLETED.value
-        db_session.commit()
+        # 2. Mark quiz completed (DEV-SPEC §3, H-1 remediation)
+        _mark_session_quiz_completed(db_session, session_id)
 
         # 3. Submit email
         suffix = uuid.uuid4().hex[:8]
@@ -150,15 +155,33 @@ async def test_capture_email_and_bind_identity_success(db_session):
         assert updated_rec.email_captured_at is not None
         assert updated_rec.status == SessionStatus.EMAIL_CAPTURED.value
         assert updated_rec.current_step == "subscribe"
-        assert updated_rec.user_id is not None
-        assert updated_rec.user_id == derive_user_id_for_email(expected_norm)
+        # Anonymous session remains user_id=None per DEV-SPEC §8.3 (H-2 remediation)
+        assert updated_rec.user_id is None
+
+
+@pytest.mark.asyncio
+async def test_cannot_capture_email_when_quiz_incomplete_h1(db_session):
+    """DEV-SPEC Section 3, H-1: Submitting email on an incomplete quiz session returns 409 INVALID_FLOW_STATE."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        create_res = await client.post("/api/soulmate/sessions", json={})
+        session_id = create_res.json()["session_id"]
+
+        # Attempt to capture email while quiz is in progress
+        res = await client.post(
+            f"/api/soulmate/sessions/{session_id}/email",
+            json={"email": "premature@example.com"},
+        )
+        assert res.status_code == 409
+        body = res.json()
+        assert body["error_code"] == "INVALID_FLOW_STATE"
 
 
 @pytest.mark.asyncio
 async def test_identity_consistency_across_multiple_sessions(db_session):
     """
     Acceptance:
-    - Multiple sessions capturing the same email (with varying case/spaces) bind to the exact same user_id.
+    - Multiple sessions capturing the same email (with varying case/spaces) normalize consistently.
     - Enables downstream one-email-one-sketch enforcement without session collisions.
     """
     transport = ASGITransport(app=app)
@@ -171,6 +194,7 @@ async def test_identity_consistency_across_multiple_sessions(db_session):
     async with AsyncClient(transport=transport, base_url="http://test") as client_1:
         res1 = await client_1.post("/api/soulmate/sessions", json={})
         session1_id = res1.json()["session_id"]
+        _mark_session_quiz_completed(db_session, session1_id)
 
         res_email1 = await client_1.post(
             f"/api/soulmate/sessions/{session1_id}/email",
@@ -183,6 +207,7 @@ async def test_identity_consistency_across_multiple_sessions(db_session):
         res2 = await client_2.post("/api/soulmate/sessions", json={})
         session2_id = res2.json()["session_id"]
         assert session2_id != session1_id
+        _mark_session_quiz_completed(db_session, session2_id)
 
         res_email2 = await client_2.post(
             f"/api/soulmate/sessions/{session2_id}/email",
@@ -190,7 +215,7 @@ async def test_identity_consistency_across_multiple_sessions(db_session):
         )
         assert res_email2.status_code == 200
 
-    # Verify both sessions share the exact same user_id and email_normalized
+    # Verify both sessions share the exact same email_normalized, and neither binds unverified user_id
     rec1 = db_session.execute(
         select(SoulmateSession).where(SoulmateSession.public_id == session1_id)
     ).scalar_one()
@@ -200,14 +225,15 @@ async def test_identity_consistency_across_multiple_sessions(db_session):
 
     assert rec1.email_normalized == expected_norm
     assert rec2.email_normalized == expected_norm
-    assert rec1.user_id == rec2.user_id
+    assert rec1.user_id is None
+    assert rec2.user_id is None
 
 
 @pytest.mark.asyncio
-async def test_existing_user_id_reused_from_prior_session(db_session):
+async def test_anonymous_email_capture_does_not_bind_existing_user_id_h2(db_session):
     """
-    When an existing session with the same normalized email already has a user_id,
-    a subsequent session reuses that user_id rather than generating a disjoint identity.
+    DEV-SPEC Section 8.3 (H-2): If an anonymous session enters an email that belongs to an existing user,
+    it must NOT be granted access or bound to that user's user_id.
     """
     transport = ASGITransport(app=app)
     custom_user_id = uuid.uuid4()
@@ -220,16 +246,18 @@ async def test_existing_user_id_reused_from_prior_session(db_session):
         email=unique_email,
         email_normalized=unique_email.lower(),
         quiz_version="soulmate-quiz-v1",
-        status=SessionStatus.EMAIL_CAPTURED.value,
-        current_step="subscribe",
+        status=SessionStatus.SUBSCRIBED.value,
+        current_step="result",
+        quiz_completed_at=utc_now(),
     )
     db_session.add(prior_session)
     db_session.commit()
 
-    # New session enters the same email (with uppercase)
+    # New anonymous session enters the same email
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         create_res = await client.post("/api/soulmate/sessions", json={})
         new_session_id = create_res.json()["session_id"]
+        _mark_session_quiz_completed(db_session, new_session_id)
 
         email_res = await client.post(
             f"/api/soulmate/sessions/{new_session_id}/email",
@@ -240,7 +268,9 @@ async def test_existing_user_id_reused_from_prior_session(db_session):
     new_rec = db_session.execute(
         select(SoulmateSession).where(SoulmateSession.public_id == new_session_id)
     ).scalar_one()
-    assert new_rec.user_id == custom_user_id
+    # DEV-SPEC §8.3: Anonymous session must NOT inherit existing user_id
+    assert new_rec.user_id is None
+    assert new_rec.email_normalized == unique_email.lower()
 
 
 @pytest.mark.asyncio
@@ -251,6 +281,7 @@ async def test_re_capturing_email_in_same_session_is_idempotent(db_session):
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         create_res = await client.post("/api/soulmate/sessions", json={})
         session_id = create_res.json()["session_id"]
+        _mark_session_quiz_completed(db_session, session_id)
 
         # First capture
         res1 = await client.post(

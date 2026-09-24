@@ -1,9 +1,7 @@
-"""
-Route Guard Service (DEV-SPEC §3, §10, §20, Decisions: PAY-AUTH-01, TIME-01).
-Evaluates server-persisted truth to authorize route transitions and prevent invalid skips.
-"""
+"""Route Guard Evaluation Service (DEV-SPEC §3, §10, §20, Decisions: PAY-AUTH-01, TIME-01)."""
 
-from datetime import datetime, timezone
+import logging
+from datetime import datetime
 from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,30 +10,39 @@ from app.core.config import settings
 from app.db.base import utc_now
 from app.db.models.billing import Subscription
 from app.db.models.session import SoulmateSession
-from app.soulmate.domain.guard import evaluate_route_guard
+from app.soulmate.domain.guard import evaluate_route_guard, normalize_route_path
 from app.soulmate.domain.session_state import SessionStatus
 from app.soulmate.schema import RouteGuardResponse
 
+logger = logging.getLogger(__name__)
+
 
 class GuardService:
-    """Service evaluating authoritative server state for route guard enforcement."""
+    """Service governing server-authoritative route access evaluation."""
 
     @classmethod
     async def evaluate_guard(
         cls,
         db: AsyncSession,
         target_route: str,
-        session: Optional[SoulmateSession],
-        current_time: Optional[datetime] = None,
+        session: Optional[SoulmateSession] = None,
+        public_id: Optional[str] = None,
     ) -> RouteGuardResponse:
         """
-        Evaluates minimum route prerequisites per DEV-SPEC §3 table.
-        Server-side state is the final authority.
+        Evaluates whether the requested target route is permitted for the given session.
+
+        Guarantees:
+        - Server-authoritative state evaluation matching DEV-SPEC §3 table.
+        - H-1: Quiz completion strictly requires quiz_completed_at or completed/captured status.
+        - H-3 / PAY-AUTH-01: Payment entitlement strictly requires provider/server-confirmed
+          first_payment_at; never falls back to created_at or unconfirmed provider status.
+        - TIME-01: Server-persisted UTC timestamp is the authoritative clock for 12h/24h unlocks.
+        - Client input is normalized and sanitized before evaluation.
         """
-        server_time = current_time or utc_now()
+        server_time = utc_now()
         session_exists = session is not None
+        resolved_public_id = session.public_id if session else public_id
         current_step = session.current_step if session else None
-        public_id = session.public_id if session else None
 
         quiz_completed = False
         email_captured = False
@@ -43,7 +50,7 @@ class GuardService:
         first_payment_at: Optional[datetime] = None
 
         if session:
-            # 1. Quiz completed evaluation
+            # 1. Quiz completed evaluation (DEV-SPEC §3, H-1 remediation)
             quiz_completed = bool(
                 session.quiz_completed_at is not None
                 or session.status in [
@@ -52,21 +59,12 @@ class GuardService:
                     SessionStatus.CHECKOUT_PENDING.value,
                     SessionStatus.SUBSCRIBED.value,
                 ]
-                or session.current_step in [
-                    "transition_5",
-                    "spiritual_person",
-                    "familiar_psychic_artistry",
-                    "warning_response",
-                    "email",
-                    "subscribe",
-                    "result",
-                ]
             )
 
             # 2. Email captured evaluation
             email_captured = bool(
-                (session.email is not None and len(session.email.strip()) > 0)
-                or (session.email_normalized is not None and len(session.email_normalized.strip()) > 0)
+                (session.email_normalized is not None and len(session.email_normalized.strip()) > 0)
+                or (session.email is not None and len(session.email.strip()) > 0)
                 or session.status in [
                     SessionStatus.EMAIL_CAPTURED.value,
                     SessionStatus.CHECKOUT_PENDING.value,
@@ -74,23 +72,27 @@ class GuardService:
                 ]
             )
 
-            # 3. First payment confirmed evaluation (PAY-AUTH-01: server/provider authority)
-            sub_res = await db.execute(
-                select(Subscription).where(Subscription.session_id == session.id)
+            # 3. First payment confirmed evaluation (PAY-AUTH-01 & TIME-01, H-3 remediation)
+            # Entitlement begins strictly from server/provider-confirmed first successful payment.
+            # Provider status (such as ACTIVE) does NOT substitute for first_payment_at.
+            # Never fallback to subscription.created_at or session.updated_at.
+            sub_query = (
+                select(Subscription)
+                .where(
+                    Subscription.session_id == session.id,
+                    Subscription.first_payment_at.isnot(None),
+                )
+                .order_by(Subscription.first_payment_at.desc())
             )
+            sub_res = await db.execute(sub_query)
             sub = sub_res.scalars().first()
 
-            if sub:
-                if sub.first_payment_at is not None or sub.provider_status.upper() in [
-                    "ACTIVE",
-                    "CANCELLED",
-                    "SUSPENDED",
-                ]:
-                    is_paid = True
-                    first_payment_at = sub.first_payment_at or sub.created_at
-            elif session.status == SessionStatus.SUBSCRIBED.value:
+            if sub is not None and sub.first_payment_at is not None:
                 is_paid = True
-                first_payment_at = session.updated_at
+                first_payment_at = sub.first_payment_at
+            else:
+                is_paid = False
+                first_payment_at = None
 
         # Pure domain evaluation
         verdict = evaluate_route_guard(
@@ -112,7 +114,7 @@ class GuardService:
             redirect_to=verdict["redirect_to"],
             reason=verdict["reason"],
             server_time=verdict["server_time"],
-            session_id=public_id,
+            session_id=resolved_public_id,
             quiz_completed=verdict["quiz_completed"],
             email_captured=verdict["email_captured"],
             is_paid=verdict["is_paid"],

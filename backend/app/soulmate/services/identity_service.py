@@ -5,12 +5,10 @@ from typing import Tuple
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.errors import InvalidFlowStateError
 from app.db.base import utc_now
 from app.db.models.session import SoulmateSession
-from app.soulmate.domain.identity import (
-    derive_user_id_for_email,
-    validate_and_normalize_email,
-)
+from app.soulmate.domain.identity import validate_and_normalize_email
 from app.soulmate.domain.session_state import SessionStatus
 from app.soulmate.schema import EmailCaptureResponse
 
@@ -28,11 +26,14 @@ class IdentityService:
         email_input: str,
     ) -> EmailCaptureResponse:
         """
-        Validates and normalizes email, binds anonymous session to consistent user identity
-        using the existing account model, preserves session ownership, and advances flow state.
+        Validates and normalizes email, binds anonymous session contact email,
+        preserves session ownership, and advances flow state.
 
         Guarantees:
-        - Normalized email and derived/existing user_id are consistent for downstream one-email-one-sketch logic.
+        - DEV-SPEC §3 (H-1 remediation): Quiz must be completed before email capture.
+        - DEV-SPEC §8.3 (H-2 remediation): Email capture email is a product contact/delivery
+          field, not an authenticated login. Anonymous sessions do not inherit or bind to an
+          existing user_id simply because an email is entered.
         - Session ownership is strictly preserved; cannot bind or corrupt another user's session.
         - No password or authentication framework is invented.
         - Idempotent on repeated submissions.
@@ -41,40 +42,34 @@ class IdentityService:
         # 1. Validate and normalize email
         raw_email, email_normalized = validate_and_normalize_email(email_input)
 
-        # 2. Identity binding using existing account model (SoulmateSession.user_id)
-        now = utc_now()
-        if session.user_id is None:
-            # Check if a prior session with this normalized email already possesses an assigned user_id
-            existing_user_query = (
-                select(SoulmateSession.user_id)
-                .where(
-                    SoulmateSession.email_normalized == email_normalized,
-                    SoulmateSession.user_id.isnot(None),
-                )
-                .limit(1)
+        # 2. Enforce Quiz Completion Prerequisite (DEV-SPEC §3 Route Guard table, H-1 remediation)
+        is_quiz_completed = (session.quiz_completed_at is not None) or session.status in (
+            SessionStatus.QUIZ_COMPLETED.value,
+            SessionStatus.EMAIL_CAPTURED.value,
+            SessionStatus.CHECKOUT_PENDING.value,
+            SessionStatus.SUBSCRIBED.value,
+        )
+        if not is_quiz_completed:
+            raise InvalidFlowStateError(
+                "Quiz must be completed before capturing email (DEV-SPEC §3).",
+                details={
+                    "current_step": session.current_step,
+                    "status": session.status,
+                    "required_prerequisite": "quiz_completed",
+                },
             )
-            result = await db.execute(existing_user_query)
-            existing_user_id = result.scalar_one_or_none()
 
-            if existing_user_id is not None:
-                # Bind to existing user identity
-                session.user_id = existing_user_id
-            else:
-                # Assign deterministic canonical user identity derived from normalized email
-                session.user_id = derive_user_id_for_email(email_normalized)
-
-        # 3. Update session email and audit fields
+        # 3. Contact Email binding per DEV-SPEC §8.3 (H-2 remediation)
+        # "若匿名，不得因为输入某个邮箱就授予该邮箱对应账户的访问权限。"
+        # Verified user_id is only bound through trusted authentication flows.
+        now = utc_now()
         session.email = raw_email
         session.email_normalized = email_normalized
         session.email_captured_at = now
         session.updated_at = now
 
-        # 4. Advance status if prior to EMAIL_CAPTURED (do not overwrite later checkout/subscribed states)
-        if session.status in (
-            SessionStatus.CREATED.value,
-            SessionStatus.QUIZ_IN_PROGRESS.value,
-            SessionStatus.QUIZ_COMPLETED.value,
-        ):
+        # 4. Advance status from QUIZ_COMPLETED to EMAIL_CAPTURED (do not overwrite later checkout/subscribed states)
+        if session.status == SessionStatus.QUIZ_COMPLETED.value:
             session.status = SessionStatus.EMAIL_CAPTURED.value
 
         # 5. Advance flow step if currently at email step
@@ -91,7 +86,7 @@ class IdentityService:
                 "event_type": "email_captured",
                 "session_id": str(session.id),
                 "public_id": session.public_id,
-                "user_id": str(session.user_id),
+                "user_id": str(session.user_id) if session.user_id else None,
                 "status": session.status,
                 "current_step": session.current_step,
             },
