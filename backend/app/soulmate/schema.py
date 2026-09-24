@@ -1,7 +1,7 @@
 """Pydantic schemas for Soulmate Session API (DEV-SPEC §6, §15.1)."""
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -104,4 +104,34 @@ class TransitionContinueResponse(BaseModel):
     flow_state: FlowStateResponse = Field(..., description="Authoritative flow state after advancement")
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class InterstitialSubmitRequest(BaseModel):
+    """Payload for submitting or editing an interstitial answer (DEV-SPEC §5.7, §15.4, SP-206)."""
+    value: Union[bool, str] = Field(
+        ...,
+        description="Answer value: boolean (True/False) or string ('yes'/'no')",
+    )
+    duration_ms: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="Time spent on the interstitial screen in milliseconds",
+    )
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class InterstitialSubmitResponse(BaseModel):
+    """Response returned upon successfully saving/upserting an interstitial answer."""
+    saved: bool = Field(default=True, description="Indicates whether the answer was saved")
+    interstitial_code: str = Field(..., description="The code of the answered interstitial")
+    value: Union[bool, str] = Field(..., description="The normalized persisted answer value")
+    next_step: str = Field(..., description="Server-resolved next step code")
+    flow_state: Optional[FlowStateResponse] = Field(
+        default=None,
+        description="Authoritative flow state after advancement",
+    )
+
+    model_config = ConfigDict(from_attributes=True)
+
 

@@ -29,6 +29,7 @@ Answer upsert and validation (`SP-202`) completed and evidenced in `docs/handoff
 Flow / next-step resolver (`SP-203`) completed and evidenced in `docs/handoffs/SP-203.md`.
 DOB / Zodiac (`SP-204`) completed and evidenced in `docs/handoffs/SP-204.md`.
 Normalized Soulmate Profile builder (`SP-205`) completed and evidenced in `docs/handoffs/SP-205.md`.
+Interstitial answer storage (`SP-206`) completed and evidenced in `docs/handoffs/SP-206.md`.
 
 ## 2. Milestone status
 
@@ -43,7 +44,7 @@ Normalized Soulmate Profile builder (`SP-205`) completed and evidenced in `docs/
 
 ## 3. Active / blocked work
 
-Active tasks: SP-206 (Interstitial answers).
+Active tasks: SP-207 (Connect Quiz UI to live APIs).
 
 
 Blocking decision IDs:
@@ -83,8 +84,8 @@ Report production provider: disabled / decision pending
 ## 6. Next safe tasks
 
 ```text
-1. SP-206 — Interstitial answers
-2. SP-207 — Email capture & consent
+1. SP-207 — Connect Quiz UI to live APIs
+2. SP-301 — Email capture & consent
 3. SP-208 — Result calculation & preview snapshot
 ```
 

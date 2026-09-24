@@ -543,7 +543,7 @@ At minimum preserve the mappings defined in spec §7, including:
 
 **Priority:** P2  
 **Depends:** SP-203  
-**Status:** TODO
+**Status:** DONE
 **Context refs:** DEV-SPEC §5.7, §15.4 | Decisions: — | Dependency handoffs: SP-203
 
 

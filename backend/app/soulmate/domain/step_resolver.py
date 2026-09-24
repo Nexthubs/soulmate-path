@@ -72,6 +72,22 @@ TRANSITION_PREREQUISITES_MAP: Dict[str, List[str]] = {
     "result": ALL_QUESTION_CODES,
 }
 
+# Canonical post-quiz interstitial flow codes (DEV-SPEC §5.7, §15.4, SP-206)
+INTERSTITIAL_CODES: List[str] = [
+    "spiritual_person",
+    "familiar_psychic_artistry",
+    "warning_response",
+]
+
+INTERSTITIAL_CODES_SET: Set[str] = set(INTERSTITIAL_CODES)
+
+# Interstitial progression prerequisites (DEV-SPEC §5.7, SP-206)
+INTERSTITIAL_PREREQUISITES_MAP: Dict[str, List[str]] = {
+    "spiritual_person": ALL_QUESTION_CODES,
+    "familiar_psychic_artistry": ALL_QUESTION_CODES + ["spiritual_person"],
+    "warning_response": ALL_QUESTION_CODES + ["spiritual_person", "familiar_psychic_artistry"],
+}
+
 # Transition-2 dynamic copy map per COPY-02 & Figma 102:320
 TRANSITION_2_COPY_BY_OPTION: Dict[str, Dict[str, str]] = {
     "intelligence": {
@@ -219,6 +235,28 @@ def validate_can_advance_transition(
         raise InvalidFlowStateError(
             f"Cannot advance '{transition_code}': required questions incomplete: {missing}",
             details={"missing_prerequisites": missing, "transition_code": transition_code},
+        )
+
+
+def validate_can_answer_interstitial(
+    interstitial_code: str,
+    answered_codes: Set[str],
+) -> None:
+    """
+    Skip Prevention Guard for Interstitials (DEV-SPEC §5.7, §15.4, SP-206):
+    Verifies that all prerequisite questions and prior interstitials have been answered.
+    Allows legitimate Back/re-answer edits.
+    Raises InvalidFlowStateError (409) on illegal forward skips.
+    """
+    if interstitial_code not in INTERSTITIAL_PREREQUISITES_MAP:
+        raise ValueError(f"Unknown interstitial code: '{interstitial_code}'")
+
+    prereqs = INTERSTITIAL_PREREQUISITES_MAP[interstitial_code]
+    missing = [q for q in prereqs if q not in answered_codes]
+    if missing:
+        raise InvalidFlowStateError(
+            f"Cannot answer interstitial '{interstitial_code}': prerequisites not answered: {missing}",
+            details={"missing_prerequisites": missing, "attempted_interstitial": interstitial_code},
         )
 
 

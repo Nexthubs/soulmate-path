@@ -11,6 +11,8 @@ from app.soulmate.schema import (
     AnswerSubmitRequest,
     AnswerSubmitResponse,
     FlowStateResponse,
+    InterstitialSubmitRequest,
+    InterstitialSubmitResponse,
     SessionCreateRequest,
     SessionCreateResponse,
     SessionCurrentResponse,
@@ -24,6 +26,7 @@ from app.soulmate.security import (
 from app.soulmate.domain.profile import SoulmateProfileV1
 from app.soulmate.services.answer_service import AnswerService
 from app.soulmate.services.flow_service import FlowService
+from app.soulmate.services.interstitial_service import InterstitialService
 from app.soulmate.services.profile_service import ProfileService
 from app.soulmate.services.session_service import SessionService
 
@@ -120,6 +123,34 @@ async def submit_answer_endpoint(
         db=db,
         session=session,
         question_code=question_code,
+        req=request_data,
+    )
+
+
+@router.put(
+    "/{public_id}/interstitials/{code}",
+    response_model=InterstitialSubmitResponse,
+    summary="Submit or edit post-quiz interstitial answer",
+    description="Validates and atomically persists answer for spiritual_person, familiar_psychic_artistry, or warning_response (DEV-SPEC §5.7, §15.4, SP-206).",
+)
+async def submit_interstitial_endpoint(
+    public_id: str,
+    code: str,
+    request_data: InterstitialSubmitRequest,
+    authenticated_id: str = Depends(get_authenticated_session_public_id),
+    db: AsyncSession = Depends(get_db),
+) -> InterstitialSubmitResponse:
+    # IDOR Guard (DEV-SPEC §20)
+    verify_session_ownership(requested_public_id=public_id, authenticated_public_id=authenticated_id)
+
+    session = await SessionService.get_session_by_public_id(db, public_id)
+    if not session:
+        raise NotFoundError(f"Session with ID '{public_id}' not found.")
+
+    return await InterstitialService.submit_interstitial(
+        db=db,
+        session=session,
+        interstitial_code=code,
         req=request_data,
     )
 

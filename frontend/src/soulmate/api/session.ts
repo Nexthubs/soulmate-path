@@ -260,3 +260,51 @@ export async function getSessionProfile(
 
   return (await res.json()) as SoulmateProfileV1;
 }
+
+export type InterstitialCode =
+  | "spiritual_person"
+  | "familiar_psychic_artistry"
+  | "warning_response";
+
+export interface InterstitialSubmitResponse {
+  saved: boolean;
+  interstitial_code: string;
+  value: boolean | string;
+  next_step: string;
+  flow_state?: FlowStateResponse;
+}
+
+/**
+ * Submits or edits an answer to a post-quiz interstitial modal (DEV-SPEC §5.7, §15.4, SP-206).
+ */
+export async function submitInterstitialAnswer(
+  sessionId: string,
+  code: InterstitialCode | string,
+  value: boolean | string,
+  durationMs?: number,
+  config: ClientConfig = clientConfig
+): Promise<InterstitialSubmitResponse> {
+  const url = `${config.apiBaseUrl}/sessions/${encodeURIComponent(sessionId)}/interstitials/${encodeURIComponent(code)}`;
+
+  const body: Record<string, unknown> = { value };
+  if (typeof durationMs === "number") {
+    body.duration_ms = durationMs;
+  }
+
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+    credentials: "include",
+  });
+
+  if (!res.ok) {
+    const errorPayload = await res.json().catch(() => null);
+    throw parseApiError(res.status, errorPayload);
+  }
+
+  return (await res.json()) as InterstitialSubmitResponse;
+}
+

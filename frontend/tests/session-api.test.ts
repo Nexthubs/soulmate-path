@@ -7,6 +7,7 @@ import {
   getSession,
   navigateBack,
   submitAnswer,
+  submitInterstitialAnswer,
 } from "../src/soulmate/api/session";
 import { isSoulmateApiError } from "../src/soulmate/api/errors";
 
@@ -359,6 +360,116 @@ describe("Frontend Session API Client (SP-201)", () => {
     expect(result.current_step).toBe("q02");
     expect(result.previous_step).toBe("transition_0");
   });
+
+  describe("submitInterstitialAnswer (SP-206)", () => {
+    it("sends PUT to /sessions/:id/interstitials/:code with boolean value and credentials", async () => {
+      const mockPayload = {
+        saved: true,
+        interstitial_code: "spiritual_person",
+        value: true,
+        next_step: "familiar_psychic_artistry",
+        flow_state: {
+          session_id: "ses_abc123",
+          current_step: "familiar_psychic_artistry",
+          step_type: "interstitial",
+          next_step: "warning_response",
+          previous_step: "spiritual_person",
+          progress_percent: 82,
+          is_quiz_completed: true,
+          step_metadata: null,
+        },
+      };
+
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockPayload,
+      } as Response);
+
+      const result = await submitInterstitialAnswer(
+        "ses_abc123",
+        "spiritual_person",
+        true,
+        1500,
+        mockConfig
+      );
+
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "http://localhost:8000/api/soulmate/sessions/ses_abc123/interstitials/spiritual_person",
+        expect.objectContaining({
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ value: true, duration_ms: 1500 }),
+        })
+      );
+      expect(result.saved).toBe(true);
+      expect(result.interstitial_code).toBe("spiritual_person");
+      expect(result.value).toBe(true);
+      expect(result.next_step).toBe("familiar_psychic_artistry");
+      expect(result.flow_state?.current_step).toBe("familiar_psychic_artistry");
+    });
+
+    it("sends PUT to /sessions/:id/interstitials/:code with string value ('yes' for warning_response)", async () => {
+      const mockPayload = {
+        saved: true,
+        interstitial_code: "warning_response",
+        value: "yes",
+        next_step: "email",
+      };
+
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockPayload,
+      } as Response);
+
+      const result = await submitInterstitialAnswer(
+        "ses_abc123",
+        "warning_response",
+        "yes",
+        undefined,
+        mockConfig
+      );
+
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "http://localhost:8000/api/soulmate/sessions/ses_abc123/interstitials/warning_response",
+        expect.objectContaining({
+          method: "PUT",
+          credentials: "include",
+          body: JSON.stringify({ value: "yes" }),
+        })
+      );
+      expect(result.saved).toBe(true);
+      expect(result.value).toBe("yes");
+      expect(result.next_step).toBe("email");
+    });
+
+    it("throws typed SoulmateApiError on 409 INVALID_FLOW_STATE", async () => {
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+        ok: false,
+        status: 409,
+        json: async () => ({
+          error_code: "INVALID_FLOW_STATE",
+          message: "Cannot answer interstitial 'warning_response': prerequisites not answered",
+          request_id: "req_interstitial_409",
+        }),
+      } as Response);
+
+      try {
+        await submitInterstitialAnswer("ses_abc123", "warning_response", "yes", undefined, mockConfig);
+        expect.fail("Should have thrown SoulmateApiError");
+      } catch (err: unknown) {
+        expect(isSoulmateApiError(err)).toBe(true);
+        if (isSoulmateApiError(err)) {
+          expect(err.errorCode).toBe("INVALID_FLOW_STATE");
+          expect(err.status).toBe(409);
+          expect(err.requestId).toBe("req_interstitial_409");
+        }
+      }
+    });
+  });
 });
+
 
 
