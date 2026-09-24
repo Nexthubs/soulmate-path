@@ -105,6 +105,11 @@ class Settings(BaseSettings):
     # Centralized Decimal pricing (PAY-01: no hardcoded defaults)
     soulmate_intro_price: Optional[Decimal] = None
     soulmate_regular_price: Optional[Decimal] = None
+    # PAY-02: Re-subscription intro-price eligibility policy ('blocked' | 'single_intro' | 'allow_intro')
+    soulmate_resubscription_policy: str = Field(
+        default="blocked",
+        description="Policy for returning subscribers: 'blocked' (PAY-02 default), 'single_intro', or 'allow_intro'",
+    )
 
     # --------------------------------------------------------------------------
     # 5. AI Image Generation / Sketch (Spec §11, ASSET-01, PROMPT-01)
@@ -221,6 +226,11 @@ class Settings(BaseSettings):
             missing_keys.append("SOULMATE_INTRO_PRICE (mandatory in production per PAY-01)")
         if self.soulmate_regular_price is None or self.soulmate_regular_price <= 0:
             missing_keys.append("SOULMATE_REGULAR_PRICE (mandatory in production per PAY-01)")
+
+        # Re-subscription policy check (PAY-02)
+        valid_policies = {"blocked", "single_intro", "allow_intro"}
+        if self.soulmate_resubscription_policy.lower() not in valid_policies:
+            missing_keys.append(f"SOULMATE_RESUBSCRIPTION_POLICY (must be one of {valid_policies})")
 
         # OpenAI Sketch Generator
         if not self.openai_api_key:

@@ -186,3 +186,85 @@ class EmailSummaryResponse(BaseModel):
         description="True if values are demo fallbacks because quiz answers were not yet completed",
     )
 
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RenewalDisclosure(BaseModel):
+    """Structured renewal disclosures for subscription checkout (DEV-SPEC §9.1, §21)."""
+    today_text: str = Field(..., description="First month payment disclosure text, e.g. 'Today: $19.00'")
+    renewal_text: str = Field(..., description="Renewal price disclosure text, e.g. 'Then $29.00 / month'")
+    terms_text: str = Field(
+        default="Automatically renews monthly until canceled. Cancel anytime.",
+        description="Statutory auto-renewal and cancellation terms",
+    )
+    interval: str = Field(default="MONTH", description="Billing frequency interval")
+    interval_count: int = Field(default=1, description="Interval recurrence count")
+    auto_renew: bool = Field(default=True, description="Indicates auto-renewal billing")
+
+    model_config = ConfigDict(from_attributes=True, extra="ignore")
+
+
+class OfferEligibility(BaseModel):
+    """Eligibility status and plan class evaluation under Decision PAY-02."""
+    eligible_for_intro: bool = Field(
+        default=True,
+        description="Whether user/session is eligible for the promotional intro price",
+    )
+    plan_class: str = Field(
+        default="intro",
+        description="Assigned plan classification: 'intro' | 'standard' | 'blocked'",
+    )
+    policy: str = Field(
+        default="blocked",
+        description="Active re-subscription policy ('blocked' | 'single_intro' | 'allow_intro')",
+    )
+    is_blocked: bool = Field(
+        default=False,
+        description="True if returning subscriber is blocked pending policy resolution (PAY-02)",
+    )
+    reason: Optional[str] = Field(
+        default=None,
+        description="Explanation or guidance regarding eligibility and plan selection",
+    )
+
+    model_config = ConfigDict(from_attributes=True, extra="ignore")
+
+
+class PayPalClientConfig(BaseModel):
+    """Browser-safe PayPal integration configuration (never leaks secrets or webhooks)."""
+    client_id: Optional[str] = Field(
+        default=None,
+        description="Public PayPal Client ID for browser JS SDK",
+    )
+    env: str = Field(
+        default="sandbox",
+        description="PayPal environment ('sandbox' | 'production')",
+    )
+    plan_id: Optional[str] = Field(
+        default=None,
+        description="PayPal Subscription Plan ID to initiate",
+    )
+
+    model_config = ConfigDict(from_attributes=True, extra="ignore")
+
+
+class SubscriptionOfferResponse(BaseModel):
+    """Current subscription offer and checkout configuration (DEV-SPEC §9.1–9.2, §15.6, §21–22)."""
+    currency: str = Field(default="USD", description="Billing currency code")
+    intro_price: Optional[str] = Field(
+        default=None,
+        description="Formatted first month intro price, or '{INTRO_PRICE}' if unconfigured (PAY-01)",
+    )
+    regular_price: Optional[str] = Field(
+        default=None,
+        description="Formatted regular monthly price, or '{REGULAR_PRICE}' if unconfigured (PAY-01)",
+    )
+    interval: str = Field(default="MONTH", description="Billing cycle interval")
+    paypal_plan_id: Optional[str] = Field(default=None, description="Active PayPal plan ID")
+    disclosure: RenewalDisclosure = Field(..., description="Renewal disclosures")
+    eligibility: OfferEligibility = Field(..., description="Eligibility evaluation (PAY-02)")
+    paypal: PayPalClientConfig = Field(..., description="Safe PayPal client configuration")
+
+    model_config = ConfigDict(from_attributes=True, extra="ignore")
+
+

@@ -3,7 +3,14 @@ from app.api.soulmate.health import router as health_router
 from app.api.soulmate.quiz import router as quiz_router
 from app.api.soulmate.sessions import router as sessions_router
 
+from app.api.soulmate.subscription import (
+    get_subscription_offer,
+    router as subscription_router,
+)
+from app.soulmate.schema import SubscriptionOfferResponse
+
 api_router = APIRouter()
+
 
 # Mount health check endpoint
 api_router.include_router(health_router, tags=["Health"])
@@ -26,3 +33,16 @@ api_router.include_router(sessions_router, prefix="/sessions", tags=["Sessions"]
 # - §15.10 Sketch Artifact:      GET /artifacts/sketch, POST /artifacts/sketch/generate
 # - §15.11 Report Artifact:      GET /artifacts/report
 # - §15.12 PayPal Webhooks:      POST /webhooks/paypal
+
+# Mount subscription offer endpoint (DEV-SPEC §9.1–9.2, §15.6, SP-303)
+api_router.include_router(subscription_router, prefix="/subscription", tags=["Subscription"])
+
+# Also mount /checkout/config alias per DEV-SPEC §15.6 router table
+api_router.add_api_route(
+    "/checkout/config",
+    get_subscription_offer,
+    methods=["GET"],
+    response_model=SubscriptionOfferResponse,
+    tags=["Subscription"],
+    summary="Checkout offer config alias (DEV-SPEC §15.6)",
+)
