@@ -12,6 +12,7 @@ from app.soulmate.schema import (
     AnswerSubmitResponse,
     EmailCaptureRequest,
     EmailCaptureResponse,
+    EmailSummaryResponse,
     FlowStateResponse,
     InterstitialSubmitRequest,
     InterstitialSubmitResponse,
@@ -32,6 +33,7 @@ from app.soulmate.services.identity_service import IdentityService
 from app.soulmate.services.interstitial_service import InterstitialService
 from app.soulmate.services.profile_service import ProfileService
 from app.soulmate.services.session_service import SessionService
+from app.soulmate.services.summary_service import SummaryService
 
 
 router = APIRouter()
@@ -81,6 +83,17 @@ async def get_current_session_endpoint(
     return SessionService.format_current_response(session)
 
 
+@router.get(
+    "/current/email-summary",
+    response_model=EmailSummaryResponse,
+    summary="Get display-ready Email capture summary for current session",
+    description="Returns display-ready Q3/Q5/Q6 summary view model without frontend guessing labels from raw codes (DEV-SPEC §8.1, SP-302, QUIZ-01).",
+)
+async def get_current_email_summary_endpoint(
+    session: SoulmateSession = Depends(get_current_session),
+    db: AsyncSession = Depends(get_db),
+) -> EmailSummaryResponse:
+    return await SummaryService.get_email_summary_for_session(db=db, session=session)
 
 
 @router.get(
@@ -280,5 +293,24 @@ async def capture_email_endpoint(
     )
 
 
+@router.get(
+    "/{public_id}/email-summary",
+    response_model=EmailSummaryResponse,
+    summary="Get display-ready Email capture summary by public ID",
+    description="Returns display-ready Q3/Q5/Q6 summary view model for the requested session with IDOR guard (DEV-SPEC §8.1, SP-302, QUIZ-01).",
+)
+async def get_session_email_summary_endpoint(
+    public_id: str,
+    authenticated_id: str = Depends(get_authenticated_session_public_id),
+    db: AsyncSession = Depends(get_db),
+) -> EmailSummaryResponse:
+    # IDOR Guard (DEV-SPEC §20)
+    verify_session_ownership(requested_public_id=public_id, authenticated_public_id=authenticated_id)
+
+    session = await SessionService.get_session_by_public_id(db, public_id)
+    if not session:
+        raise NotFoundError(f"Session with ID '{public_id}' not found.")
+
+    return await SummaryService.get_email_summary_for_session(db=db, session=session)
 
 

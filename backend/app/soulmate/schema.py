@@ -153,3 +153,36 @@ class EmailCaptureResponse(BaseModel):
     next: str = Field(default="/soulmate/subscribe", description="Next canonical client route")
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class SummaryBadgeItem(BaseModel):
+    """Display-ready summary badge item with raw code and formatted human label."""
+    code: str = Field(..., description="Raw option code, e.g. age_30_40")
+    label: str = Field(..., description="Display-ready formatted label, e.g. 30-40")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class EmailSummaryResponse(BaseModel):
+    """Display-ready Email capture summary view model (DEV-SPEC §8.1, SP-302, Decisions: QUIZ-01)."""
+    visual_variant: Literal["male", "female"] = Field(
+        ...,
+        description="Visual variant determined strictly by Q03 preferred_partner_gender (QUIZ-01)",
+    )
+    gender_display: str = Field(..., description="Display-ready partner gender label, e.g. 'Male' or 'Female'")
+    age_range_display: str = Field(..., description="Display-ready partner age range label, e.g. '30-40'")
+    ethnicity_display: str = Field(..., description="Display-ready partner ethnicity label, e.g. 'Latino'")
+
+    partner_gender: SummaryBadgeItem = Field(..., description="Q03 partner gender details")
+    partner_age_range: SummaryBadgeItem = Field(..., description="Q05 partner age range details")
+    partner_ethnicity: SummaryBadgeItem = Field(..., description="Q06 partner ethnicity details")
+
+    user_gender: Optional[str] = Field(
+        default=None,
+        description="User's own gender from Q02 (for tracking only, never used for visual variant)",
+    )
+    is_sample_data: bool = Field(
+        default=False,
+        description="True if values are demo fallbacks because quiz answers were not yet completed",
+    )
+
