@@ -10,6 +10,8 @@ from app.db.session import get_db
 from app.soulmate.schema import (
     AnswerSubmitRequest,
     AnswerSubmitResponse,
+    EmailCaptureRequest,
+    EmailCaptureResponse,
     FlowStateResponse,
     InterstitialSubmitRequest,
     InterstitialSubmitResponse,
@@ -26,6 +28,7 @@ from app.soulmate.security import (
 from app.soulmate.domain.profile import SoulmateProfileV1
 from app.soulmate.services.answer_service import AnswerService
 from app.soulmate.services.flow_service import FlowService
+from app.soulmate.services.identity_service import IdentityService
 from app.soulmate.services.interstitial_service import InterstitialService
 from app.soulmate.services.profile_service import ProfileService
 from app.soulmate.services.session_service import SessionService
@@ -76,6 +79,8 @@ async def get_current_session_endpoint(
     session: SoulmateSession = Depends(get_current_session),
 ) -> SessionCurrentResponse:
     return SessionService.format_current_response(session)
+
+
 
 
 @router.get(
@@ -247,5 +252,33 @@ async def get_session_profile_endpoint(
         )
 
     return SoulmateProfileV1.model_validate(profile)
+
+
+@router.post(
+    "/{public_id}/email",
+    response_model=EmailCaptureResponse,
+    summary="Capture user email and bind session identity",
+    description="Validates and normalizes email, binds anonymous session to consistent user identity using existing account model, and advances current step (DEV-SPEC §8.2, §15.5, §20, SP-301).",
+)
+async def capture_email_endpoint(
+    public_id: str,
+    request_data: EmailCaptureRequest,
+    authenticated_id: str = Depends(get_authenticated_session_public_id),
+    db: AsyncSession = Depends(get_db),
+) -> EmailCaptureResponse:
+    # IDOR Guard (DEV-SPEC §20, SP-301 acceptance: user cannot bind another user's session by ID)
+    verify_session_ownership(requested_public_id=public_id, authenticated_public_id=authenticated_id)
+
+    session = await SessionService.get_session_by_public_id(db, public_id)
+    if not session:
+        raise NotFoundError(f"Session with ID '{public_id}' not found.")
+
+    return await IdentityService.capture_and_bind_email(
+        db=db,
+        session=session,
+        email_input=request_data.email,
+    )
+
+
 
 

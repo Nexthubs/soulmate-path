@@ -3,9 +3,11 @@ import {
   continueTransition,
   createSession,
   getCurrentSession,
+  getEmailSummary,
   getFlowState,
   getSession,
   navigateBack,
+  saveSessionEmail,
   submitAnswer,
   submitInterstitialAnswer,
 } from "../src/soulmate/api/session";
@@ -489,6 +491,149 @@ describe("Frontend Session API Client (SP-201)", () => {
       expect(isSessionMissingError(err500)).toBe(false);
       expect(isSessionMissingError(err502)).toBe(false);
       expect(isSessionMissingError(networkErr)).toBe(false);
+    });
+  });
+
+  describe("saveSessionEmail API Client (SP-301, DEV-SPEC §8.2, §15.5)", () => {
+    it("posts email with credentials: 'include' and returns ok and next route", async () => {
+      const mockEmailResponse = {
+        ok: true,
+        next: "/soulmate/subscribe",
+      };
+
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockEmailResponse,
+      } as Response);
+
+      const result = await saveSessionEmail("ses_12345", "user@example.com", mockConfig);
+
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "http://localhost:8000/api/soulmate/sessions/ses_12345/email",
+        expect.objectContaining({
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: "user@example.com" }),
+        })
+      );
+      expect(result.ok).toBe(true);
+      expect(result.next).toBe("/soulmate/subscribe");
+    });
+
+    it("parses and propagates error when server returns 403 Forbidden Ownership", async () => {
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        json: async () => ({
+          error_code: "FORBIDDEN_OWNERSHIP",
+          message: "Access to the requested session is forbidden.",
+        }),
+      } as Response);
+
+      try {
+        await saveSessionEmail("ses_other", "user@example.com", mockConfig);
+        expect.fail("Should have thrown SoulmateApiError");
+      } catch (err: unknown) {
+        expect(isSoulmateApiError(err)).toBe(true);
+        if (isSoulmateApiError(err)) {
+          expect(err.errorCode).toBe("FORBIDDEN_OWNERSHIP");
+          expect(err.status).toBe(403);
+        }
+      }
+    });
+  });
+
+  describe("getEmailSummary API Client (SP-302, DEV-SPEC §8.1, Decisions: QUIZ-01)", () => {
+    it("requests /sessions/:id/email-summary with credentials: 'include' and returns display-ready model", async () => {
+      const mockSummaryPayload = {
+        visual_variant: "male",
+        gender_display: "Male",
+        age_range_display: "30-40",
+        ethnicity_display: "Latino",
+        partner_gender: { code: "male", label: "Male" },
+        partner_age_range: { code: "age_30_40", label: "30-40" },
+        partner_ethnicity: { code: "hispanic_latino", label: "Latino" },
+        user_gender: "female",
+        is_sample_data: false,
+      };
+
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockSummaryPayload,
+      } as Response);
+
+      const result = await getEmailSummary("ses_12345", mockConfig);
+
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "http://localhost:8000/api/soulmate/sessions/ses_12345/email-summary",
+        expect.objectContaining({
+          method: "GET",
+          credentials: "include",
+        })
+      );
+      expect(result.visual_variant).toBe("male");
+      expect(result.gender_display).toBe("Male");
+      expect(result.age_range_display).toBe("30-40");
+      expect(result.ethnicity_display).toBe("Latino");
+      expect(result.partner_gender.label).toBe("Male");
+      expect(result.is_sample_data).toBe(false);
+    });
+
+    it("requests /sessions/current/email-summary when sessionId is omitted", async () => {
+      const mockSummaryPayload = {
+        visual_variant: "female",
+        gender_display: "Female",
+        age_range_display: "20-30",
+        ethnicity_display: "Asian",
+        partner_gender: { code: "female", label: "Female" },
+        partner_age_range: { code: "age_20_30", label: "20-30" },
+        partner_ethnicity: { code: "asian", label: "Asian" },
+        user_gender: "male",
+        is_sample_data: false,
+      };
+
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockSummaryPayload,
+      } as Response);
+
+      const result = await getEmailSummary(undefined, mockConfig);
+
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "http://localhost:8000/api/soulmate/sessions/current/email-summary",
+        expect.objectContaining({
+          method: "GET",
+          credentials: "include",
+        })
+      );
+      expect(result.visual_variant).toBe("female");
+      expect(result.gender_display).toBe("Female");
+    });
+
+    it("propagates error when server returns 403 or 404", async () => {
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: async () => ({
+          error_code: "NOT_FOUND",
+          message: "Session not found",
+        }),
+      } as Response);
+
+      try {
+        await getEmailSummary("ses_ghost", mockConfig);
+        expect.fail("Should have thrown SoulmateApiError");
+      } catch (err: unknown) {
+        expect(isSoulmateApiError(err)).toBe(true);
+        if (isSoulmateApiError(err)) {
+          expect(err.errorCode).toBe("NOT_FOUND");
+          expect(err.status).toBe(404);
+        }
+      }
     });
   });
 });

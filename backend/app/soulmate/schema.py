@@ -1,7 +1,7 @@
 """Pydantic schemas for Soulmate Session API (DEV-SPEC §6, §15.1)."""
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -135,3 +135,21 @@ class InterstitialSubmitResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class EmailCaptureRequest(BaseModel):
+    """Payload for submitting user email at Email Capture step (DEV-SPEC §8.2, §15.5, SP-301)."""
+    email: str = Field(
+        ...,
+        min_length=3,
+        max_length=320,
+        description="User email address to validate, normalize, and bind to session",
+    )
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class EmailCaptureResponse(BaseModel):
+    """Response returned upon successfully saving/updating session email (DEV-SPEC §8.2)."""
+    ok: bool = Field(default=True, description="Indicates whether email was successfully saved and bound")
+    next: str = Field(default="/soulmate/subscribe", description="Next canonical client route")
+
+    model_config = ConfigDict(from_attributes=True)

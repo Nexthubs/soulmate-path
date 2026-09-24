@@ -334,3 +334,77 @@ export async function getQuizConfig(
   return (await res.json()) as QuizConfig;
 }
 
+export interface EmailCaptureResponse {
+  ok: boolean;
+  next: string;
+}
+
+/**
+ * Saves and normalizes user email, binding anonymous session to user identity (DEV-SPEC §8.2, §15.5, SP-301).
+ */
+export async function saveSessionEmail(
+  sessionId: string,
+  email: string,
+  config: ClientConfig = clientConfig
+): Promise<EmailCaptureResponse> {
+  const url = `${config.apiBaseUrl}/sessions/${encodeURIComponent(sessionId)}/email`;
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ email }),
+    credentials: "include",
+  });
+
+  if (!res.ok) {
+    const errorPayload = await res.json().catch(() => null);
+    throw parseApiError(res.status, errorPayload);
+  }
+
+  return (await res.json()) as EmailCaptureResponse;
+}
+
+export interface SummaryBadgeItem {
+  code: string;
+  label: string;
+}
+
+export interface EmailSummaryResponse {
+  visual_variant: "male" | "female";
+  gender_display: string;
+  age_range_display: string;
+  ethnicity_display: string;
+  partner_gender: SummaryBadgeItem;
+  partner_age_range: SummaryBadgeItem;
+  partner_ethnicity: SummaryBadgeItem;
+  user_gender?: string | null;
+  is_sample_data: boolean;
+}
+
+/**
+ * Retrieves display-ready Email Capture summary view model (DEV-SPEC §8.1, SP-302, Decisions: QUIZ-01).
+ * If sessionId is omitted, queries /sessions/current/email-summary using active cookie.
+ */
+export async function getEmailSummary(
+  sessionId?: string,
+  config: ClientConfig = clientConfig
+): Promise<EmailSummaryResponse> {
+  const url = sessionId
+    ? `${config.apiBaseUrl}/sessions/${encodeURIComponent(sessionId)}/email-summary`
+    : `${config.apiBaseUrl}/sessions/current/email-summary`;
+
+  const res = await fetch(url, {
+    method: "GET",
+    credentials: "include",
+  });
+
+  if (!res.ok) {
+    const errorPayload = await res.json().catch(() => null);
+    throw parseApiError(res.status, errorPayload);
+  }
+
+  return (await res.json()) as EmailSummaryResponse;
+}
+

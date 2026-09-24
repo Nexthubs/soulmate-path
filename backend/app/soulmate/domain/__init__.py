@@ -42,6 +42,10 @@ from app.soulmate.domain.zodiac import (
     get_zodiac_by_name,
     get_zodiac_for_date,
 )
+from app.soulmate.domain.identity import (
+    derive_user_id_for_email,
+    validate_and_normalize_email,
+)
 
 
 # Canonical immutable quiz version
@@ -105,5 +109,6 @@ __all__ = [
     "InvalidAnswerValueError",
     "REQUIRED_PROFILE_QUESTIONS",
     "OPTIONAL_INTERSTITIAL_KEYS",
+    "validate_and_normalize_email",
+    "derive_user_id_for_email",
 ]
-
