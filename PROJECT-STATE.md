@@ -6,9 +6,9 @@
 ## 1. Current milestone
 
 ```text
-Current milestone: PRE-IMPLEMENTATION / M0
-Status: IN_PROGRESS
-Latest accepted review: docs/reviews/SP-002-HIGH-RISK-REVIEW.md (PASS)
+Current milestone: M1 — Quiz Funnel Ready
+Status: PASS (docs/reviews/M1-QUIZ-FUNNEL-REVIEW.md)
+Latest accepted review: docs/reviews/M1-QUIZ-FUNNEL-REVIEW.md (PASS)
 ```
 
 Repository architecture & boundary (`SP-001`) completed and evidenced in `docs/handoffs/SP-001.md`.
@@ -41,7 +41,7 @@ Route guards (`SP-304`) completed and evidenced in `docs/handoffs/SP-304.md`.
 
 | Milestone | Status | Review artifact |
 |---|---|---|
-| M1 Quiz Funnel Ready | NOT_STARTED | `docs/reviews/M1-QUIZ-FUNNEL-REVIEW.md` |
+| M1 Quiz Funnel Ready | PASS | `docs/reviews/M1-QUIZ-FUNNEL-REVIEW.md` |
 | M2 Sandbox Revenue Ready | NOT_STARTED | `docs/reviews/M2-PAYPAL-SANDBOX-REVIEW.md` |
 | M3 Entitlement / Result Ready | NOT_STARTED | `docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md` |
 | M4 Sketch Ready | NOT_STARTED | `docs/reviews/M4-SKETCH-REVIEW.md` |
@@ -50,7 +50,7 @@ Route guards (`SP-304`) completed and evidenced in `docs/handoffs/SP-304.md`.
 
 ## 3. Active / blocked work
 
-Active tasks: SP-208 (Result calculation & preview snapshot) / SP-401 (Subscribe view variant matching / Wave 4 kickoff).
+Active tasks: None (M1 findings M1-F1, M1-F2, M1-F3, and submit race risk remediated and verified). Next: Begin Milestone M2 (SP-401–SP-408: PayPal Sandbox Checkout & Webhooks).
 
 
 Blocking decision IDs:
@@ -90,13 +90,9 @@ Report production provider: disabled / decision pending
 ## 6. Next safe tasks
 
 ```text
-1. SP-208 — Result calculation & preview snapshot
-2. SP-401 — Subscribe view variant matching / Wave 4 kickoff
-3. SP-402 — PayPal SDK / Buttons component
+1. Begin Milestone M2 — Sandbox Revenue Ready (SP-401: PayPal SDK client & configuration baseline).
+2. Continue with SP-402 (Order creation API & intent verification) through SP-408.
 ```
-
-
-Do not fan out broad implementation until SP-001 documents the repository's real stack and reusable abstractions.
 
 ## 7. Update rule
 

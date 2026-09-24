@@ -78,8 +78,12 @@ def validate_and_normalize_email(email_input: str) -> Tuple[str, str]:
 
 def derive_user_id_for_email(email_normalized: str) -> uuid.UUID:
     """
-    Derives a deterministic UUIDv5 for an email identity in the absence of a separate user auth system.
-    Guarantees that multiple anonymous sessions with the same normalized email resolve to the exact
-    same user identity for downstream artifact ownership and one-email-one-sketch logic.
+    Derives a deterministic UUIDv5 from normalized email.
+
+    NOTE (DEV-SPEC §8.3 / H-2 Invariant):
+    Anonymous quiz funnel email capture does NOT assign or derive user_id on the session.
+    Anonymous sessions maintain session.user_id = None.
+    This helper is reserved strictly for trusted/internal operations where deterministic
+    namespace mapping from email is explicitly needed, and is NOT invoked during anonymous capture.
     """
     return uuid.uuid5(uuid.NAMESPACE_URL, f"mailto:{email_normalized}")

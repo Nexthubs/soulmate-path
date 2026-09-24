@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Image from "next/image";
 
 export interface EmailCaptureViewProps {
@@ -125,9 +125,17 @@ export function EmailCaptureView({
 
   // Form states
   const [email, setEmail] = useState(initialEmail);
+  const [isDirty, setIsDirty] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(termsAcceptedDefault);
   const [localError, setLocalError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // M1-F1: Synchronize restored email from async parent/session fetch without overwriting active user edits
+  useEffect(() => {
+    if (initialEmail && !isDirty) {
+      setEmail(initialEmail);
+    }
+  }, [initialEmail, isDirty]);
 
   const displayError = externalError || localError;
   const isLoading = externalLoading || isSubmitting;
@@ -172,26 +180,30 @@ export function EmailCaptureView({
       data-sample-data={isSampleData ? "true" : "false"}
       className={`relative min-h-screen w-full max-w-[390px] mx-auto bg-gradient-to-b from-[#fbfaff] via-[#f7f5fb] to-[#ffffff] overflow-x-hidden flex flex-col justify-between ${className}`}
     >
-      {/* Top Background Section & Sketch Preview */}
-      <div className="relative w-full pt-12 pb-6 px-6 flex flex-col items-center text-center overflow-hidden">
+      {/* Top Background Section & Sketch Preview (Figma 102:486 / 102:557: h=248px, heading at y=64) */}
+      <div className="relative w-full h-[248px] min-h-[248px] pt-16 px-6 flex flex-col items-center text-center overflow-hidden">
         {/* Background Sketch Illustration */}
         <div
-          className="absolute inset-x-0 top-0 h-[260px] pointer-events-none opacity-40 mix-blend-multiply flex justify-center overflow-hidden"
+          className="absolute inset-x-0 top-0 h-[248px] pointer-events-none opacity-85 mix-blend-multiply flex justify-center overflow-hidden"
           aria-hidden="true"
         >
           <Image
             src={isMaleVariant ? "/images/email/sketch-male.png" : "/images/email/sketch-female.png"}
             alt="Soulmate sketch preview"
             width={390}
-            height={360}
-            className="w-full h-auto object-cover object-top filter blur-[0.3px]"
+            height={isMaleVariant ? 884 : 360}
+            className={`w-full ${
+              isMaleVariant
+                ? "h-[884px] max-w-[390px] object-cover object-top"
+                : "h-[360px] object-cover object-top"
+            }`}
             priority
             data-testid="sketch-preview-image"
           />
         </div>
 
         {/* Top Heading 1 (Figma 102:490 / 102:562) */}
-        <div className="relative z-10 pt-4 pb-2">
+        <div className="relative z-10">
           <h1 className="font-sans font-bold text-[24px] leading-[30px] tracking-tight text-neutral-900">
             You&apos;re one step closer to<br />
             seeing your soulmate<br />
@@ -234,6 +246,7 @@ export function EmailCaptureView({
                 type="email"
                 value={email}
                 onChange={(e) => {
+                  setIsDirty(true);
                   setEmail(e.target.value);
                   if (displayError) setLocalError(null);
                 }}

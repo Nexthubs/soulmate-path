@@ -38,12 +38,22 @@ function EmailPageContent() {
   let sessionPartnerGender: string | null = null;
   let sessionAgeRange: string | null = null;
   let sessionEthnicity: string | null = null;
+  let sessionEmail: string | null = null;
 
-  if (typeof window !== "undefined") {
+  if (typeof window !== "undefined" || typeof sessionStorage !== "undefined") {
     try {
-      sessionPartnerGender = sessionStorage.getItem("soulmate_q03");
-      sessionAgeRange = sessionStorage.getItem("soulmate_q05");
-      sessionEthnicity = sessionStorage.getItem("soulmate_q06");
+      const storage =
+        typeof window !== "undefined"
+          ? window.sessionStorage
+          : typeof sessionStorage !== "undefined"
+          ? sessionStorage
+          : null;
+      if (storage) {
+        sessionPartnerGender = storage.getItem("soulmate_q03");
+        sessionAgeRange = storage.getItem("soulmate_q05");
+        sessionEthnicity = storage.getItem("soulmate_q06");
+        sessionEmail = storage.getItem("soulmate_user_email");
+      }
     } catch {
       // storage unavailable
     }
@@ -60,18 +70,38 @@ function EmailPageContent() {
   const userGender = searchParams.get("user_gender") || undefined;
 
   const [sessionId, setSessionId] = React.useState<string | null>(null);
-  const [initialEmail, setInitialEmail] = React.useState<string>("");
+  const [initialEmail, setInitialEmail] = React.useState<string>(sessionEmail || "");
   const [summaryData, setSummaryData] = React.useState<EmailSummaryResponse | null>(null);
+
+  // M1-F1 / L-1: Cache active session bootstrap promise for race-free email submission
+  const sessionPromiseRef = React.useRef<Promise<any> | null>(null);
 
   React.useEffect(() => {
     let isCancelled = false;
     async function loadActiveSession() {
       try {
-        const sess = await getCurrentSession();
+        const promise = getCurrentSession();
+        sessionPromiseRef.current = promise;
+        const sess = await promise;
         if (!isCancelled) {
           setSessionId(sess.session_id);
           if (sess.email) {
             setInitialEmail(sess.email);
+            if (typeof window !== "undefined" || typeof sessionStorage !== "undefined") {
+              try {
+                const storage =
+                  typeof window !== "undefined"
+                    ? window.sessionStorage
+                    : typeof sessionStorage !== "undefined"
+                    ? sessionStorage
+                    : null;
+                if (storage) {
+                  storage.setItem("soulmate_user_email", sess.email);
+                }
+              } catch {
+                // storage unavailable
+              }
+            }
           }
         }
         try {
@@ -110,6 +140,29 @@ function EmailPageContent() {
       return;
     }
 
+    // L-1 remediation: Resolve active session before advancing; prevent lost submissions
+    let activeSessionId = sessionId;
+    if (!activeSessionId && sessionPromiseRef.current) {
+      try {
+        const sess = await sessionPromiseRef.current;
+        activeSessionId = sess.session_id;
+        setSessionId(sess.session_id);
+      } catch {
+        // Session loading promise rejected
+      }
+    }
+
+    if (!activeSessionId && !isFixture) {
+      try {
+        const sess = await getCurrentSession();
+        activeSessionId = sess.session_id;
+        setSessionId(sess.session_id);
+      } catch (err) {
+        console.error("Failed to resolve active session before email submission:", err);
+        throw new Error("Unable to save email: active session not found. Please refresh the page.");
+      }
+    }
+
     // DEV-SPEC §20 PII Boundary: Email is PII and must never be exposed in URL query parameters.
     if (typeof window !== "undefined") {
       try {
@@ -121,8 +174,8 @@ function EmailPageContent() {
 
     let nextRoute: string = SOULMATE_ROUTES.SUBSCRIBE;
 
-    if (sessionId) {
-      const res = await saveSessionEmail(sessionId, email);
+    if (activeSessionId) {
+      const res = await saveSessionEmail(activeSessionId, email);
       if (res && res.next) {
         nextRoute = res.next;
       }

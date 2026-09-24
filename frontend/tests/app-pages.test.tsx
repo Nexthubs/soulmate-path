@@ -118,6 +118,36 @@ describe("App Router Page-Level Behavioral Integration (M-3 Audit Remediation)",
       expect(html).toContain("Asian");
       expect(html).not.toContain("data-sample-data=\"true\"");
     });
+
+    it("prefills email input from sessionStorage on initial mount (M1-F1 recovery)", () => {
+      const originalStorage = global.sessionStorage;
+      try {
+        const store: Record<string, string> = {
+          soulmate_user_email: "returned.user@example.com",
+          soulmate_q03: "male",
+        };
+        const mockStorage = {
+          getItem: (key: string) => store[key] || null,
+          setItem: (key: string, val: string) => {
+            store[key] = val;
+          },
+          removeItem: (key: string) => {
+            delete store[key];
+          },
+          clear: () => {},
+          length: 2,
+          key: () => null,
+        };
+        // @ts-ignore
+        global.sessionStorage = mockStorage;
+
+        const html = renderToStaticMarkup(<SoulmateEmailPage />);
+        expect(html).toContain('value="returned.user@example.com"');
+        expect(html).toContain("Male");
+      } finally {
+        global.sessionStorage = originalStorage;
+      }
+    });
   });
 
   describe("5. /soulmate/subscribe (Subscribe Checkout Page & H-3 Forwarding, H-2 Remediation)", () => {

@@ -48,8 +48,12 @@ describe("SP-105: Email Capture Male/Female Variants (DEV-SPEC §2, §8; QUIZ-01
       expect(html).toContain("data-testid=\"email-capture-view\"");
       expect(html).toContain("data-variant=\"male\"");
 
-      // Verify male sketch illustration asset
+      // Verify male sketch illustration asset and Figma 102:557 metrics
       expect(html).toContain("sketch-male.png");
+      expect(html).toContain("h-[248px]");
+      expect(html).toContain("opacity-85 mix-blend-multiply");
+      expect(html).toContain("h-[884px]");
+      expect(html).not.toContain("blur-[0.3px]");
 
       // Verify gender badge says Male
       expect(html).toContain("data-testid=\"summary-gender-value\"");
@@ -255,6 +259,30 @@ describe("SP-105: Email Capture Male/Female Variants (DEV-SPEC §2, §8; QUIZ-01
 
       expect(html).toContain("data-sample-data=\"false\"");
       expect(html).not.toContain("data-testid=\"sample-data-badge\"");
+    });
+  });
+
+  describe("Email Persistence & Prefill Recovery (M1-F1, DEV-SPEC §23)", () => {
+    it("prefills input field when initialEmail is provided", () => {
+      const html = renderToStaticMarkup(
+        <EmailCaptureView
+          initialEmail="restored.user@example.com"
+          preferredPartnerGender="female"
+        />
+      );
+
+      expect(html).toContain('value="restored.user@example.com"');
+    });
+
+    it("renders empty input when initialEmail is empty string", () => {
+      const html = renderToStaticMarkup(
+        <EmailCaptureView
+          initialEmail=""
+          preferredPartnerGender="female"
+        />
+      );
+
+      expect(html).toContain('value=""');
     });
   });
 });
