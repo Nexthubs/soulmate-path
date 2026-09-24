@@ -42,6 +42,10 @@ from app.soulmate.domain.zodiac import (
     get_zodiac_by_name,
     get_zodiac_for_date,
 )
+from app.soulmate.domain.identity import (
+    derive_user_id_for_email,
+    validate_and_normalize_email,
+)
 from app.soulmate.domain.offer import (
     ResubscriptionPolicy,
     build_subscription_offer,
@@ -49,9 +53,11 @@ from app.soulmate.domain.offer import (
     format_offer_price,
     get_currency_symbol,
 )
-from app.soulmate.domain.identity import (
-    derive_user_id_for_email,
-    validate_and_normalize_email,
+from app.soulmate.domain.guard import (
+    GuardedRoute,
+    calculate_unlock_times,
+    evaluate_route_guard,
+    normalize_route_path,
 )
 
 
@@ -123,4 +129,9 @@ __all__ = [
     "format_offer_price",
     "evaluate_resubscription_eligibility",
     "build_subscription_offer",
+    "GuardedRoute",
+    "normalize_route_path",
+    "calculate_unlock_times",
+    "evaluate_route_guard",
 ]
+

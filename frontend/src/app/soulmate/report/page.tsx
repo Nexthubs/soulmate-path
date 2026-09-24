@@ -4,6 +4,7 @@ import React, { Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ReportRenderer } from "@/soulmate/components/report";
+import { useRouteGuard } from "@/soulmate/hooks/useRouteGuard";
 import { SOULMATE_ROUTES, sanitizeInternalRoute } from "@/soulmate/domain";
 
 function ReportPageContent() {
@@ -14,6 +15,12 @@ function ReportPageContent() {
   const isFixture =
     !isProduction &&
     (searchParams.get("fixture") === "true" || process.env.NODE_ENV !== "production");
+
+  // DEV-SPEC §3: Route Guard for /soulmate/report (First payment confirmed + 24h unlocked)
+  useRouteGuard({
+    targetRoute: "/soulmate/report",
+    enabled: isProduction || (!isFixture && searchParams.get("guard") === "true"),
+  });
 
   // In production, unentitled visitors must not directly access the unpublished fixture report (AGENTS.md §5, REPORT-01/02)
   if (isProduction) {

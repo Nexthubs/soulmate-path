@@ -31,6 +31,11 @@ DOB / Zodiac (`SP-204`) completed and evidenced in `docs/handoffs/SP-204.md`.
 Normalized Soulmate Profile builder (`SP-205`) completed and evidenced in `docs/handoffs/SP-205.md`.
 Interstitial answer storage (`SP-206`) completed and evidenced in `docs/handoffs/SP-206.md`.
 Connect Quiz UI to live APIs (`SP-207`) completed and evidenced in `docs/handoffs/SP-207.md`.
+Email save / normalize / bind identity (`SP-301`) completed and evidenced in `docs/handoffs/SP-301.md`.
+Email summary API/view model (`SP-302`) completed and evidenced in `docs/handoffs/SP-302.md`.
+Subscribe offer/config API (`SP-303`) completed and evidenced in `docs/handoffs/SP-303.md`.
+Route guards (`SP-304`) completed and evidenced in `docs/handoffs/SP-304.md`.
+*(Note: WAVE 3 is now 100% complete)*
 
 ## 2. Milestone status
 
@@ -45,7 +50,7 @@ Connect Quiz UI to live APIs (`SP-207`) completed and evidenced in `docs/handoff
 
 ## 3. Active / blocked work
 
-Active tasks: SP-301 (Email save / normalize / bind identity).
+Active tasks: SP-208 (Result calculation & preview snapshot) / SP-401 (Subscribe view variant matching / Wave 4 kickoff).
 
 
 Blocking decision IDs:
@@ -85,9 +90,9 @@ Report production provider: disabled / decision pending
 ## 6. Next safe tasks
 
 ```text
-1. SP-301 — Email save / normalize / bind identity
-2. SP-302 — Email summary API/view model
-3. SP-208 — Result calculation & preview snapshot
+1. SP-208 — Result calculation & preview snapshot
+2. SP-401 — Subscribe view variant matching / Wave 4 kickoff
+3. SP-402 — PayPal SDK / Buttons component
 ```
 
 

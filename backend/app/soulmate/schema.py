@@ -268,3 +268,24 @@ class SubscriptionOfferResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True, extra="ignore")
 
 
+class RouteGuardResponse(BaseModel):
+    """Server-authoritative route access verdict and redirection guidance (DEV-SPEC §3, §10, §20)."""
+    allowed: bool = Field(..., description="Whether access to target route is granted")
+    target_route: str = Field(..., description="Canonical requested route path")
+    redirect_to: Optional[str] = Field(default=None, description="Authoritative redirection target if not allowed")
+    reason: Optional[str] = Field(default=None, description="Human-readable rationale for verdict")
+    server_time: datetime = Field(..., description="Server authoritative UTC timestamp (TIME-01)")
+    session_id: Optional[str] = Field(default=None, description="Public session ID evaluated")
+    quiz_completed: bool = Field(default=False, description="Whether quiz is completed")
+    email_captured: bool = Field(default=False, description="Whether email has been captured")
+    is_paid: bool = Field(default=False, description="Whether first payment is confirmed (PAY-AUTH-01)")
+    sketch_unlocked: bool = Field(default=False, description="Whether sketch 12h cooldown elapsed (TIME-01)")
+    report_unlocked: bool = Field(default=False, description="Whether report 24h cooldown elapsed (TIME-01)")
+    sketch_unlock_at: Optional[datetime] = Field(default=None, description="Sketch unlock timestamp")
+    report_unlock_at: Optional[datetime] = Field(default=None, description="Report unlock timestamp")
+
+    model_config = ConfigDict(from_attributes=True, extra="ignore")
+
+
+
+

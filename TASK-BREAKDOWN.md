@@ -587,7 +587,7 @@ Store answers for spiritual/Psychic Artistry/warning interstitial flow as define
 
 **Priority:** P0  
 **Depends:** SP-201, SP-205  
-**Status:** TODO
+**Status:** DONE
 **Context refs:** DEV-SPEC §8, §15.5, §20 | Decisions: — | Dependency handoffs: SP-201, SP-205
 
 
@@ -608,7 +608,7 @@ Store answers for spiritual/Psychic Artistry/warning interstitial flow as define
 
 **Priority:** P1  
 **Depends:** SP-205  
-**Status:** TODO
+**Status:** DONE
 **Context refs:** DEV-SPEC §8 | Decisions: QUIZ-01 | Dependency handoffs: SP-205
 
 
@@ -621,7 +621,7 @@ Returns display-ready Q3/Q5/Q6 values or equivalent normalized profile fields, w
 
 **Priority:** P1  
 **Depends:** SP-301, SP-004  
-**Status:** TODO
+**Status:** DONE
 **Context refs:** DEV-SPEC §9.1–9.2, §15.6, §21–22 | Decisions: PAY-01, PAY-02 | Dependency handoffs: SP-301, SP-004
 
 
@@ -647,7 +647,7 @@ Expose the current offer safely to UI.
 
 **Priority:** P0  
 **Depends:** SP-203, SP-301  
-**Status:** TODO
+**Status:** DONE
 **Context refs:** DEV-SPEC §3, §10, §20 | Decisions: PAY-AUTH-01, TIME-01 | Dependency handoffs: SP-203, SP-301
 
 

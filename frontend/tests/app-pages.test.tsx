@@ -120,16 +120,28 @@ describe("App Router Page-Level Behavioral Integration (M-3 Audit Remediation)",
     });
   });
 
-  describe("5. /soulmate/subscribe (Subscribe Checkout Page & H-3 Forwarding)", () => {
-    it("preserves query parameters when forwarding to Result Dashboard", () => {
+  describe("5. /soulmate/subscribe (Subscribe Checkout Page & H-3 Forwarding, H-2 Remediation)", () => {
+    it("preserves query parameters when forwarding to Result Dashboard in fixture mode", () => {
       mockSearchParams = new URLSearchParams({
+        fixture: "true",
         preferred_partner_gender: "female",
         age_range: "age_30_40",
       });
 
       const html = renderToStaticMarkup(<SoulmateSubscribePage />);
       expect(html).toContain("Subscription Checkout");
-      expect(html).toContain('href="/soulmate/result?preferred_partner_gender=female&amp;age_range=age_30_40"');
+      expect(html).toContain('href="/soulmate/result?fixture=true&amp;preferred_partner_gender=female&amp;age_range=age_30_40"');
+    });
+
+    it("H-2: shows payment required disabled button when user is unpaid and not in fixture mode", () => {
+      mockSearchParams = new URLSearchParams({
+        preferred_partner_gender: "female",
+      });
+
+      const html = renderToStaticMarkup(<SoulmateSubscribePage />);
+      expect(html).toContain("Complete Payment to Access Results");
+      expect(html).toContain("data-testid=\"subscribe-payment-pending\"");
+      expect(html).not.toContain('href="/soulmate/result');
     });
   });
 
