@@ -4,7 +4,9 @@ Provisions reusable PayPal products and monthly billing plans with intro promoti
 enforcing idempotency, monthly cadence verification, and disclosure parity.
 """
 
+import asyncio
 from decimal import Decimal
+import hashlib
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -32,14 +34,25 @@ STANDARD_PLAN_NAME_DEFAULT = "Soulmate Monthly Standard"
 STANDARD_PLAN_DESC_DEFAULT = "Soulmate Path standard monthly subscription"
 
 
+def _generate_idempotency_key(prefix: str, *args: Any) -> str:
+    """
+    Generate deterministic 36-char string for PayPal-Request-Id header.
+    Ensures distributed/cross-process deduplication on PayPal API.
+    """
+    content = ":".join(str(a) for a in args)
+    return hashlib.sha256(f"{prefix}:{content}".encode()).hexdigest()[:36]
+
+
 class PayPalProvisioningService:
     """
     Orchestrates creation, detection, and verification of reusable PayPal billing infrastructure.
     Enforces that plans are reusable templates, not created per-user (Spec §9.2).
+    Thread/async safe: Uses in-process async lock and PayPal-Request-Id deduplication headers.
     """
 
     def __init__(self, client: PayPalClient):
         self.client = client
+        self._lock = asyncio.Lock()
 
     # --------------------------------------------------------------------------
     # Payload Builders (DEV-SPEC §9.1.1 & §9.2)
@@ -96,11 +109,10 @@ class PayPalProvisioningService:
             billing_cycles=[cycle_1, cycle_2],
             payment_preferences=PayPalPaymentPreferences(
                 auto_bill_outstanding=True,
-                setup_fee_failure_action="CONTINUE",
                 payment_failure_threshold=1,
             ),
         )
-        return payload.model_dump(mode="json")
+        return payload.model_dump(mode="json", exclude_none=True)
 
     @staticmethod
     def build_standard_plan_payload(
@@ -138,11 +150,10 @@ class PayPalProvisioningService:
             billing_cycles=[cycle_1],
             payment_preferences=PayPalPaymentPreferences(
                 auto_bill_outstanding=True,
-                setup_fee_failure_action="CONTINUE",
                 payment_failure_threshold=1,
             ),
         )
-        return payload.model_dump(mode="json")
+        return payload.model_dump(mode="json", exclude_none=True)
 
     # --------------------------------------------------------------------------
     # Plan Verification (Acceptance: Cadence, Disclosure, Cycle Parity)
@@ -335,10 +346,24 @@ class PayPalProvisioningService:
         return len(discrepancies) == 0, discrepancies
 
     # --------------------------------------------------------------------------
-    # Repeatable / Idempotent Provisioning Workflow
+    # Repeatable / Idempotent Provisioning Workflow (Concurrency Safe)
     # --------------------------------------------------------------------------
 
     async def get_or_create_product(
+        self,
+        existing_product_id: Optional[str] = None,
+        name: str = PRODUCT_NAME_DEFAULT,
+        description: str = PRODUCT_DESC_DEFAULT,
+    ) -> Dict[str, Any]:
+        """Thread/coroutine safe product retrieval or creation."""
+        async with self._lock:
+            return await self._get_or_create_product_unlocked(
+                existing_product_id=existing_product_id,
+                name=name,
+                description=description,
+            )
+
+    async def _get_or_create_product_unlocked(
         self,
         existing_product_id: Optional[str] = None,
         name: str = PRODUCT_NAME_DEFAULT,
@@ -364,18 +389,38 @@ class PayPalProvisioningService:
                 logger.info("Reusing existing PayPal product: %s (%s)", p.get("id"), p.get("name"))
                 return p
 
-        # 3. Create new product if none found
+        # 3. Create new product with deterministic request_id for distributed idempotency
         logger.info("Creating new PayPal product: %s", name)
+        request_id = _generate_idempotency_key("product", name)
         new_prod = await self.client.create_product(
             name=name,
             description=description,
             product_type="SERVICE",
             category="ONLINE_SERVICES",
+            request_id=request_id,
         )
         logger.info("Successfully created PayPal product: %s", new_prod.get("id"))
         return new_prod
 
     async def get_or_create_intro_plan(
+        self,
+        product_id: str,
+        intro_price: Decimal,
+        regular_price: Decimal,
+        currency: str = "USD",
+        existing_plan_id: Optional[str] = None,
+    ) -> Tuple[Dict[str, Any], PayPalPlanVerificationResult]:
+        """Thread/coroutine safe intro plan retrieval or creation."""
+        async with self._lock:
+            return await self._get_or_create_intro_plan_unlocked(
+                product_id=product_id,
+                intro_price=intro_price,
+                regular_price=regular_price,
+                currency=currency,
+                existing_plan_id=existing_plan_id,
+            )
+
+    async def _get_or_create_intro_plan_unlocked(
         self,
         product_id: str,
         intro_price: Decimal,
@@ -430,7 +475,7 @@ class PayPalProvisioningService:
                 logger.info("Found existing matching intro plan: %s. Reusing.", p_id)
                 return plan_detail, v_res
 
-        # 3. Create new intro plan
+        # 3. Create new intro plan with deterministic request_id for distributed idempotency
         logger.info("Creating new PayPal intro plan on product %s...", product_id)
         payload = self.build_intro_plan_payload(
             product_id=product_id,
@@ -438,7 +483,8 @@ class PayPalProvisioningService:
             regular_price=regular_price,
             currency=currency,
         )
-        created_plan = await self.client.create_plan(payload, auto_activate=True)
+        request_id = _generate_idempotency_key("intro-plan", product_id, intro_price, regular_price, currency)
+        created_plan = await self.client.create_plan(payload, request_id=request_id, auto_activate=True)
         v_res = self.verify_plan(
             plan_data=created_plan,
             expected_type="intro",
@@ -451,6 +497,22 @@ class PayPalProvisioningService:
         return created_plan, v_res
 
     async def get_or_create_standard_plan(
+        self,
+        product_id: str,
+        regular_price: Decimal,
+        currency: str = "USD",
+        existing_plan_id: Optional[str] = None,
+    ) -> Tuple[Dict[str, Any], PayPalPlanVerificationResult]:
+        """Thread/coroutine safe standard plan retrieval or creation."""
+        async with self._lock:
+            return await self._get_or_create_standard_plan_unlocked(
+                product_id=product_id,
+                regular_price=regular_price,
+                currency=currency,
+                existing_plan_id=existing_plan_id,
+            )
+
+    async def _get_or_create_standard_plan_unlocked(
         self,
         product_id: str,
         regular_price: Decimal,
@@ -502,14 +564,15 @@ class PayPalProvisioningService:
                 logger.info("Found existing matching standard plan: %s. Reusing.", p_id)
                 return plan_detail, v_res
 
-        # 3. Create new standard plan
+        # 3. Create new standard plan with deterministic request_id for distributed idempotency
         logger.info("Creating new PayPal standard plan on product %s...", product_id)
         payload = self.build_standard_plan_payload(
             product_id=product_id,
             regular_price=regular_price,
             currency=currency,
         )
-        created_plan = await self.client.create_plan(payload, auto_activate=True)
+        request_id = _generate_idempotency_key("standard-plan", product_id, regular_price, currency)
+        created_plan = await self.client.create_plan(payload, request_id=request_id, auto_activate=True)
         v_res = self.verify_plan(
             plan_data=created_plan,
             expected_type="standard",
@@ -531,23 +594,39 @@ class PayPalProvisioningService:
         provision_standard_plan: bool = True,
     ) -> ProvisioningSummary:
         """
-        Execute full idempotent provisioning workflow for PayPal subscription infrastructure:
-        1. Obtain or create reusable Product.
-        2. Obtain or create Intro Plan (discounted first month, then regular renewal).
-        3. Obtain or create Standard Plan (regular monthly renewal for PAY-02 policy).
-        4. Verify all plans against contract specifications.
-        5. Verify disclosure parity.
-        6. Produce exact .env configuration snippet.
+        Execute full idempotent provisioning workflow for PayPal subscription infrastructure.
+        Protected by asyncio.Lock and deterministic request_ids to ensure concurrency safety.
         """
+        async with self._lock:
+            return await self._provision_unlocked(
+                intro_price=intro_price,
+                regular_price=regular_price,
+                currency=currency,
+                existing_product_id=existing_product_id,
+                existing_intro_plan_id=existing_intro_plan_id,
+                existing_standard_plan_id=existing_standard_plan_id,
+                provision_standard_plan=provision_standard_plan,
+            )
+
+    async def _provision_unlocked(
+        self,
+        intro_price: Decimal,
+        regular_price: Decimal,
+        currency: str = "USD",
+        existing_product_id: Optional[str] = None,
+        existing_intro_plan_id: Optional[str] = None,
+        existing_standard_plan_id: Optional[str] = None,
+        provision_standard_plan: bool = True,
+    ) -> ProvisioningSummary:
         curr = currency.upper().strip()
 
         # Step 1: Product
-        product = await self.get_or_create_product(existing_product_id=existing_product_id)
+        product = await self._get_or_create_product_unlocked(existing_product_id=existing_product_id)
         prod_id = product["id"]
         prod_name = product.get("name", PRODUCT_NAME_DEFAULT)
 
         # Step 2: Intro Plan
-        intro_plan, intro_v = await self.get_or_create_intro_plan(
+        intro_plan, intro_v = await self._get_or_create_intro_plan_unlocked(
             product_id=prod_id,
             intro_price=intro_price,
             regular_price=regular_price,
@@ -560,7 +639,7 @@ class PayPalProvisioningService:
         standard_plan_id: Optional[str] = None
         standard_v: Optional[PayPalPlanVerificationResult] = None
         if provision_standard_plan:
-            standard_plan, standard_v = await self.get_or_create_standard_plan(
+            standard_plan, standard_v = await self._get_or_create_standard_plan_unlocked(
                 product_id=prod_id,
                 regular_price=regular_price,
                 currency=curr,

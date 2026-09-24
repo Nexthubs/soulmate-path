@@ -47,12 +47,12 @@ class PayPalBillingCycle(BaseModel):
 
 
 class PayPalPaymentPreferences(BaseModel):
-    """Payment preferences for automated billing."""
+    """Payment preferences for automated billing (DEV-SPEC §9.1.1)."""
     model_config = ConfigDict(extra="ignore")
 
     auto_bill_outstanding: bool = True
-    setup_fee_failure_action: Literal["CONTINUE", "CANCEL"] = "CONTINUE"
     payment_failure_threshold: int = 1
+    setup_fee_failure_action: Optional[Literal["CONTINUE", "CANCEL"]] = None
 
 
 class PayPalPlanPayload(BaseModel):

@@ -2,6 +2,7 @@
 Automated tests for PayPal Product and Plan Provisioning (SP-401, DEV-SPEC §9.1–9.2, §22, §25, Decisions: PAY-01, PAY-02).
 """
 
+import asyncio
 from decimal import Decimal
 import json
 from typing import Any, Dict
@@ -30,6 +31,15 @@ from app.soulmate.services.paypal_provisioning import (
     PayPalProvisioningService,
 )
 from scripts.provision_paypal import main_async, parse_args
+
+
+@pytest.fixture
+def mock_paypal_credentials() -> Dict[str, str]:
+    """Provides non-sensitive mock PayPal credentials for isolated test suites (M-1)."""
+    return {
+        "client_id": "mock_paypal_client_id_fixture",
+        "client_secret": "mock_paypal_client_secret_fixture",
+    }
 
 
 # ==============================================================================
@@ -73,10 +83,11 @@ def test_build_intro_plan_payload_exact_dev_spec_structure():
     assert c2["pricing_scheme"]["fixed_price"]["value"] == "29.00"
     assert c2["pricing_scheme"]["fixed_price"]["currency_code"] == "USD"
 
-    # Payment preferences
+    # Payment preferences (DEV-SPEC §9.1.1 lines 1126-1129)
     prefs = payload["payment_preferences"]
     assert prefs["auto_bill_outstanding"] is True
     assert prefs["payment_failure_threshold"] == 1
+    assert "setup_fee_failure_action" not in prefs  # M-2: No setup fee in Soulmate V1
 
 
 def test_build_standard_plan_payload_exact_dev_spec_structure():
@@ -102,6 +113,12 @@ def test_build_standard_plan_payload_exact_dev_spec_structure():
     assert c1["total_cycles"] == 0
     assert c1["pricing_scheme"]["fixed_price"]["value"] == "29.00"
     assert c1["pricing_scheme"]["fixed_price"]["currency_code"] == "USD"
+
+    # Payment preferences (DEV-SPEC §9.2)
+    prefs = payload["payment_preferences"]
+    assert prefs["auto_bill_outstanding"] is True
+    assert prefs["payment_failure_threshold"] == 1
+    assert "setup_fee_failure_action" not in prefs  # M-2: No setup fee in Soulmate V1
 
 
 def test_payload_builder_price_validation():
@@ -273,7 +290,7 @@ def test_verify_disclosures_match_plan():
 
 
 @pytest.mark.asyncio
-async def test_paypal_client_oauth_token_caching_and_basic_auth():
+async def test_paypal_client_oauth_token_caching_and_basic_auth(mock_paypal_credentials):
     """PayPalClient requests and caches OAuth2 token using HTTP Basic auth."""
     calls = []
 
@@ -292,8 +309,8 @@ async def test_paypal_client_oauth_token_caching_and_basic_auth():
     transport = httpx.MockTransport(mock_handler)
     async with httpx.AsyncClient(transport=transport) as http_client:
         client = PayPalClient(
-            client_id="test_client_id",
-            client_secret="test_client_secret",
+            client_id=mock_paypal_credentials["client_id"],
+            client_secret=mock_paypal_credentials["client_secret"],
             environment="sandbox",
             http_client=http_client,
         )
@@ -316,8 +333,8 @@ async def test_paypal_client_auth_failure():
     transport = httpx.MockTransport(mock_handler)
     async with httpx.AsyncClient(transport=transport) as http_client:
         client = PayPalClient(
-            client_id="bad_id",
-            client_secret="bad_secret",
+            client_id="mock_invalid_user_id",
+            client_secret="mock_invalid_user_secret",
             environment="sandbox",
             http_client=http_client,
         )
@@ -326,7 +343,7 @@ async def test_paypal_client_auth_failure():
         assert exc_info.value.status_code == 401
         assert "Client Authentication failed" in str(exc_info.value)
         # Ensure secret is not in exception message
-        assert "bad_secret" not in str(exc_info.value)
+        assert "mock_invalid_user_secret" not in str(exc_info.value)
 
 
 # ==============================================================================
@@ -335,7 +352,7 @@ async def test_paypal_client_auth_failure():
 
 
 @pytest.mark.asyncio
-async def test_provisioning_service_creates_new_infrastructure_when_none_exists():
+async def test_provisioning_service_creates_new_infrastructure_when_none_exists(mock_paypal_credentials):
     """When no matching objects exist, creates Product, Intro Plan, and Standard Plan."""
     created_objects = []
 
@@ -366,7 +383,12 @@ async def test_provisioning_service_creates_new_infrastructure_when_none_exists(
 
     transport = httpx.MockTransport(mock_handler)
     async with httpx.AsyncClient(transport=transport) as http_client:
-        client = PayPalClient(client_id="cid", client_secret="csec", environment="sandbox", http_client=http_client)
+        client = PayPalClient(
+            client_id=mock_paypal_credentials["client_id"],
+            client_secret=mock_paypal_credentials["client_secret"],
+            environment="sandbox",
+            http_client=http_client,
+        )
         service = PayPalProvisioningService(client=client)
 
         summary = await service.provision(
@@ -392,7 +414,7 @@ async def test_provisioning_service_creates_new_infrastructure_when_none_exists(
 
 
 @pytest.mark.asyncio
-async def test_provisioning_service_idempotent_reuses_existing_matching_objects():
+async def test_provisioning_service_idempotent_reuses_existing_matching_objects(mock_paypal_credentials):
     """Acceptance: Safe to re-run; reuses existing provisioned product and plans without duplicating."""
     existing_intro_plan = {
         "id": "P-EXISTING-INTRO",
@@ -459,7 +481,12 @@ async def test_provisioning_service_idempotent_reuses_existing_matching_objects(
 
     transport = httpx.MockTransport(mock_handler)
     async with httpx.AsyncClient(transport=transport) as http_client:
-        client = PayPalClient(client_id="cid", client_secret="csec", environment="sandbox", http_client=http_client)
+        client = PayPalClient(
+            client_id=mock_paypal_credentials["client_id"],
+            client_secret=mock_paypal_credentials["client_secret"],
+            environment="sandbox",
+            http_client=http_client,
+        )
         service = PayPalProvisioningService(client=client)
 
         summary = await service.provision(
@@ -478,8 +505,85 @@ async def test_provisioning_service_idempotent_reuses_existing_matching_objects(
         assert summary.standard_plan_verification.matches is True
 
         # Invariant: Zero POST requests were made because all objects were existing and valid
-        # (Only GET requests to verify objects)
         assert post_count == 0
+
+
+@pytest.mark.asyncio
+async def test_provisioning_service_concurrency_safety(mock_paypal_credentials):
+    """
+    M-3 / AGENTS.md §6: Verify concurrency safety of provisioning workflow.
+    Multiple concurrent calls to service.provision() must serialize and create exactly
+    one product and one intro plan, utilizing async lock and deterministic request_ids.
+    """
+    created_products = []
+    created_plans = []
+    product_store = {}
+    plan_store = {}
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/v1/oauth2/token":
+            return httpx.Response(200, json={"access_token": "tok_123", "expires_in": 3600})
+
+        if path == "/v1/catalogs/products":
+            if request.method == "GET":
+                return httpx.Response(200, json={"products": list(product_store.values())})
+            if request.method == "POST":
+                data = json.loads(request.content.decode())
+                prod_id = "PROD-CONCURRENT-1"
+                created_products.append(data)
+                prod_obj = {"id": prod_id, "name": data["name"]}
+                product_store[prod_id] = prod_obj
+                return httpx.Response(201, json=prod_obj)
+
+        if path == "/v1/billing/plans":
+            if request.method == "GET":
+                return httpx.Response(200, json={"plans": list(plan_store.values())})
+            if request.method == "POST":
+                data = json.loads(request.content.decode())
+                plan_id = f"P-{data['name'].replace(' ', '-').upper()}-CONCURRENT"
+                created_plans.append(data)
+                plan_obj = {**data, "id": plan_id, "status": "ACTIVE"}
+                plan_store[plan_id] = plan_obj
+                return httpx.Response(201, json=plan_obj)
+
+        if path.startswith("/v1/billing/plans/"):
+            p_id = path.split("/")[-1]
+            if p_id in plan_store:
+                return httpx.Response(200, json=plan_store[p_id])
+
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(mock_handler)
+    async with httpx.AsyncClient(transport=transport) as http_client:
+        client = PayPalClient(
+            client_id=mock_paypal_credentials["client_id"],
+            client_secret=mock_paypal_credentials["client_secret"],
+            environment="sandbox",
+            http_client=http_client,
+        )
+        service = PayPalProvisioningService(client=client)
+
+        # Launch 5 concurrent provisioning calls simultaneously
+        tasks = [
+            service.provision(
+                intro_price=Decimal("19.00"),
+                regular_price=Decimal("29.00"),
+                currency="USD",
+                provision_standard_plan=False,
+            )
+            for _ in range(5)
+        ]
+        summaries = await asyncio.gather(*tasks)
+
+        # Invariant: All 5 coroutines succeed and return the exact same product and plan IDs
+        for s in summaries:
+            assert s.product_id == "PROD-CONCURRENT-1"
+            assert s.intro_plan_id == "P-SOULMATE-MONTHLY-INTRO-CONCURRENT"
+
+        # Invariant: Only 1 product creation and 1 plan creation request occurred
+        assert len(created_products) == 1
+        assert len(created_plans) == 1
 
 
 # ==============================================================================
@@ -504,7 +608,7 @@ async def test_cli_rejects_missing_prices():
 
 
 @pytest.mark.asyncio
-async def test_cli_verify_only_mode_success(monkeypatch):
+async def test_cli_verify_only_mode_success(mock_paypal_credentials, monkeypatch):
     """CLI --verify-only inspects and confirms existing plan without mutations."""
     plan_mock = {
         "id": "P-TEST-INTRO-100",
@@ -553,8 +657,8 @@ async def test_cli_verify_only_mode_success(monkeypatch):
         "--regular-price", "29.00",
         "--intro-plan-id", "P-TEST-INTRO-100",
         "--product-id", "PROD-100",
-        "--client-id", "test_cid",
-        "--client-secret", "test_csec",
+        "--client-id", mock_paypal_credentials["client_id"],
+        "--client-secret", mock_paypal_credentials["client_secret"],
     ])
     code = await main_async(args)
     assert code == 0

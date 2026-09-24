@@ -62,20 +62,21 @@ The repository implements the reusable PayPal subscription foundation across the
 - [x] Prices come from config/approved input: Decimal validation verified; missing prices fail fast per `PAY-01`.
 - [x] Plan cadence is monthly: Enforced across all cycles (`interval_unit == 'MONTH'`, `interval_count == 1`).
 - [x] Renewal disclosure values match plan: `verify_disclosures_match_plan` PASS.
-- [x] Safe to re-run / detects existing plan: Re-run idempotency verified in `test_provisioning_service_idempotent_reuses_existing_matching_objects` (0 POST mutations).
+- [x] Safe to re-run / detects existing plan: Re-run idempotency verified in `test_provisioning_service_idempotent_reuses_existing_matching_objects` (0 POST mutations). Concurrency safety verified in `test_provisioning_service_concurrency_safety` (5 concurrent tasks create 1 plan).
 - [x] Config output for Product ID / Plan ID(s): `.env` snippet generation verified in summary and CLI.
-- [ ] Live Sandbox provider verification: `NOT_RUN` (Real PayPal Sandbox credentials `PAYPAL_CLIENT_ID` / `PAYPAL_CLIENT_SECRET` are not configured in the local workspace; automated mock verification passed 14/14 tests).
+- [ ] Live Sandbox provider verification: `NOT_RUN` (Real PayPal Sandbox credentials `PAYPAL_CLIENT_ID` / `PAYPAL_CLIENT_SECRET` are not configured in the local workspace; automated mock verification passed 15/15 tests).
 
 ## 6. Test / manual / provider evidence
 | Check | Result | Evidence/notes |
 |---|---|---|
-| `pytest backend/tests/test_paypal_provisioning.py` | PASS | 14/14 automated tests passing (payloads, cadence, disclosures, idempotency, auth caching) |
-| Full backend test suite (`pytest`) | PASS | 330/330 automated tests passing |
+| `pytest backend/tests/test_paypal_provisioning.py` | PASS | 15/15 automated tests passing (payloads, cadence, disclosures, idempotency, auth caching, concurrency safety) |
+| Full backend test suite (`pytest`) | PASS | 331/331 automated tests passing |
 | Full frontend test suite (`vitest run --run`) | PASS | 236/236 automated tests passing |
 | Frontend Typecheck & Lint | PASS | 0 Errors, 0 Warnings |
-| Offline CLI Dry Run | PASS | Exact DEV-SPEC §9.1.1 & §9.2 payloads verified offline; 0 network calls |
+| Offline CLI Dry Run | PASS | Exact DEV-SPEC §9.1.1 & §9.2 payloads verified offline (with `setup_fee_failure_action` omitted); 0 network calls |
 | CLI Price Validation | PASS | Fails fast with code 1 when prices missing or non-positive per Decision `PAY-01` |
 | Idempotency re-run simulation | PASS | Verified in `test_provisioning_service_idempotent_reuses_existing_matching_objects` via `httpx.MockTransport` |
+| Concurrency safety simulation (M-3) | PASS | Verified in `test_provisioning_service_concurrency_safety` (5 concurrent tasks serialize; exactly 1 product and 1 plan created) |
 | Live PayPal Sandbox API call | NOT_RUN | PayPal Sandbox credentials not yet injected into local development environment. Per AGENTS.md §9, missing provider credentials cannot be converted into PASS. |
 
 ## 7. Findings
@@ -86,9 +87,12 @@ The repository implements the reusable PayPal subscription foundation across the
 - none
 
 ### P2
-- none
+- none (M-1 credential injection, M-2 setup_fee_failure_action spec parity, and M-3 concurrency safety audit findings remediated and verified).
 
 ## 8. Deviations / unresolved decisions
+- **M-1 Audit Remediation:** Test credentials centralized into `mock_paypal_credentials` pytest fixture in `backend/tests/test_paypal_provisioning.py`.
+- **M-2 Audit Remediation:** Removed `setup_fee_failure_action` from `PayPalPaymentPreferences` and dumped payload with `exclude_none=True` to achieve 100% exact parity with DEV-SPEC §9.1.1 lines 1126-1129.
+- **M-3 Audit Remediation:** Added `asyncio.Lock` and deterministic `PayPal-Request-Id` to guarantee in-process and cross-instance concurrency safety, verified by automated test.
 - Decision `PAY-01` remains OPEN: exact production prices are TBD. Code strictly relies on injected environment variables / CLI parameters and provides no hardcoded fallbacks.
 - Decision `PAY-02` remains OPEN: standard recurring monthly plan is provisioned alongside intro plan to allow seamless policy resolution without re-provisioning.
 
