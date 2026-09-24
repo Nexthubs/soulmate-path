@@ -97,6 +97,24 @@ class ValidationError(SoulmateAppError):
         )
 
 
+class WebhookVerificationError(SoulmateAppError):
+    """PayPal webhook signature verification failed or required headers missing (DEV-SPEC §9.6, SP-404, SP-405)."""
+
+    def __init__(
+        self,
+        message: str = "PayPal webhook verification failed.",
+        details: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ):
+        super().__init__(
+            error_code=SoulmateErrorCode.VALIDATION_ERROR,
+            message=message,
+            status_code=400,
+            details=details,
+            **kwargs,
+        )
+
+
 class InvalidFlowStateError(SoulmateAppError):
     """Session is in an invalid state for the attempted action or step transition."""
 

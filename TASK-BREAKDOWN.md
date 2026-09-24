@@ -735,7 +735,7 @@ Associate approved provider subscription with the authorized user/session and ex
 
 **Priority:** P0  
 **Depends:** SP-002, SP-004  
-**Status:** TODO
+**Status:** DONE (docs/handoffs/SP-404.md)
 **Context refs:** DEV-SPEC §9.5–9.6 | Decisions: PAY-AUTH-01 | Dependency handoffs: SP-002, SP-004
 
 

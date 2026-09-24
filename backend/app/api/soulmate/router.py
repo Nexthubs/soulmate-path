@@ -9,6 +9,7 @@ from app.api.soulmate.subscription import (
     get_subscription_status_endpoint,
     router as subscription_router,
 )
+from app.api.soulmate.webhooks import router as webhooks_router
 from app.soulmate.schema import (
     PayPalConfirmResponse,
     SubscriptionOfferResponse,
@@ -31,6 +32,9 @@ api_router.include_router(subscription_router, prefix="/subscription", tags=["Su
 
 # Mount route guard endpoint (DEV-SPEC §3, §10, §20, SP-304)
 api_router.include_router(guard_router, prefix="/guard", tags=["Route Guard"])
+
+# Mount webhook endpoints (DEV-SPEC §9.5–9.6, §15.12, SP-404)
+api_router.include_router(webhooks_router, prefix="/webhooks", tags=["Webhooks"])
 
 # Also mount aliases per DEV-SPEC §15 router table
 api_router.add_api_route(

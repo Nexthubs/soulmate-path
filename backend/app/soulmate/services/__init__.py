@@ -10,6 +10,7 @@ from app.soulmate.services.profile_service import ProfileService
 from app.soulmate.services.session_service import SessionService
 from app.soulmate.services.subscription_service import SubscriptionService
 from app.soulmate.services.summary_service import SummaryService
+from app.soulmate.services.webhook_service import PayPalWebhookService
 
 __all__ = [
     "SessionService",
@@ -26,6 +27,7 @@ __all__ = [
     "PayPalAuthError",
     "PayPalProvisioningService",
     "SubscriptionService",
+    "PayPalWebhookService",
 ]
 
 
