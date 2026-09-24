@@ -38,6 +38,7 @@ Route guards (`SP-304`) completed and evidenced in `docs/handoffs/SP-304.md`.
 *(Note: WAVE 3 is now 100% complete)*
 PayPal Product/Plan provisioning (`SP-401`) completed and evidenced in `docs/handoffs/SP-401.md`.
 PayPal JS subscription checkout (`SP-402`) completed and evidenced in `docs/handoffs/SP-402.md`.
+Confirm subscription API (`SP-403`) completed and evidenced in `docs/handoffs/SP-403.md`.
 
 ## 2. Milestone status
 
@@ -52,7 +53,7 @@ PayPal JS subscription checkout (`SP-402`) completed and evidenced in `docs/hand
 
 ## 3. Active / blocked work
 
-Active tasks: SP-403 (Confirm subscription API & backend status check). SP-402 completed.
+Active tasks: SP-404 (PayPal webhook endpoint with raw body). SP-403 completed.
 
 
 Blocking decision IDs:
@@ -92,8 +93,8 @@ Report production provider: disabled / decision pending
 ## 6. Next safe tasks
 
 ```text
-1. SP-403 (Confirm subscription API & backend status check).
-2. SP-404..408 (PayPal webhook endpoint, signature verification, payment ledger).
+1. SP-404 (PayPal webhook endpoint with raw body).
+2. SP-405..408 (Webhook signature verification, payment ledger).
 ```
 
 ## 7. Update rule

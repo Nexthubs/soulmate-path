@@ -288,5 +288,52 @@ class RouteGuardResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True, extra="ignore")
 
 
+class PayPalConfirmRequest(BaseModel):
+    """Payload for confirming an approved PayPal subscription (DEV-SPEC §15.7, SP-403)."""
+    session_id: Optional[str] = Field(
+        default=None,
+        description="Public session ID (optional if session cookie soulmate_sid is provided)",
+    )
+    paypal_subscription_id: str = Field(
+        ...,
+        description="PayPal subscription ID returned by PayPal JS SDK (e.g. 'I-...')",
+    )
 
 
+class PayPalConfirmResponse(BaseModel):
+    """Response returned upon associating PayPal subscription with session (DEV-SPEC §15.7, SP-403)."""
+    status: str = Field(
+        ...,
+        description="Subscription state: 'PROCESSING' | 'ACTIVE' | 'INACTIVE'",
+    )
+    is_paid: bool = Field(
+        default=False,
+        description="Whether entitlement is unlocked (PAY-AUTH-01: False until webhook confirmed)",
+    )
+    provider_subscription_id: str = Field(..., description="PayPal subscription ID")
+    provider_plan_id: str = Field(..., description="PayPal plan ID")
+    provider_status: str = Field(..., description="Provider status, e.g. 'APPROVAL_PENDING', 'APPROVED', 'ACTIVE'")
+    session_id: str = Field(..., description="Public session ID")
+    created_at: datetime = Field(..., description="UTC creation timestamp")
+    message: str = Field(..., description="Operational status message")
+
+    model_config = ConfigDict(from_attributes=True, extra="ignore")
+
+
+class SubscriptionStatusResponse(BaseModel):
+    """Current subscription and entitlement status for the active session (DEV-SPEC §15.8, SP-403)."""
+    status: str = Field(
+        ...,
+        description="'NONE' | 'PROCESSING' | 'ACTIVE' | 'CANCELLED' | 'EXPIRED'",
+    )
+    is_paid: bool = Field(
+        default=False,
+        description="Entitlement status (PAY-AUTH-01)",
+    )
+    subscription_id: Optional[str] = Field(default=None, description="PayPal subscription ID")
+    plan_id: Optional[str] = Field(default=None, description="PayPal plan ID")
+    provider_status: Optional[str] = Field(default=None, description="Provider status string")
+    first_payment_at: Optional[datetime] = Field(default=None, description="Confirmed payment UTC timestamp")
+    next_billing_at: Optional[datetime] = Field(default=None, description="Next billing UTC timestamp")
+
+    model_config = ConfigDict(from_attributes=True, extra="ignore")

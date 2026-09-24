@@ -335,3 +335,46 @@ class PayPalClient:
         """Deactivate a billing plan."""
         resp = await self._request("POST", f"/v1/billing/plans/{plan_id}/deactivate")
         return resp.status_code in (200, 204)
+
+    # --------------------------------------------------------------------------
+    # Subscriptions API (DEV-SPEC §9.3, §15.7, SP-403)
+    # --------------------------------------------------------------------------
+
+    async def get_subscription(self, subscription_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve PayPal subscription details by ID.
+        Endpoint: GET /v1/billing/subscriptions/{id}
+        Returns subscription payload dict, or None if 404 (not found).
+        """
+        resp = await self._request("GET", f"/v1/billing/subscriptions/{subscription_id}")
+        if resp.status_code == 404:
+            return None
+        if resp.status_code != 200:
+            try:
+                err_data = resp.json()
+            except Exception:
+                err_data = {"raw": resp.text}
+            raise PayPalAPIError(
+                f"Failed to fetch PayPal subscription {subscription_id} (HTTP {resp.status_code})",
+                status_code=resp.status_code,
+                details=err_data,
+            )
+        return resp.json()
+
+    async def cancel_subscription(self, subscription_id: str, reason: str = "Customer request") -> bool:
+        """
+        Cancel a PayPal subscription.
+        Endpoint: POST /v1/billing/subscriptions/{id}/cancel
+        """
+        payload = {"reason": reason}
+        resp = await self._request("POST", f"/v1/billing/subscriptions/{subscription_id}/cancel", json_body=payload)
+        if resp.status_code in (200, 204):
+            return True
+        logger.warning(
+            "Failed to cancel PayPal subscription %s (HTTP %s): %s",
+            subscription_id,
+            resp.status_code,
+            resp.text,
+        )
+        return False
+

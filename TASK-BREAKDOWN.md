@@ -716,7 +716,7 @@ Mandatory high-risk review.
 
 **Priority:** P0  
 **Depends:** SP-402  
-**Status:** TODO
+**Status:** DONE (docs/handoffs/SP-403.md)
 **Context refs:** DEV-SPEC §9.3–9.4, §15.7 | Decisions: PAY-AUTH-01 | Dependency handoffs: SP-402
 
 

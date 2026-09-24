@@ -8,6 +8,7 @@ from app.soulmate.services.paypal_client import PayPalAPIError, PayPalAuthError,
 from app.soulmate.services.paypal_provisioning import PayPalProvisioningService
 from app.soulmate.services.profile_service import ProfileService
 from app.soulmate.services.session_service import SessionService
+from app.soulmate.services.subscription_service import SubscriptionService
 from app.soulmate.services.summary_service import SummaryService
 
 __all__ = [
@@ -24,6 +25,7 @@ __all__ = [
     "PayPalAPIError",
     "PayPalAuthError",
     "PayPalProvisioningService",
+    "SubscriptionService",
 ]
 
 

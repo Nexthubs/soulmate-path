@@ -4,10 +4,16 @@ from app.api.soulmate.health import router as health_router
 from app.api.soulmate.quiz import router as quiz_router
 from app.api.soulmate.sessions import router as sessions_router
 from app.api.soulmate.subscription import (
+    confirm_paypal_subscription_endpoint,
     get_subscription_offer,
+    get_subscription_status_endpoint,
     router as subscription_router,
 )
-from app.soulmate.schema import SubscriptionOfferResponse
+from app.soulmate.schema import (
+    PayPalConfirmResponse,
+    SubscriptionOfferResponse,
+    SubscriptionStatusResponse,
+)
 
 api_router = APIRouter()
 
@@ -20,13 +26,13 @@ api_router.include_router(quiz_router, prefix="/quiz", tags=["Quiz"])
 # Mount sessions endpoints (DEV-SPEC §15.1, SP-201, SP-301, SP-302)
 api_router.include_router(sessions_router, prefix="/sessions", tags=["Sessions"])
 
-# Mount subscription offer endpoint (DEV-SPEC §9.1–9.2, §15.6, SP-303)
+# Mount subscription endpoints (DEV-SPEC §9.1–9.4, §15.6–15.8, SP-303, SP-403)
 api_router.include_router(subscription_router, prefix="/subscription", tags=["Subscription"])
 
 # Mount route guard endpoint (DEV-SPEC §3, §10, §20, SP-304)
 api_router.include_router(guard_router, prefix="/guard", tags=["Route Guard"])
 
-# Also mount /checkout/config alias per DEV-SPEC §15.6 router table
+# Also mount aliases per DEV-SPEC §15 router table
 api_router.add_api_route(
     "/checkout/config",
     get_subscription_offer,
@@ -34,6 +40,33 @@ api_router.add_api_route(
     response_model=SubscriptionOfferResponse,
     tags=["Subscription"],
     summary="Checkout offer config alias (DEV-SPEC §15.6)",
+)
+
+api_router.add_api_route(
+    "/paypal/confirm",
+    confirm_paypal_subscription_endpoint,
+    methods=["POST"],
+    response_model=PayPalConfirmResponse,
+    tags=["Subscription"],
+    summary="PayPal confirm alias (DEV-SPEC §9.3)",
+)
+
+api_router.add_api_route(
+    "/payments/paypal/confirm",
+    confirm_paypal_subscription_endpoint,
+    methods=["POST"],
+    response_model=PayPalConfirmResponse,
+    tags=["Subscription"],
+    summary="PayPal confirm payments alias (DEV-SPEC §15.7)",
+)
+
+api_router.add_api_route(
+    "/subscriptions/me",
+    get_subscription_status_endpoint,
+    methods=["GET"],
+    response_model=SubscriptionStatusResponse,
+    tags=["Subscription"],
+    summary="Subscription status me alias (DEV-SPEC §15.8)",
 )
 
 # Future route registrations per Soulmate-Path-DEV-SPEC-v1.md §15:

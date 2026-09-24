@@ -1,6 +1,6 @@
 /**
- * Soulmate Subscription API Client (DEV-SPEC §9.1–9.2, §15.6, §21–22, SP-303, Decisions: PAY-01, PAY-02).
- * Exposes dynamic pricing offer, renewal disclosures, and safe PayPal client configuration without hardcoding.
+ * Soulmate Subscription API Client (DEV-SPEC §9.1–9.4, §15.6–15.8, §21–22, SP-303, SP-403, Decisions: PAY-01, PAY-02, PAY-AUTH-01).
+ * Exposes dynamic pricing offer, PayPal subscription confirmation, and status polling without hardcoding.
  */
 
 import { clientConfig, ClientConfig } from "../config";
@@ -40,6 +40,32 @@ export interface SubscriptionOfferResponse {
   paypal: PayPalClientConfig;
 }
 
+export interface PayPalConfirmPayload {
+  session_id?: string;
+  paypal_subscription_id: string;
+}
+
+export interface PayPalConfirmResponse {
+  status: string;
+  is_paid: boolean;
+  provider_subscription_id: string;
+  provider_plan_id: string;
+  provider_status: string;
+  session_id: string;
+  created_at: string;
+  message: string;
+}
+
+export interface SubscriptionStatusResponse {
+  status: string;
+  is_paid: boolean;
+  subscription_id?: string | null;
+  plan_id?: string | null;
+  provider_status?: string | null;
+  first_payment_at?: string | null;
+  next_billing_at?: string | null;
+}
+
 /**
  * Fetch the active subscription offer and checkout configuration from the API.
  * Never hardcodes prices; dynamically reads server-configured values (PAY-01).
@@ -58,6 +84,62 @@ export async function getSubscriptionOffer(
       "Accept": "application/json",
     },
     credentials: "include", // Forward session cookie if present
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw parseApiError(res.status, errorData);
+  }
+
+  return res.json();
+}
+
+/**
+ * Confirm and associate an approved PayPal subscription with the current session (DEV-SPEC §15.7, SP-403).
+ * Validates the provider subscription ID server-side and binds it to the session.
+ * HIGH-RISK INVARIANT (PAY-AUTH-01): Returns pending status; does not grant entitlement.
+ */
+export async function confirmPayPalSubscription(
+  payload: PayPalConfirmPayload,
+  config: ClientConfig = clientConfig
+): Promise<PayPalConfirmResponse> {
+  const url = `${config.apiBaseUrl}/subscription/paypal/confirm`;
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+    },
+    credentials: "include",
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw parseApiError(res.status, errorData);
+  }
+
+  return res.json();
+}
+
+/**
+ * Poll current subscription and payment status for the session (DEV-SPEC §15.8, SP-403).
+ * Used by payment-processing screen to detect webhook payment reconciliation.
+ */
+export async function getSubscriptionStatus(
+  sessionId?: string,
+  config: ClientConfig = clientConfig
+): Promise<SubscriptionStatusResponse> {
+  const queryParam = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : "";
+  const url = `${config.apiBaseUrl}/subscription/status${queryParam}`;
+
+  const res = await fetch(url, {
+    method: "GET",
+    headers: {
+      "Accept": "application/json",
+    },
+    credentials: "include",
   });
 
   if (!res.ok) {

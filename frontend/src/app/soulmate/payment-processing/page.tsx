@@ -1,19 +1,89 @@
 "use client";
 
-import React, { Suspense, useEffect, useState } from "react";
+import React, { Suspense, useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { SOULMATE_ROUTES } from "@/soulmate/domain";
+import { confirmPayPalSubscription, getSubscriptionStatus } from "@/soulmate/api";
 
 function PaymentProcessingContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const subscriptionId = searchParams.get("subscription_id");
-  const sessionId = searchParams.get("session_id");
+  const sessionId = searchParams.get("session_id") || undefined;
+  const query = searchParams.toString();
+  const resultUrl = `${SOULMATE_ROUTES.RESULT}${query ? `?${query}` : ""}`;
 
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+  const [isConfirmed, setIsConfirmed] = useState(false);
+  const [isPolling, setIsPolling] = useState(false);
 
-  // Timer to track how long confirmation is taking (DEV-SPEC §15.8)
+  const confirmedRef = useRef(false);
+
+  // 1. Initial Confirmation Request (DEV-SPEC §9.3, §15.7, SP-403)
+  useEffect(() => {
+    if (!subscriptionId || confirmedRef.current) return;
+    const activeSubId = subscriptionId;
+
+    let isMounted = true;
+    confirmedRef.current = true;
+
+    async function performConfirmation(idToConfirm: string) {
+      try {
+        await confirmPayPalSubscription({
+          session_id: sessionId,
+          paypal_subscription_id: idToConfirm,
+        });
+        if (isMounted) {
+          setIsConfirmed(true);
+          setIsPolling(true);
+        }
+      } catch (err: unknown) {
+        if (isMounted) {
+          const msg = err instanceof Error ? err.message : "Failed to confirm subscription with server.";
+          setConfirmError(msg);
+          // Still allow polling in case it was already registered
+          setIsPolling(true);
+        }
+      }
+    }
+
+    performConfirmation(activeSubId);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [subscriptionId, sessionId]);
+
+  // 2. Polling Loop for Server Entitlement Status (DEV-SPEC §15.8, PAY-AUTH-01)
+  useEffect(() => {
+    if (!isPolling) return;
+
+    let isMounted = true;
+
+    // Check status every 2.5 seconds
+    const interval = setInterval(async () => {
+      try {
+        const res = await getSubscriptionStatus(sessionId);
+        if (isMounted && res.is_paid) {
+          clearInterval(interval);
+          // HIGH-RISK INVARIANT (PAY-AUTH-01):
+          // Only navigate to result dashboard when server confirms is_paid === true.
+          router.push(resultUrl);
+        }
+      } catch {
+        // Ignore transient poll errors during processing
+      }
+    }, 2500);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [isPolling, sessionId, resultUrl, router]);
+
+  // 3. Elapsed Timer for 60s timeout handling (DEV-SPEC §15.8)
   useEffect(() => {
     const timer = setInterval(() => {
       setElapsedSeconds((prev) => prev + 1);
@@ -23,6 +93,7 @@ function PaymentProcessingContent() {
   }, []);
 
   const isTakingLonger = elapsedSeconds >= 15;
+  const isTimeout = elapsedSeconds >= 60;
 
   return (
     <main className="min-h-screen max-w-[390px] mx-auto flex flex-col items-center justify-between p-6 bg-gradient-to-b from-[#fff0f3] via-[#fef4e9] to-[#fef3de] text-neutral-900">
@@ -66,7 +137,7 @@ function PaymentProcessingContent() {
         )}
 
         {/* Longer wait notification (DEV-SPEC §15.8) */}
-        {isTakingLonger && (
+        {isTakingLonger && !isTimeout && (
           <div
             data-testid="processing-timeout-notice"
             className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900 text-left space-y-1"
@@ -75,6 +146,28 @@ function PaymentProcessingContent() {
             <p className="text-[11px] text-blue-700">
               Please do not submit another payment. Your subscription is being processed with PayPal and access will unlock automatically upon confirmation.
             </p>
+          </div>
+        )}
+
+        {/* Final timeout notice at 60s (DEV-SPEC §15.8) */}
+        {isTimeout && (
+          <div
+            data-testid="processing-max-timeout-notice"
+            className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 text-left space-y-1"
+          >
+            <p className="font-semibold">Confirmation taking longer than normal</p>
+            <p className="text-[11px] text-amber-800">
+              PayPal is still processing your initial transaction. Do not create another subscription. You will receive an email confirmation as soon as your access is active.
+            </p>
+          </div>
+        )}
+
+        {confirmError && (
+          <div
+            data-testid="processing-confirm-error"
+            className="p-2.5 bg-red-50 border border-red-200 rounded-xl text-[11px] text-red-700 text-left"
+          >
+            Note: {confirmError}
           </div>
         )}
 

@@ -2,8 +2,8 @@ import ipaddress
 import re
 import urllib.parse
 from decimal import Decimal
-from typing import List, Optional
-from pydantic import Field
+from typing import Any, List, Optional
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -105,6 +105,14 @@ class Settings(BaseSettings):
     # Centralized Decimal pricing (PAY-01: no hardcoded defaults)
     soulmate_intro_price: Optional[Decimal] = None
     soulmate_regular_price: Optional[Decimal] = None
+
+    @field_validator("soulmate_intro_price", "soulmate_regular_price", mode="before")
+    @classmethod
+    def _coerce_empty_price_to_none(cls, v: Any) -> Any:
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return None
+        return v
+
     # PAY-02: Re-subscription intro-price eligibility policy ('blocked' | 'single_intro' | 'allow_intro')
     soulmate_resubscription_policy: str = Field(
         default="blocked",
