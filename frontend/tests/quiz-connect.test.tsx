@@ -183,5 +183,62 @@ describe("SP-207: Connect Quiz UI to Live APIs & State Management", () => {
       expect(html).toContain("Sketching now");
       expect(html).toContain("Your artist has started");
     });
+
+    it("renders Transition-3 with neutral fallback ('Your Zodiac') and does not hardcode 'Virgo Sun' (H-3 fix)", () => {
+      mockSearchParams = new URLSearchParams({ step: "3" });
+      const html = renderToStaticMarkup(<SoulmateLoadingPage />);
+
+      expect(html).toContain("data-testid=\"transition-shell-step-3\"");
+      expect(html).toContain("Good to know!");
+      expect(html).toContain("Your Zodiac");
+      expect(html).not.toContain("Virgo Sun");
+      expect(html).toContain("people make decisions using their heart and head.");
+    });
+
+    it("renders Transition-3 dynamically from URL params when provided in fixture/dev preview", () => {
+      mockSearchParams = new URLSearchParams({
+        step: "3",
+        zodiac: "Leo Sun",
+        decision: "heart",
+      });
+      const html = renderToStaticMarkup(<SoulmateLoadingPage />);
+
+      expect(html).toContain("Leo Sun");
+      expect(html).toContain("people make decisions using their heart.");
+      expect(html).not.toContain("Virgo Sun");
+    });
+
+    it("renders Transition-3 dynamically from server flow state metadata (H-3 server authority)", () => {
+      mockSearchParams = new URLSearchParams({ step: "3" });
+      const serverFlowState = {
+        session_id: "test-sess-1",
+        current_step: "transition_3",
+        step_type: "transition",
+        next_step: "q11",
+        previous_step: "q10",
+        progress_percent: 50,
+        is_quiz_completed: false,
+        step_metadata: {
+          zodiac_sign: "Scorpio",
+          zodiac_label: "Scorpio Sun",
+          decision_style: "head",
+          decision_copy: "people make decisions using their head.",
+          title: "Good to know!",
+          subtitle: "Many Scorpio Sun individuals make decisions using their head.",
+        },
+      };
+
+      (globalThis as unknown as { __SOULMATE_TEST_FLOW_STATE__?: unknown }).__SOULMATE_TEST_FLOW_STATE__ =
+        serverFlowState;
+      try {
+        const html = renderToStaticMarkup(<SoulmateLoadingPage />);
+        expect(html).toContain("Scorpio Sun");
+        expect(html).toContain("people make decisions using their head.");
+        expect(html).not.toContain("Virgo Sun");
+      } finally {
+        delete (globalThis as unknown as { __SOULMATE_TEST_FLOW_STATE__?: unknown })
+          .__SOULMATE_TEST_FLOW_STATE__;
+      }
+    });
   });
 });

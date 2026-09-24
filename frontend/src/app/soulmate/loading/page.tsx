@@ -30,12 +30,19 @@ function LoadingContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  // Test environment initial state hook for static markup assertions
+  const testFlowState =
+    process.env.NODE_ENV !== "production"
+      ? (globalThis as unknown as { __SOULMATE_TEST_FLOW_STATE__?: FlowStateResponse | null })
+          .__SOULMATE_TEST_FLOW_STATE__ || null
+      : null;
+
   // State for sequential Transition-5 popups, session, and flow state
   const [activePopup, setActivePopup] = useState<InterstitialType | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<{ message: string; onRetry?: () => void } | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [flowState, setFlowState] = useState<FlowStateResponse | null>(null);
+  const [flowState, setFlowState] = useState<FlowStateResponse | null>(testFlowState);
 
   // Step 0 through 5 from query param, defaulting to 0
   const stepParam = parseInt(searchParams.get("step") || "0", 10);
@@ -64,13 +71,32 @@ function LoadingContent() {
   const customTitle4 = searchParams.get("title");
   const customSubtitle4 = searchParams.get("subtitle");
 
-  // Transition-3 Zodiac & Decision Style (DEV-SPEC §5.5)
-  const zodiacParam = searchParams.get("zodiac") || "Virgo Sun";
-  const decisionParam = searchParams.get("decision") || "both";
+  // Transition-3 Zodiac & Decision Style (DEV-SPEC §5.5, Finding H-3)
+  const serverZodiacLabel =
+    typeof flowState?.step_metadata?.zodiac_label === "string"
+      ? (flowState.step_metadata.zodiac_label as string)
+      : null;
+  const serverDecisionStyle =
+    typeof flowState?.step_metadata?.decision_style === "string"
+      ? (flowState.step_metadata.decision_style as string)
+      : null;
+  const serverDecisionCopy =
+    typeof flowState?.step_metadata?.decision_copy === "string"
+      ? (flowState.step_metadata.decision_copy as string)
+      : null;
+
+  const zodiacParam = searchParams.get("zodiac");
+  const decisionParam = searchParams.get("decision");
+
   const transition3Data = getTransition3Copy({
-    zodiacLabel: zodiacParam,
-    decisionStyle: decisionParam,
+    zodiacLabel: serverZodiacLabel || zodiacParam || null,
+    decisionStyle: serverDecisionStyle || decisionParam || null,
   });
+
+  const transition3ZodiacLabel =
+    serverZodiacLabel || zodiacParam || transition3Data.zodiacLabel;
+  const transition3DecisionCopy =
+    serverDecisionCopy || transition3Data.decisionCopy;
 
   // Bootstrap session and flow state if in live mode
   React.useEffect(() => {
@@ -370,14 +396,14 @@ function LoadingContent() {
       {step === 3 && (
         <TransitionShell
           step={3}
-          title="Good to know!"
+          title={(flowState?.step_metadata?.title as string | undefined) || "Good to know!"}
           subtitle={
             <span>
               Based on intuitive guidance, many{" "}
               <strong className="text-[#6b38c2]">
-                {(flowState?.step_metadata?.zodiac_label as string | undefined) || transition3Data.zodiacLabel}
+                {transition3ZodiacLabel}
               </strong>{" "}
-              {(flowState?.step_metadata?.decision_copy as string | undefined) || transition3Data.decisionCopy}
+              {transition3DecisionCopy}
             </span>
           }
           illustration={
