@@ -560,7 +560,7 @@ Store answers for spiritual/Psychic Artistry/warning interstitial flow as define
 
 **Priority:** P1  
 **Depends:** SP-102/103/104, SP-201/202/203  
-**Status:** TODO
+**Status:** DONE  
 **Context refs:** DEV-SPEC §4–6, §15–16 | Decisions: QUIZ-01, COPY-02, COPY-03, AGE-01 | Dependency handoffs: SP-102, SP-201
 
 

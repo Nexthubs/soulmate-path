@@ -15,6 +15,12 @@ import {
   getTransition3Copy,
   TRANSITION_4_STATIC_COPY,
 } from "@/soulmate/components/transition/copy";
+import {
+  createSession,
+  getCurrentSession,
+  continueTransition,
+  submitInterstitialAnswer,
+} from "@/soulmate/api/session";
 
 function LoadingContent() {
   const router = useRouter();
@@ -25,12 +31,13 @@ function LoadingContent() {
   const step = isNaN(stepParam) || stepParam < 0 || stepParam > 5 ? 0 : stepParam;
 
   // Marketing Claims Compliance Gate (DEV-SPEC §21, LEGAL-01)
-  // In production, unverified marketing claims are strictly forbidden and cannot be bypassed via URL params.
   const isProduction = process.env.NODE_ENV === "production";
   const shouldShowMarketingClaims =
     !isProduction &&
     (searchParams.get("claims") === "true" ||
       process.env.NEXT_PUBLIC_ENABLE_MARKETING_CLAIMS === "true");
+
+  const isFixtureMode = !isProduction && searchParams.get("fixture") === "true";
 
   // Dynamic copy injection parameters
   const qualityParam = searchParams.get("quality");
@@ -48,53 +55,136 @@ function LoadingContent() {
 
   // State for sequential Transition-5 popups
   const [activePopup, setActivePopup] = useState<InterstitialType | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
-  const handleContinue = () => {
-    switch (step) {
-      case 0:
-        // Transition-0 -> Q02..Q06
-        router.push("/soulmate/quiz?code=q02");
-        break;
-      case 1:
-        // Transition-1 -> Q07
-        router.push("/soulmate/quiz?code=q07");
-        break;
-      case 2:
-        // Transition-2 -> Q08
-        router.push("/soulmate/quiz?code=q08");
-        break;
-      case 3:
-        // Transition-3 -> Q11
-        router.push("/soulmate/quiz?code=q11");
-        break;
-      case 4:
-        // Transition-4 -> Q12
-        router.push("/soulmate/quiz?code=q12");
-        break;
-      case 5:
-        // Transition-5 triggers sequential popups: spiritual -> psychic_artistry -> warning -> email
+  // Bootstrap session if in live mode
+  React.useEffect(() => {
+    if (isFixtureMode) return;
+    let isCancelled = false;
+    async function initSession() {
+      try {
+        const sess = await getCurrentSession();
+        if (!isCancelled) setSessionId(sess.session_id);
+      } catch {
+        try {
+          const created = await createSession();
+          if (!isCancelled) setSessionId(created.session_id);
+        } catch {
+          // Offline fallback
+        }
+      }
+    }
+    initSession();
+    return () => {
+      isCancelled = true;
+    };
+  }, [isFixtureMode]);
+
+  const handleContinue = async () => {
+    if (isFixtureMode || !sessionId) {
+      switch (step) {
+        case 0:
+          router.push("/soulmate/quiz?code=q02");
+          break;
+        case 1:
+          router.push("/soulmate/quiz?code=q07");
+          break;
+        case 2:
+          router.push("/soulmate/quiz?code=q08");
+          break;
+        case 3:
+          router.push("/soulmate/quiz?code=q11");
+          break;
+        case 4:
+          router.push("/soulmate/quiz?code=q12");
+          break;
+        case 5:
+          setActivePopup("spiritual");
+          break;
+        default:
+          router.push("/soulmate");
+      }
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const res = await continueTransition(sessionId, `transition_${step}`);
+      if (step === 5) {
         setActivePopup("spiritual");
-        break;
-      default:
-        router.push("/soulmate");
+      } else if (res.next_step.startsWith("q")) {
+        router.push(`/soulmate/quiz?code=${res.next_step}`);
+      } else if (res.next_step.startsWith("transition_")) {
+        const nextStepNum = res.next_step.replace("transition_", "");
+        router.push(`/soulmate/loading?step=${nextStepNum}`);
+      } else {
+        router.push("/soulmate/quiz");
+      }
+    } catch {
+      // Graceful fallback
+      if (step === 5) {
+        setActivePopup("spiritual");
+      } else {
+        const fallbackQs = ["q02", "q07", "q08", "q11", "q12"];
+        router.push(`/soulmate/quiz?code=${fallbackQs[step] || "q02"}`);
+      }
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const handleModalAnswer = (_answer: boolean) => {
+  const handleModalAnswer = async (answer: boolean) => {
     if (!activePopup) return;
-    const nextPopup = getNextInterstitialPopup(activePopup);
-    if (nextPopup) {
-      setActivePopup(nextPopup);
-    } else {
-      setActivePopup(null);
-      // All popups completed (spiritual -> psychic_artistry -> warning) -> proceed to Email Capture, forwarding quiz parameters (M-1)
-      const params = new URLSearchParams();
-      ["preferred_partner_gender", "partner_gender", "user_gender", "age_range", "ethnicity"].forEach((key) => {
-        const val = searchParams.get(key);
-        if (val) params.set(key, val);
-      });
-      const query = params.toString();
-      router.push(`/soulmate/email${query ? `?${query}` : ""}`);
+
+    if (isFixtureMode || !sessionId) {
+      const nextPopup = getNextInterstitialPopup(activePopup);
+      if (nextPopup) {
+        setActivePopup(nextPopup);
+      } else {
+        setActivePopup(null);
+        const params = new URLSearchParams();
+        ["preferred_partner_gender", "partner_gender", "user_gender", "age_range", "ethnicity"].forEach((key) => {
+          const val = searchParams.get(key);
+          if (val) params.set(key, val);
+        });
+        const query = params.toString();
+        router.push(`/soulmate/email${query ? `?${query}` : ""}`);
+      }
+      return;
+    }
+
+    try {
+      const codeMap: Record<InterstitialType, "spiritual_person" | "familiar_psychic_artistry" | "warning_response"> = {
+        spiritual: "spiritual_person",
+        psychic_artistry: "familiar_psychic_artistry",
+        warning: "warning_response",
+      };
+      const code = codeMap[activePopup];
+      const val = activePopup === "warning" ? (answer ? "yes" : "no") : answer;
+      await submitInterstitialAnswer(sessionId, code, val);
+
+      const nextPopup = getNextInterstitialPopup(activePopup);
+      if (nextPopup) {
+        setActivePopup(nextPopup);
+      } else {
+        setActivePopup(null);
+        const params = new URLSearchParams();
+        ["preferred_partner_gender", "partner_gender", "user_gender", "age_range", "ethnicity"].forEach((key) => {
+          const val = searchParams.get(key);
+          if (val) params.set(key, val);
+        });
+        const query = params.toString();
+        router.push(`/soulmate/email${query ? `?${query}` : ""}`);
+      }
+    } catch {
+      const nextPopup = getNextInterstitialPopup(activePopup);
+      if (nextPopup) {
+        setActivePopup(nextPopup);
+      } else {
+        setActivePopup(null);
+        router.push("/soulmate/email");
+      }
     }
   };
 
