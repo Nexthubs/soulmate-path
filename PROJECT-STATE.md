@@ -24,6 +24,11 @@ Email capture variants (`SP-105`) completed and evidenced in `docs/handoffs/SP-1
 Result cards fixture UI (`SP-106`) completed and evidenced in `docs/handoffs/SP-106.md`.
 Sketch viewer fixture UI (`SP-107`) completed and evidenced in `docs/handoffs/SP-107.md`.
 Report renderer fixture UI (`SP-108`) completed and evidenced in `docs/handoffs/SP-108.md`.
+Session create / recover (`SP-201`) completed and evidenced in `docs/handoffs/SP-201.md`.
+Answer upsert and validation (`SP-202`) completed and evidenced in `docs/handoffs/SP-202.md`.
+Flow / next-step resolver (`SP-203`) completed and evidenced in `docs/handoffs/SP-203.md`.
+DOB / Zodiac (`SP-204`) completed and evidenced in `docs/handoffs/SP-204.md`.
+Normalized Soulmate Profile builder (`SP-205`) completed and evidenced in `docs/handoffs/SP-205.md`.
 
 ## 2. Milestone status
 
@@ -38,7 +43,8 @@ Report renderer fixture UI (`SP-108`) completed and evidenced in `docs/handoffs/
 
 ## 3. Active / blocked work
 
-Active tasks: SP-201 (Quiz engine UI / step framework).
+Active tasks: SP-206 (Interstitial answers).
+
 
 Blocking decision IDs:
 
@@ -77,9 +83,11 @@ Report production provider: disabled / decision pending
 ## 6. Next safe tasks
 
 ```text
-1. SP-201 — quiz engine UI / step framework
-2. SP-202 — answer validation and submission API
+1. SP-206 — Interstitial answers
+2. SP-207 — Email capture & consent
+3. SP-208 — Result calculation & preview snapshot
 ```
+
 
 Do not fan out broad implementation until SP-001 documents the repository's real stack and reusable abstractions.
 

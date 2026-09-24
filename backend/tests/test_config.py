@@ -67,6 +67,7 @@ def test_production_validation_fails_on_missing_keys():
     assert "PAYPAL_CLIENT_SECRET" in err_msg
     assert "OPENAI_API_KEY" in err_msg
     assert "OBJECT_STORAGE_BUCKET" in err_msg
+    assert "SESSION_SECRET_KEY" in err_msg
 
 
 def test_production_validation_passes_when_all_keys_provided():
@@ -87,6 +88,7 @@ def test_production_validation_passes_when_all_keys_provided():
         object_storage_bucket="soulmate-prod-assets",
         object_storage_access_key="minio_or_s3_key",
         object_storage_secret_key="minio_or_s3_secret",
+        session_secret_key="prod_session_secret_key_at_least_32_chars_long_12345",
     )
     assert valid_prod_settings.is_production is True
     # Should complete without error
@@ -110,6 +112,7 @@ def test_production_validation_rejects_insecure_and_loopback_urls():
         object_storage_bucket="soulmate-prod-assets",
         object_storage_access_key="minio_or_s3_key",
         object_storage_secret_key="minio_or_s3_secret",
+        session_secret_key="prod_session_secret_key_at_least_32_chars_long_12345",
     )
 
     # 1. Loopback IP http://127.0.0.1:3000
@@ -166,6 +169,7 @@ def test_production_validation_rejects_sandbox_paypal_env():
         object_storage_bucket="soulmate-prod-assets",
         object_storage_access_key="minio_or_s3_key",
         object_storage_secret_key="minio_or_s3_secret",
+        session_secret_key="prod_session_secret_key_at_least_32_chars_long_12345",
     )
     with pytest.raises(ConfigurationError) as exc:
         Settings(**base_kwargs).validate_production_config()

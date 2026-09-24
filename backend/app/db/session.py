@@ -1,7 +1,10 @@
+import os
+import sys
 from typing import AsyncGenerator
 from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import NullPool
 from app.core.config import settings
 
 
@@ -32,11 +35,19 @@ SessionLocal = sessionmaker(
     expire_on_commit=False,
 )
 
+# Detect test runner to avoid asyncpg cross-event-loop pooled connection reuse
+is_test_runner = (
+    "pytest" in sys.modules
+    or bool(os.environ.get("PYTEST_CURRENT_TEST"))
+    or settings.environment in ("test", "testing")
+)
+
 # Asynchronous engine & session maker (used by FastAPI async endpoints)
 async_engine = create_async_engine(
     get_async_database_url(),
     echo=settings.debug,
-    pool_pre_ping=True,
+    poolclass=NullPool if is_test_runner else None,
+    pool_pre_ping=not is_test_runner,
 )
 AsyncSessionLocal = async_sessionmaker(
     bind=async_engine,

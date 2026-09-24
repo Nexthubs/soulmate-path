@@ -82,6 +82,14 @@ class Settings(BaseSettings):
     soulmate_sketch_generation_mode: str = "on_demand"
     soulmate_report_generation_mode: str = "on_demand"
 
+    # Soulmate Session & Cookie Auth (DEV-SPEC §6, §15.1, §20)
+    session_secret_key: str = Field(
+        default="dev-insecure-session-secret-key-soulmate-2026",
+        description="HMAC secret key for signing anonymous session ownership tokens",
+    )
+    session_cookie_name: str = "soulmate_sid"
+    session_cookie_max_age_days: int = 30
+
     # --------------------------------------------------------------------------
     # 4. PayPal Integration & Pricing (Spec §9, PAY-01, PAY-02, PAY-AUTH-01)
     # --------------------------------------------------------------------------
@@ -225,6 +233,14 @@ class Settings(BaseSettings):
             missing_keys.append("OBJECT_STORAGE_ACCESS_KEY")
         if not self.object_storage_secret_key:
             missing_keys.append("OBJECT_STORAGE_SECRET_KEY")
+
+        # Session Secret Key check (DEV-SPEC §20)
+        if (
+            not self.session_secret_key
+            or "dev-insecure" in self.session_secret_key
+            or len(self.session_secret_key) < 32
+        ):
+            missing_keys.append("SESSION_SECRET_KEY (must be configured with a secure key >= 32 chars in production)")
 
         if missing_keys:
             error_details = "\n  - " + "\n  - ".join(missing_keys)

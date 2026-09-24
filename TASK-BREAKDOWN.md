@@ -426,7 +426,7 @@ Render `ReportV1` structured JSON only; do not render arbitrary AI Markdown/HTML
 
 **Priority:** P1  
 **Depends:** SP-002, SP-003  
-**Status:** TODO
+**Status:** DONE
 **Context refs:** DEV-SPEC §6, §15.1 | Decisions: — | Dependency handoffs: SP-002, SP-003
 
 
@@ -453,7 +453,7 @@ Render `ReportV1` structured JSON only; do not render arbitrary AI Markdown/HTML
 
 **Priority:** P1  
 **Depends:** SP-201, SP-003  
-**Status:** TODO
+**Status:** DONE
 **Context refs:** DEV-SPEC §4, §15.3 | Decisions: QUIZ-01 | Dependency handoffs: SP-201, SP-003
 
 
@@ -476,8 +476,9 @@ Render `ReportV1` structured JSON only; do not render arbitrary AI Markdown/HTML
 
 **Priority:** P0  
 **Depends:** SP-202  
-**Status:** TODO
-**Context refs:** DEV-SPEC §4–6 | Decisions: QUIZ-01, COPY-02, COPY-03 | Dependency handoffs: SP-202
+**Status:** DONE
+**Context refs:** DEV-SPEC §4–6 | Decisions: QUIZ-01, COPY-02, COPY-03 | Dependency handoffs: SP-202, SP-203
+
 
 
 ### Goal
@@ -498,7 +499,7 @@ Table-driven coverage of every edge in Q02–Q18 and Transition-0–5.
 
 **Priority:** P1  
 **Depends:** SP-202  
-**Status:** TODO
+**Status:** DONE  
 **Context refs:** DEV-SPEC §4.4, §5.5 | Decisions: AGE-01 | Dependency handoffs: SP-202
 
 
@@ -514,7 +515,7 @@ Table-driven coverage of every edge in Q02–Q18 and Transition-0–5.
 
 **Priority:** P1  
 **Depends:** SP-202, SP-204  
-**Status:** TODO
+**Status:** DONE  
 **Context refs:** DEV-SPEC §7 | Decisions: QUIZ-01 | Dependency handoffs: SP-202, SP-204
 
 
