@@ -82,6 +82,10 @@ function LoadingContent() {
   }, [isFixtureMode]);
 
   const handleContinue = async () => {
+    // Note: Fixture mode (?fixture=true in dev) is an isolated static preview
+    // for UI inspection only, and intentionally bypasses the backend flow state machine.
+    // In live mode (standard dev and all production), continueTransition() strictly queries
+    // the server resolver to advance authoritatively per DEV-SPEC §5.
     if (isFixtureMode || !sessionId) {
       switch (step) {
         case 0:

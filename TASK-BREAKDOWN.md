@@ -477,7 +477,7 @@ Render `ReportV1` structured JSON only; do not render arbitrary AI Markdown/HTML
 **Priority:** P0  
 **Depends:** SP-202  
 **Status:** DONE
-**Context refs:** DEV-SPEC §4–6 | Decisions: QUIZ-01, COPY-02, COPY-03 | Dependency handoffs: SP-202, SP-203
+**Context refs:** DEV-SPEC §4–6 | Decisions: QUIZ-01, COPY-02, COPY-03 | Dependency handoffs: SP-202
 
 
 
