@@ -346,12 +346,17 @@ export function EmailCaptureView({
           className="mt-10 pt-6 border-t border-neutral-100 flex flex-col items-center w-full space-y-3"
         >
           {isSampleData && (
-            <span
-              data-testid="sample-data-badge"
-              className="text-[11px] font-semibold text-amber-800/80 bg-amber-100/70 px-2.5 py-0.5 rounded-full"
-            >
-              Demo Preview (No Quiz Answers Submitted)
-            </span>
+            <div className="flex flex-col items-center gap-1">
+              <span
+                data-testid="sample-data-badge"
+                className="text-[11px] font-semibold text-amber-800/80 bg-amber-100/70 px-2.5 py-0.5 rounded-full"
+              >
+                Demo Preview (No Quiz Answers Submitted)
+              </span>
+              <span className="text-[11px] text-neutral-400">
+                Displaying sample preferences from design preview.
+              </span>
+            </div>
           )}
           <div className="flex items-center justify-around text-center w-full">
           {/* Q3 Gender Summary Badge */}
