@@ -5,7 +5,7 @@ enforcing idempotency, monthly cadence verification, and disclosure parity.
 """
 
 import asyncio
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 import hashlib
 import logging
 from typing import Any, Dict, List, Optional, Tuple
@@ -201,6 +201,14 @@ class PayPalProvisioningService:
         detected_interval = "MONTH"
         detected_count = 1
 
+        def _parse_price_decimal(val: Any) -> Optional[Decimal]:
+            if val is None:
+                return None
+            try:
+                return Decimal(str(val).strip())
+            except (InvalidOperation, TypeError, ValueError):
+                return None
+
         if expected_type == "intro":
             if len(cycles) != 2:
                 discrepancies.append(f"Intro plan must have exactly 2 billing cycles, found {len(cycles)}.")
@@ -220,14 +228,22 @@ class PayPalProvisioningService:
                     discrepancies.append(f"Cycle 1 total_cycles is {c1.get('total_cycles')}, expected 1.")
 
                 p1_fixed = c1.get("pricing_scheme", {}).get("fixed_price", {})
-                detected_intro_price = p1_fixed.get("value")
+                raw_intro_price = p1_fixed.get("value")
                 c1_curr = p1_fixed.get("currency_code", "").upper()
                 if c1_curr != curr_expected:
                     discrepancies.append(f"Cycle 1 currency is '{c1_curr}', expected '{curr_expected}'.")
-                if expected_intro_str and detected_intro_price != expected_intro_str:
-                    discrepancies.append(
-                        f"Cycle 1 price is '{detected_intro_price}', expected intro price '{expected_intro_str}'."
-                    )
+
+                dec_intro = _parse_price_decimal(raw_intro_price)
+                if dec_intro is not None:
+                    detected_intro_price = f"{dec_intro:.2f}"
+                else:
+                    detected_intro_price = raw_intro_price
+
+                if expected_intro_price is not None:
+                    if dec_intro is None or dec_intro != Decimal(str(expected_intro_price)):
+                        discrepancies.append(
+                            f"Cycle 1 price is '{raw_intro_price}', expected intro price '{expected_intro_str}'."
+                        )
 
                 # Cycle 2: Regular renewal
                 c2_freq = c2.get("frequency", {})
@@ -243,13 +259,20 @@ class PayPalProvisioningService:
                     discrepancies.append(f"Cycle 2 total_cycles is {c2.get('total_cycles')}, expected 0 (infinite).")
 
                 p2_fixed = c2.get("pricing_scheme", {}).get("fixed_price", {})
-                detected_reg_price = p2_fixed.get("value")
+                raw_reg_price = p2_fixed.get("value")
                 c2_curr = p2_fixed.get("currency_code", "").upper()
                 if c2_curr != curr_expected:
                     discrepancies.append(f"Cycle 2 currency is '{c2_curr}', expected '{curr_expected}'.")
-                if detected_reg_price != expected_reg_str:
+
+                dec_reg = _parse_price_decimal(raw_reg_price)
+                if dec_reg is not None:
+                    detected_reg_price = f"{dec_reg:.2f}"
+                else:
+                    detected_reg_price = raw_reg_price
+
+                if dec_reg is None or dec_reg != Decimal(str(expected_regular_price)):
                     discrepancies.append(
-                        f"Cycle 2 price is '{detected_reg_price}', expected regular price '{expected_reg_str}'."
+                        f"Cycle 2 price is '{raw_reg_price}', expected regular price '{expected_reg_str}'."
                     )
 
         elif expected_type == "standard":
@@ -270,13 +293,20 @@ class PayPalProvisioningService:
                     discrepancies.append(f"Total_cycles is {c1.get('total_cycles')}, expected 0 (infinite).")
 
                 p1_fixed = c1.get("pricing_scheme", {}).get("fixed_price", {})
-                detected_reg_price = p1_fixed.get("value")
+                raw_reg_price = p1_fixed.get("value")
                 c1_curr = p1_fixed.get("currency_code", "").upper()
                 if c1_curr != curr_expected:
                     discrepancies.append(f"Currency is '{c1_curr}', expected '{curr_expected}'.")
-                if detected_reg_price != expected_reg_str:
+
+                dec_reg = _parse_price_decimal(raw_reg_price)
+                if dec_reg is not None:
+                    detected_reg_price = f"{dec_reg:.2f}"
+                else:
+                    detected_reg_price = raw_reg_price
+
+                if dec_reg is None or dec_reg != Decimal(str(expected_regular_price)):
                     discrepancies.append(
-                        f"Price is '{detected_reg_price}', expected regular price '{expected_reg_str}'."
+                        f"Price is '{raw_reg_price}', expected regular price '{expected_reg_str}'."
                     )
         else:
             discrepancies.append(f"Unknown plan verification type '{expected_type}'.")

@@ -9,6 +9,7 @@ from typing import Any, Dict
 import pytest
 import httpx
 
+from app.core.config import settings
 from app.soulmate.domain.paypal_models import (
     PayPalBillingCycle,
     PayPalFixedPrice,
@@ -600,8 +601,10 @@ async def test_cli_dry_run_mode():
 
 
 @pytest.mark.asyncio
-async def test_cli_rejects_missing_prices():
+async def test_cli_rejects_missing_prices(monkeypatch):
     """CLI fails fast when prices are missing (Decision PAY-01)."""
+    monkeypatch.setattr(settings, "soulmate_intro_price", None)
+    monkeypatch.setattr(settings, "soulmate_regular_price", None)
     args = parse_args(["--dry-run"])
     code = await main_async(args)
     assert code == 1
@@ -610,6 +613,7 @@ async def test_cli_rejects_missing_prices():
 @pytest.mark.asyncio
 async def test_cli_verify_only_mode_success(mock_paypal_credentials, monkeypatch):
     """CLI --verify-only inspects and confirms existing plan without mutations."""
+    monkeypatch.setattr(settings, "paypal_soulmate_standard_plan_id", None)
     plan_mock = {
         "id": "P-TEST-INTRO-100",
         "name": "Soulmate Monthly Intro",

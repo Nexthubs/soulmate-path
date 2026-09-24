@@ -10,8 +10,12 @@ def test_default_settings_loaded():
     assert settings.is_production is False
     assert settings.is_sandbox is True
     assert settings.is_report_generation_enabled is False
-    assert settings.intro_price is None
-    assert settings.regular_price is None
+    assert settings.intro_price is None or isinstance(settings.intro_price, Decimal)
+    assert settings.regular_price is None or isinstance(settings.regular_price, Decimal)
+
+    clean_settings = Settings(_env_file=None)
+    assert clean_settings.intro_price is None
+    assert clean_settings.regular_price is None
 
     # In development mode, validation does not fail
     settings.validate_production_config()
