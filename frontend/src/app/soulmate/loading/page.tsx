@@ -21,12 +21,21 @@ import {
   continueTransition,
   submitInterstitialAnswer,
   getFlowState,
+  isSessionMissingError,
   FlowStateResponse,
 } from "@/soulmate/api/session";
+import { getSafeUserErrorMessage } from "@/soulmate/api/errors";
 
 function LoadingContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+
+  // State for sequential Transition-5 popups, session, and flow state
+  const [activePopup, setActivePopup] = useState<InterstitialType | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [error, setError] = useState<{ message: string; onRetry?: () => void } | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [flowState, setFlowState] = useState<FlowStateResponse | null>(null);
 
   // Step 0 through 5 from query param, defaulting to 0
   const stepParam = parseInt(searchParams.get("step") || "0", 10);
@@ -43,7 +52,15 @@ function LoadingContent() {
 
   // Dynamic copy injection parameters
   const qualityParam = searchParams.get("quality");
-  const transition2Subtitle = getTransition2Copy(qualityParam);
+  const serverTransition2Body =
+    typeof flowState?.step_metadata?.body === "string"
+      ? (flowState.step_metadata.body as string)
+      : null;
+  const transition2Subtitle: string =
+    serverTransition2Body ||
+    getTransition2Copy(
+      qualityParam || (flowState?.step_metadata?.selected_option as string | undefined)
+    );
   const customTitle4 = searchParams.get("title");
   const customSubtitle4 = searchParams.get("subtitle");
 
@@ -54,13 +71,6 @@ function LoadingContent() {
     zodiacLabel: zodiacParam,
     decisionStyle: decisionParam,
   });
-
-  // State for sequential Transition-5 popups
-  const [activePopup, setActivePopup] = useState<InterstitialType | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [error, setError] = useState<{ message: string; onRetry?: () => void } | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [flowState, setFlowState] = useState<FlowStateResponse | null>(null);
 
   // Bootstrap session and flow state if in live mode
   React.useEffect(() => {
@@ -75,16 +85,25 @@ function LoadingContent() {
           setSessionId(sess.session_id);
           sId = sess.session_id;
         }
-      } catch {
-        try {
-          const created = await createSession();
-          if (!isCancelled) {
-            setSessionId(created.session_id);
-            sId = created.session_id;
+      } catch (err: unknown) {
+        if (isSessionMissingError(err)) {
+          try {
+            const created = await createSession();
+            if (!isCancelled) {
+              setSessionId(created.session_id);
+              sId = created.session_id;
+            }
+          } catch (createErr: unknown) {
+            if (!isCancelled) {
+              const msg = getSafeUserErrorMessage(createErr);
+              setError({ message: msg, onRetry: () => initSession() });
+            }
+            return;
           }
-        } catch (err: unknown) {
+        } else {
+          // Transient network failure or 5xx server error -> retain session & offer retry
           if (!isCancelled) {
-            const msg = err instanceof Error ? err.message : "Failed to load session";
+            const msg = getSafeUserErrorMessage(err);
             setError({ message: msg, onRetry: () => initSession() });
           }
           return;

@@ -6,8 +6,9 @@
 import { clientConfig, ClientConfig } from "../config";
 import { SoulmateProfileV1 } from "../domain/profile";
 import { QuizConfig } from "../quiz/types";
-import { parseApiError } from "./errors";
+import { parseApiError, isSessionMissingError } from "./errors";
 
+export { isSessionMissingError };
 export type { SoulmateProfileV1, QuizConfig };
 
 export interface SessionCreateResponse {

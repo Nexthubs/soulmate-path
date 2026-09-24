@@ -165,12 +165,11 @@ async def test_submit_date_q08_valid(db_session):
         "1994-05-00",  # Invalid day 0
         "not-a-date",  # Malformed string
         "1994/08/25",  # Slashes instead of dashes
-        "1880-01-01",  # Year prior to 1900
         (date.today() + timedelta(days=1)).isoformat(),  # Future date
     ],
 )
 async def test_submit_date_q08_invalid_dates(invalid_date):
-    """Verify Q08 date validation rejects invalid calendar, future, or out-of-range dates."""
+    """Verify Q08 date validation rejects invalid calendar or future dates."""
     transport = ASGITransport(app=app)
 
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -186,6 +185,23 @@ async def test_submit_date_q08_invalid_dates(invalid_date):
         assert res.status_code == 400
         data = res.json()
         assert data["error_code"] == "VALIDATION_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_submit_date_q08_historical_valid_date():
+    """Verify historical valid calendar date succeeds without inventing unapproved 1900 floor (AGE-01)."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        create_res = await client.post("/api/soulmate/sessions", json={})
+        session_id = create_res.json()["session_id"]
+        seed_prerequisites_for_question(session_id, "q08")
+
+        res = await client.put(
+            f"/api/soulmate/sessions/{session_id}/answers/q08",
+            json={"value": "1880-01-01"},
+        )
+        assert res.status_code == 200
+        assert res.json()["saved"] is True
 
 
 @pytest.mark.asyncio

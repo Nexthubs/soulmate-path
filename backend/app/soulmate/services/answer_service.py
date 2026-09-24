@@ -180,12 +180,7 @@ class AnswerService:
                 f"Invalid date format '{cleaned_date_str}' for question '{question.code}'. Expected YYYY-MM-DD."
             )
 
-        # Gregorian calendar & reasonable range check (DEV-SPEC §4.4, AGE-01)
-        if parsed_date.year < 1900:
-            raise ValidationError(
-                f"Invalid birth year {parsed_date.year}. Year must be 1900 or later."
-            )
-
+        # Real calendar date & non-future check (DEV-SPEC §4.4, DECISIONS.md AGE-01: no unapproved age floor invented)
         if parsed_date > date.today():
             raise ValidationError("Birth date cannot be in the future.")
 

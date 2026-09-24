@@ -6,8 +6,8 @@ from app.soulmate.domain.step_resolver import (
     ALL_FLOW_STEPS_SET,
     ALL_QUESTION_CODES,
     CANONICAL_FLOW_STEPS,
+    TRANSITION_2_CONFIRMED_COPY,
     TRANSITION_2_COPY_BY_OPTION,
-    TRANSITION_2_DEFAULT_COPY,
     StepType,
     calculate_progress_percent,
     get_next_step,
@@ -187,19 +187,34 @@ def test_validate_can_advance_transition():
 
 
 def test_resolve_transition_metadata_copy_02():
-    """Verify Transition-2 dynamic copy resolution per COPY-02."""
-    for option_code, expected_copy in TRANSITION_2_COPY_BY_OPTION.items():
-        answers = {"q07": {"value": option_code}}
+    """Verify Transition-2 dynamic copy resolution per COPY-02 & DECISIONS.md."""
+    # 1. Confirmed option 'intelligence' returns confirmed copy from Figma 102:320
+    answers_intel = {"q07": {"value": "intelligence"}}
+    meta_intel = resolve_transition_metadata("transition_2", answers_intel)
+    assert meta_intel["transition_code"] == "transition_2"
+    assert meta_intel["selected_option"] == "intelligence"
+    assert meta_intel["is_copy_confirmed"] is True
+    assert meta_intel["copy_status"] == "confirmed"
+    assert meta_intel["title"] == "Awesome!"
+    assert "Those who seek Intelligence in their soulmate" in meta_intel["body"]
+
+    # 2. Unconfirmed options (e.g. kindness, loyalty) do not invent production copy
+    for unconfirmed in ["kindness", "loyalty", "creativity", "passion", "empathy"]:
+        answers = {"q07": {"value": unconfirmed}}
         meta = resolve_transition_metadata("transition_2", answers)
         assert meta["transition_code"] == "transition_2"
-        assert meta["selected_option"] == option_code
-        assert meta["title"] == expected_copy["title"]
-        assert meta["body"] == expected_copy["body"]
+        assert meta["selected_option"] == unconfirmed
+        assert meta["is_copy_confirmed"] is False
+        assert meta["copy_status"] == "unconfigured_copy_02"
+        assert meta["title"] == "Awesome!"
+        assert meta["body"] is None
 
-    # Unknown or missing option falls back to default copy without crashing
+    # 3. Unknown or missing option returns explicit unconfigured state
     default_meta = resolve_transition_metadata("transition_2", {})
-    assert default_meta["title"] == TRANSITION_2_DEFAULT_COPY["title"]
-    assert default_meta["body"] == TRANSITION_2_DEFAULT_COPY["body"]
+    assert default_meta["is_copy_confirmed"] is False
+    assert default_meta["copy_status"] == "unconfigured_copy_02"
+    assert default_meta["title"] == "Awesome!"
+    assert default_meta["body"] is None
 
 
 def test_resolve_transition_metadata_copy_03():

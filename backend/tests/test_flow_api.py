@@ -232,22 +232,43 @@ async def test_transition_prerequisites_and_copy_resolution(db_session):
         assert trans1_ok.status_code == 200
         assert trans1_ok.json()["next_step"] == "q07"
 
-        # Answer q07 with "loyalty" -> next step is transition_2
+        # Answer q07 with "intelligence" -> next step is transition_2
         q07_res = await client.put(
             f"/api/soulmate/sessions/{session_id}/answers/q07",
-            json={"value": "loyalty"},
+            json={"value": "intelligence"},
         )
         assert q07_res.status_code == 200
         assert q07_res.json()["next_step"] == "transition_2"
 
-        # Fetch flow state at transition_2 and verify COPY-02 dynamic copy
+        # Fetch flow state at transition_2 and verify COPY-02 dynamic copy for confirmed option
         flow_res = await client.get(f"/api/soulmate/sessions/{session_id}/flow/state")
         assert flow_res.status_code == 200
         meta = flow_res.json()["step_metadata"]
         assert meta["transition_code"] == "transition_2"
-        assert meta["selected_option"] == "loyalty"
+        assert meta["selected_option"] == "intelligence"
+        assert meta["is_copy_confirmed"] is True
         assert meta["title"] == "Awesome!"
-        assert "Loyalty" in meta["body"]
+        assert "Intelligence" in meta["body"]
+
+        # Step back to q07 before re-answering
+        back_res = await client.post(f"/api/soulmate/sessions/{session_id}/step/back")
+        assert back_res.status_code == 200
+        assert back_res.json()["current_step"] == "q07"
+
+        # Re-answer q07 with "loyalty" (unconfirmed option per DECISIONS.md COPY-02)
+        q07_re = await client.put(
+            f"/api/soulmate/sessions/{session_id}/answers/q07",
+            json={"value": "loyalty"},
+        )
+        assert q07_re.status_code == 200
+        assert q07_re.json()["next_step"] == "transition_2"
+
+        flow_res2 = await client.get(f"/api/soulmate/sessions/{session_id}/flow/state")
+        meta2 = flow_res2.json()["step_metadata"]
+        assert meta2["selected_option"] == "loyalty"
+        assert meta2["is_copy_confirmed"] is False
+        assert meta2["copy_status"] == "unconfigured_copy_02"
+        assert meta2["body"] is None
 
 
 @pytest.mark.asyncio

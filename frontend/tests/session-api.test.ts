@@ -9,7 +9,7 @@ import {
   submitAnswer,
   submitInterstitialAnswer,
 } from "../src/soulmate/api/session";
-import { isSoulmateApiError } from "../src/soulmate/api/errors";
+import { isSoulmateApiError, isSessionMissingError, parseApiError } from "../src/soulmate/api/errors";
 
 import { ClientConfig } from "../src/soulmate/config";
 
@@ -467,6 +467,28 @@ describe("Frontend Session API Client (SP-201)", () => {
           expect(err.requestId).toBe("req_interstitial_409");
         }
       }
+    });
+  });
+
+  describe("Audit Remediation: Session Recovery Error Differentiation (SP-207)", () => {
+    it("isSessionMissingError returns true for 401, 403, and 404", () => {
+      const err401 = parseApiError(401, { error_code: "FORBIDDEN_OWNERSHIP", message: "Auth required" });
+      const err403 = parseApiError(403, { error_code: "FORBIDDEN_OWNERSHIP", message: "Forbidden" });
+      const err404 = parseApiError(404, { error_code: "NOT_FOUND", message: "Session not found" });
+
+      expect(isSessionMissingError(err401)).toBe(true);
+      expect(isSessionMissingError(err403)).toBe(true);
+      expect(isSessionMissingError(err404)).toBe(true);
+    });
+
+    it("isSessionMissingError returns false for transient 5xx server errors and network errors", () => {
+      const err500 = parseApiError(500, { error_code: "INTERNAL_SERVER_ERROR", message: "Server error" });
+      const err502 = parseApiError(502, null);
+      const networkErr = new TypeError("Failed to fetch");
+
+      expect(isSessionMissingError(err500)).toBe(false);
+      expect(isSessionMissingError(err502)).toBe(false);
+      expect(isSessionMissingError(networkErr)).toBe(false);
     });
   });
 });

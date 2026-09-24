@@ -10,10 +10,12 @@ import {
   submitAnswer,
   navigateBack,
   getQuizConfig,
+  isSessionMissingError,
   QuizConfig,
   SavedAnswerDetail,
   SessionCurrentResponse,
 } from "@/soulmate/api/session";
+import { getSafeUserErrorMessage } from "@/soulmate/api/errors";
 import quizData from "@/soulmate/quiz/soulmate-quiz-v1.json";
 
 type PreviewQuestionType = "single" | "date" | "multi";
@@ -108,10 +110,20 @@ function QuizPageContent() {
         try {
           // Attempt cookie-based session recovery
           currentSess = await getCurrentSession();
-        } catch {
-          // If no active session exists, initialize a new anonymous session
-          const created = await createSession();
-          currentSess = await getSession(created.session_id);
+        } catch (err: unknown) {
+          if (isSessionMissingError(err)) {
+            // Genuinely no active/valid session exists (401, 403, 404) -> initialize fresh session
+            const created = await createSession();
+            currentSess = await getSession(created.session_id);
+          } else {
+            // Transient network failure or 5xx server error -> retain session & offer retry
+            if (!isCancelled) {
+              const msg = getSafeUserErrorMessage(err);
+              setError({ message: msg, onRetry: () => bootstrapSession() });
+              setIsLoading(false);
+            }
+            return;
+          }
         }
 
         if (isCancelled) return;

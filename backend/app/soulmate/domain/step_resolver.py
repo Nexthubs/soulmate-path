@@ -89,37 +89,16 @@ INTERSTITIAL_PREREQUISITES_MAP: Dict[str, List[str]] = {
 }
 
 # Transition-2 dynamic copy map per COPY-02 & Figma 102:320
-TRANSITION_2_COPY_BY_OPTION: Dict[str, Dict[str, str]] = {
+# DECISIONS.md COPY-02: Only "intelligence" is confirmed; do not invent production copy for others.
+TRANSITION_2_CONFIRMED_COPY: Dict[str, Dict[str, str]] = {
     "intelligence": {
         "title": "Awesome!",
         "body": "Those who seek Intelligence in their soulmate value deep conversations, curiosity, and a mind that challenges them.",
     },
-    "kindness": {
-        "title": "Awesome!",
-        "body": "Those who seek Kindness in their soulmate value empathy, genuine care, and a warm heart that nurtures them.",
-    },
-    "loyalty": {
-        "title": "Awesome!",
-        "body": "Those who seek Loyalty in their soulmate value unwavering trust, devotion, and a bond that stands the test of time.",
-    },
-    "creativity": {
-        "title": "Awesome!",
-        "body": "Those who seek Creativity in their soulmate value imagination, spontaneity, and a unique perspective on life.",
-    },
-    "passion": {
-        "title": "Awesome!",
-        "body": "Those who seek Passion in their soulmate value intensity, excitement, and a deep emotional spark.",
-    },
-    "empathy": {
-        "title": "Awesome!",
-        "body": "Those who seek Empathy in their soulmate value compassion, active listening, and feeling truly seen.",
-    },
 }
 
-TRANSITION_2_DEFAULT_COPY: Dict[str, str] = {
-    "title": "Awesome!",
-    "body": "Those who seek this quality in their soulmate value deep connection, authentic understanding, and mutual respect.",
-}
+# Alias for backward compatibility
+TRANSITION_2_COPY_BY_OPTION: Dict[str, Dict[str, str]] = TRANSITION_2_CONFIRMED_COPY
 
 # Transition-3 decision copy map per DEV-SPEC §5.5
 TRANSITION_3_DECISION_COPY_MAP: Dict[str, str] = {
@@ -355,13 +334,27 @@ def resolve_transition_metadata(
         if isinstance(q07_answer, dict):
             q07_value = q07_answer.get("value") or (q07_answer.get("answer", {}).get("value"))
 
-        copy_entry = TRANSITION_2_COPY_BY_OPTION.get(str(q07_value).lower(), TRANSITION_2_DEFAULT_COPY)
-        metadata.update({
-            "source_question": "q07",
-            "selected_option": q07_value,
-            "title": copy_entry["title"],
-            "body": copy_entry["body"],
-        })
+        normalized_opt = str(q07_value).lower() if q07_value else ""
+        if normalized_opt in TRANSITION_2_CONFIRMED_COPY:
+            copy_entry = TRANSITION_2_CONFIRMED_COPY[normalized_opt]
+            metadata.update({
+                "source_question": "q07",
+                "selected_option": q07_value,
+                "is_copy_confirmed": True,
+                "copy_status": "confirmed",
+                "title": copy_entry["title"],
+                "body": copy_entry["body"],
+            })
+        else:
+            # Explicit unconfigured state per DECISIONS.md COPY-02 (no unapproved production copy)
+            metadata.update({
+                "source_question": "q07",
+                "selected_option": q07_value,
+                "is_copy_confirmed": False,
+                "copy_status": "unconfigured_copy_02",
+                "title": "Awesome!",
+                "body": None,
+            })
     elif transition_code == "transition_3":
         # Resolve dynamic Zodiac (Q08) and Decision Style (Q10) per DEV-SPEC §5.5
         q08_answer = answers_map.get("q08")

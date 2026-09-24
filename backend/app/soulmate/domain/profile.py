@@ -192,11 +192,6 @@ class SoulmateProfileV1(BaseModel):
                     f"Invalid birth_date format '{v}', expected 'YYYY-MM-DD'.",
                     details={"field": "birth_date", "value": v},
                 )
-            if parsed.year < 1900:
-                raise ProfileValidationError(
-                    f"Birth date year cannot be earlier than 1900 (got {parsed.year}).",
-                    details={"field": "birth_date", "value": val_clean},
-                )
             if parsed > date.today():
                 raise ProfileValidationError(
                     f"Birth date cannot be in the future (got {parsed}).",
@@ -594,12 +589,7 @@ def _validate_and_parse_birth_date(val: Any) -> tuple[date, str]:
             details={"question_code": "q08", "value": val},
         )
 
-    # Preserve AGE-01 rules
-    if parsed.year < 1900:
-        raise ProfileValidationError(
-            f"Birth date year cannot be earlier than 1900 (got {parsed.year}).",
-            details={"question_code": "q08", "value": date_str},
-        )
+    # Preserve AGE-01 rules (real calendar date, not in future, no unapproved age floor invented)
     today = date.today()
     if parsed > today:
         raise ProfileValidationError(

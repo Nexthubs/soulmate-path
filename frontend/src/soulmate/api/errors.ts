@@ -113,3 +113,22 @@ export function getSafeUserErrorMessage(err: unknown): string {
 
   return "An unexpected error occurred. Please try again.";
 }
+
+/**
+ * Determines if an error indicates that the session is absent, expired, or forbidden (401, 403, 404),
+ * meaning the client genuinely has no valid active session and may create a new one.
+ * Transient server (5xx) and network transport failures return false so recovery can be retried.
+ */
+export function isSessionMissingError(err: unknown): boolean {
+  if (isSoulmateApiError(err)) {
+    return (
+      err.status === 401 ||
+      err.status === 403 ||
+      err.status === 404 ||
+      err.errorCode === "FORBIDDEN_OWNERSHIP" ||
+      err.errorCode === "NOT_FOUND"
+    );
+  }
+  return false;
+}
+

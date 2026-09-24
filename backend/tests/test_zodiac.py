@@ -270,13 +270,13 @@ async def test_age_01_not_invented_permits_reasonable_dates(db_session):
         assert ok_res.status_code == 200
         assert ok_res.json()["zodiac"]["sign"] == "Taurus"
 
-        # 2. Year < 1900 is rejected
-        err_old = await client.put(
+        # 2. Historical valid date (e.g. 1885-05-15) is accepted without inventing an unapproved 1900 floor
+        ok_old = await client.put(
             f"/api/soulmate/sessions/{session_id}/answers/q08",
             json={"value": "1885-05-15"},
         )
-        assert err_old.status_code == 400
-        assert err_old.json()["error_code"] == "VALIDATION_ERROR"
+        assert ok_old.status_code == 200
+        assert ok_old.json()["zodiac"]["sign"] == "Taurus"
 
         # 3. Future date is rejected
         err_future = await client.put(

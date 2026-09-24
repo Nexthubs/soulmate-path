@@ -257,7 +257,7 @@ def test_birth_date_and_zodiac_calculation():
 
 
 def test_birth_date_validation_age_01():
-    """Date validation preserves AGE-01 (rejects future and year < 1900)."""
+    """Date validation preserves AGE-01 (rejects future and malformed dates, accepts historical valid dates without unapproved floor)."""
     raw = _get_valid_answers_dict()
 
     # Future date
@@ -267,11 +267,10 @@ def test_birth_date_validation_age_01():
         build_soulmate_profile(raw)
     assert "future" in exc_info.value.message.lower()
 
-    # Year < 1900
+    # Historical valid date passes without inventing an unapproved 1900 floor
     raw["q08"] = {"value": "1899-12-31"}
-    with pytest.raises(ProfileValidationError) as exc_info:
-        build_soulmate_profile(raw)
-    assert "1900" in exc_info.value.message
+    profile = build_soulmate_profile(raw)
+    assert profile.birth_date == "1899-12-31"
 
     # Malformed string
     raw["q08"] = {"value": "not-a-date"}
