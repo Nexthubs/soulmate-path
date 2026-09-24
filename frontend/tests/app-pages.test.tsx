@@ -8,6 +8,7 @@ import SoulmateLoadingPage from "../src/app/soulmate/loading/page";
 import SoulmateQuizPage from "../src/app/soulmate/quiz/page";
 import SoulmateEmailPage from "../src/app/soulmate/email/page";
 import SoulmateSubscribePage from "../src/app/soulmate/subscribe/page";
+import SoulmatePaymentProcessingPage from "../src/app/soulmate/payment-processing/page";
 import SoulmateResultPage from "../src/app/soulmate/result/page";
 import SoulmateSketchPage from "../src/app/soulmate/sketch/page";
 import SoulmateReportPage from "../src/app/soulmate/report/page";
@@ -189,7 +190,31 @@ describe("App Router Page-Level Behavioral Integration (M-3 Audit Remediation)",
     });
   });
 
-  describe("6. /soulmate/result (Result Dashboard Page & H-4 Guard)", () => {
+  describe("6. /soulmate/payment-processing (Payment Processing Page & Invariant PAY-AUTH-01)", () => {
+    it("renders processing header and animated state", () => {
+      mockSearchParams = new URLSearchParams({ subscription_id: "I-TEST-SUB-999" });
+      const html = renderToStaticMarkup(<SoulmatePaymentProcessingPage />);
+
+      expect(html).toContain("Confirming Payment");
+      expect(html).toContain("data-testid=\"processing-title\"");
+      expect(html).toContain("data-testid=\"processing-subscription-badge\"");
+      expect(html).toContain("I-TEST-SUB-999");
+      // PAY-AUTH-01: Must not grant paid entitlement or mark success directly
+      expect(html).toContain("PAY-AUTH-01");
+      expect(html).not.toContain("data-testid=\"subscribe-result-link\"");
+    });
+
+    it("displays warning banner when subscription_id is absent from URL", () => {
+      mockSearchParams = new URLSearchParams();
+      const html = renderToStaticMarkup(<SoulmatePaymentProcessingPage />);
+
+      expect(html).toContain("data-testid=\"processing-missing-subscription\"");
+      expect(html).toContain("No active subscription ID was found");
+      expect(html).toContain("data-testid=\"return-subscribe-btn\"");
+    });
+  });
+
+  describe("7. /soulmate/result (Result Dashboard Page & H-4 Guard)", () => {
     it("H-4: defaults to neutral user@example.com without leaking personal emails", () => {
       const html = renderToStaticMarkup(<SoulmateResultPage />);
       expect(html).toContain("user@example.com");
@@ -216,7 +241,7 @@ describe("App Router Page-Level Behavioral Integration (M-3 Audit Remediation)",
     });
   });
 
-  describe("7. /soulmate/sketch (Sketch Viewer Page & H-4 Guard)", () => {
+  describe("8. /soulmate/sketch (Sketch Viewer Page & H-4 Guard)", () => {
     it("H-4: in production, state is forced to loading and cannot be spoofed to completed via URL params", () => {
       const originalEnv = process.env.NODE_ENV;
       try {
@@ -244,7 +269,7 @@ describe("App Router Page-Level Behavioral Integration (M-3 Audit Remediation)",
     });
   });
 
-  describe("8. /soulmate/report (Report Page & H-4 Guard)", () => {
+  describe("9. /soulmate/report (Report Page & H-4 Guard)", () => {
     it("H-4: in production, blocks unentitled direct access and renders Locked screen", () => {
       const originalEnv = process.env.NODE_ENV;
       try {

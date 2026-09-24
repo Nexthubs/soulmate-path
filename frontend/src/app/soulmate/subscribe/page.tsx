@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { getSubscriptionOffer, SubscriptionOfferResponse } from "@/soulmate/api";
 import { useRouteGuard } from "@/soulmate/hooks/useRouteGuard";
 import { SOULMATE_ROUTES } from "@/soulmate/domain";
+import { PayPalSubscriptionButton, PayPalSubscriptionApprovalData } from "@/soulmate/components/subscribe";
 
 function SubscribeContent() {
   const router = useRouter();
@@ -29,6 +30,10 @@ function SubscribeContent() {
   const [offer, setOffer] = useState<SubscriptionOfferResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [paymentNotice, setPaymentNotice] = useState<{
+    type: "cancel" | "error";
+    message: string;
+  } | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -59,6 +64,43 @@ function SubscribeContent() {
       isMounted = false;
     };
   }, [sessionId]);
+
+  /**
+   * Handle buyer approval from PayPal Subscriptions JS SDK (DEV-SPEC §9.3, SP-402).
+   * HIGH-RISK INVARIANT (PAY-AUTH-01):
+   * This callback MUST NEVER set entitlement or mark user as paid client-side.
+   * It strictly forwards subscriptionID to the server verification flow via payment-processing route.
+   */
+  const handleApprove = (data: PayPalSubscriptionApprovalData) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("subscription_id", data.subscriptionID);
+    if (sessionId) {
+      params.set("session_id", sessionId);
+    }
+    router.push(`${SOULMATE_ROUTES.PAYMENT_PROCESSING}?${params.toString()}`);
+  };
+
+  /**
+   * Handle cancellation with recoverable UI state.
+   */
+  const handleCancel = () => {
+    setPaymentNotice({
+      type: "cancel",
+      message: "Subscription checkout was cancelled. You can retry whenever you are ready.",
+    });
+  };
+
+  /**
+   * Handle PayPal SDK error with recoverable UI state.
+   */
+  const handleError = (err?: unknown) => {
+    const message =
+      err instanceof Error ? err.message : "PayPal checkout encountered an error. Please try again.";
+    setPaymentNotice({
+      type: "error",
+      message,
+    });
+  };
 
   // Block interaction when route guard check explicitly evaluated to false (M-3 remediation)
   if (guardEnabled && guard.allowed === false) {
@@ -157,7 +199,29 @@ function SubscribeContent() {
           </div>
         )}
 
-        {/* DEV-SPEC §3, §9.1, H-2 remediation: Block unentitled navigation to result dashboard */}
+        {/* Recoverable Notice Banner (Cancel or Error state) */}
+        {paymentNotice && (
+          <div
+            data-testid={paymentNotice.type === "cancel" ? "payment-cancel-notice" : "payment-error-notice"}
+            className={`p-3 rounded-xl border text-xs flex items-center justify-between text-left ${
+              paymentNotice.type === "cancel"
+                ? "bg-amber-50 border-amber-200 text-amber-900"
+                : "bg-red-50 border-red-200 text-red-900"
+            }`}
+          >
+            <span>{paymentNotice.message}</span>
+            <button
+              type="button"
+              onClick={() => setPaymentNotice(null)}
+              className="font-bold ml-2 text-sm opacity-70 hover:opacity-100 shrink-0"
+              aria-label="Dismiss notice"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        {/* DEV-SPEC §3, §9.1, H-2 remediation: Route Navigation & Payment Checkout */}
         {guard.verdict?.is_paid ? (
           <Link
             href={resultUrl}
@@ -167,13 +231,58 @@ function SubscribeContent() {
             Continue to Result Dashboard
           </Link>
         ) : isFixture ? (
-          <Link
-            href={resultUrl}
-            data-testid="subscribe-fixture-link"
-            className="inline-block w-full py-3 px-4 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-semibold text-sm transition-colors text-center"
-          >
-            [Demo Preview] Continue to Result Dashboard
-          </Link>
+          <div className="space-y-3 pt-2">
+            <Link
+              href={resultUrl}
+              data-testid="subscribe-fixture-link"
+              className="inline-block w-full py-3 px-4 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-semibold text-sm transition-colors text-center"
+            >
+              [Demo Preview] Continue to Result Dashboard
+            </Link>
+            {offer?.paypal?.client_id && offer?.paypal?.plan_id && !offer.eligibility.is_blocked && (
+              <div className="pt-2 border-t border-neutral-200/60">
+                <p className="text-xs text-neutral-500 mb-2">Live PayPal Sandbox Test:</p>
+                <PayPalSubscriptionButton
+                  clientId={offer.paypal.client_id}
+                  planId={offer.paypal.plan_id}
+                  currency={offer.currency}
+                  isBlocked={offer.eligibility.is_blocked}
+                  onApprove={handleApprove}
+                  onCancel={handleCancel}
+                  onError={handleError}
+                />
+              </div>
+            )}
+          </div>
+        ) : offer?.eligibility.is_blocked ? (
+          <div className="space-y-2 pt-2">
+            <button
+              type="button"
+              disabled
+              data-testid="subscribe-blocked-btn"
+              className="w-full py-3 px-4 rounded-xl bg-neutral-200 text-neutral-500 font-semibold text-sm text-center cursor-not-allowed select-none"
+            >
+              🔒 Re-subscription Restricted
+            </button>
+            <p className="text-xs text-neutral-400 text-center">
+              Please contact support regarding re-subscription eligibility.
+            </p>
+          </div>
+        ) : offer?.paypal?.client_id && offer?.paypal?.plan_id ? (
+          <div className="pt-2">
+            <PayPalSubscriptionButton
+              clientId={offer.paypal.client_id}
+              planId={offer.paypal.plan_id}
+              currency={offer.currency}
+              isBlocked={offer.eligibility.is_blocked}
+              onApprove={handleApprove}
+              onCancel={handleCancel}
+              onError={handleError}
+            />
+            <p className="text-[11px] text-neutral-400 text-center pt-2">
+              Payment secured by PayPal. Results unlock upon server confirmation (PAY-AUTH-01).
+            </p>
+          </div>
         ) : (
           <div className="space-y-2 pt-2">
             <button
