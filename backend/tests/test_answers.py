@@ -47,8 +47,6 @@ DUMMY_ANSWERS = {
 def seed_prerequisites_for_question(session_public_id: str, target_question: str) -> None:
     """Pre-populates prerequisite answers in DB to satisfy flow resolver for targeted question tests."""
     prereqs = get_prerequisite_questions_for_question(target_question)
-    if not prereqs:
-        return
     with SessionLocal() as db:
         sess = db.execute(
             select(SoulmateSession).where(SoulmateSession.public_id == session_public_id)
@@ -63,6 +61,7 @@ def seed_prerequisites_for_question(session_public_id: str, target_question: str
                 updated_at=now,
             )
             db.add(ans)
+        sess.current_step = target_question
         db.commit()
 
 
@@ -84,6 +83,7 @@ async def test_submit_single_choice_q02(db_session):
         create_res = await client.post("/api/soulmate/sessions", json={})
         assert create_res.status_code == 201
         session_id = create_res.json()["session_id"]
+        seed_prerequisites_for_question(session_id, "q02")
 
         # 2. Submit answer to q02
         payload = {"value": "female", "duration_ms": 2300}
@@ -256,6 +256,7 @@ async def test_invalid_option_code_rejected():
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         create_res = await client.post("/api/soulmate/sessions", json={})
         session_id = create_res.json()["session_id"]
+        seed_prerequisites_for_question(session_id, "q02")
 
         # Single option not in question
         res_single = await client.put(
@@ -300,6 +301,7 @@ async def test_mismatched_payload_type_rejected():
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         create_res = await client.post("/api/soulmate/sessions", json={})
         session_id = create_res.json()["session_id"]
+        seed_prerequisites_for_question(session_id, "q02")
 
         # 1. Sending 'values' to single question q02
         res1 = await client.put(
@@ -330,6 +332,7 @@ async def test_re_answer_flow_updates_existing_answer(db_session):
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         create_res = await client.post("/api/soulmate/sessions", json={})
         session_id = create_res.json()["session_id"]
+        seed_prerequisites_for_question(session_id, "q02")
 
         # First answer: female
         res1 = await client.put(
@@ -374,6 +377,7 @@ async def test_duplicate_rapid_single_taps_idempotent(db_session):
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         create_res = await client.post("/api/soulmate/sessions", json={})
         session_id = create_res.json()["session_id"]
+        seed_prerequisites_for_question(session_id, "q02")
 
         payload = {"value": "male", "duration_ms": 1000}
 

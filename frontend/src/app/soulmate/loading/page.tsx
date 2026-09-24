@@ -20,6 +20,8 @@ import {
   getCurrentSession,
   continueTransition,
   submitInterstitialAnswer,
+  getFlowState,
+  FlowStateResponse,
 } from "@/soulmate/api/session";
 
 function LoadingContent() {
@@ -56,22 +58,47 @@ function LoadingContent() {
   // State for sequential Transition-5 popups
   const [activePopup, setActivePopup] = useState<InterstitialType | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [error, setError] = useState<{ message: string; onRetry?: () => void } | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [flowState, setFlowState] = useState<FlowStateResponse | null>(null);
 
-  // Bootstrap session if in live mode
+  // Bootstrap session and flow state if in live mode
   React.useEffect(() => {
     if (isFixtureMode) return;
     let isCancelled = false;
     async function initSession() {
+      setError(null);
+      let sId: string | null = null;
       try {
         const sess = await getCurrentSession();
-        if (!isCancelled) setSessionId(sess.session_id);
+        if (!isCancelled) {
+          setSessionId(sess.session_id);
+          sId = sess.session_id;
+        }
       } catch {
         try {
           const created = await createSession();
-          if (!isCancelled) setSessionId(created.session_id);
+          if (!isCancelled) {
+            setSessionId(created.session_id);
+            sId = created.session_id;
+          }
+        } catch (err: unknown) {
+          if (!isCancelled) {
+            const msg = err instanceof Error ? err.message : "Failed to load session";
+            setError({ message: msg, onRetry: () => initSession() });
+          }
+          return;
+        }
+      }
+
+      if (sId && !isCancelled) {
+        try {
+          const state = await getFlowState(sId);
+          if (!isCancelled) {
+            setFlowState(state);
+          }
         } catch {
-          // Offline fallback
+          // Flow state metadata fallback
         }
       }
     }
@@ -113,8 +140,12 @@ function LoadingContent() {
     }
 
     setIsLoading(true);
+    setError(null);
     try {
       const res = await continueTransition(sessionId, `transition_${step}`);
+      if (res.flow_state) {
+        setFlowState(res.flow_state);
+      }
       if (step === 5) {
         setActivePopup("spiritual");
       } else if (res.next_step.startsWith("q")) {
@@ -125,14 +156,13 @@ function LoadingContent() {
       } else {
         router.push("/soulmate/quiz");
       }
-    } catch {
-      // Graceful fallback
-      if (step === 5) {
-        setActivePopup("spiritual");
-      } else {
-        const fallbackQs = ["q02", "q07", "q08", "q11", "q12"];
-        router.push(`/soulmate/quiz?code=${fallbackQs[step] || "q02"}`);
-      }
+    } catch (err: unknown) {
+      // Do NOT advance on error; retain current screen and show retryable error (DEV-SPEC §6, Finding 2)
+      const msg = err instanceof Error ? err.message : "Failed to continue transition";
+      setError({
+        message: msg,
+        onRetry: () => handleContinue(),
+      });
     } finally {
       setIsLoading(false);
     }
@@ -158,6 +188,8 @@ function LoadingContent() {
       return;
     }
 
+    setIsLoading(true);
+    setError(null);
     try {
       const codeMap: Record<InterstitialType, "spiritual_person" | "familiar_psychic_artistry" | "warning_response"> = {
         spiritual: "spiritual_person",
@@ -181,14 +213,15 @@ function LoadingContent() {
         const query = params.toString();
         router.push(`/soulmate/email${query ? `?${query}` : ""}`);
       }
-    } catch {
-      const nextPopup = getNextInterstitialPopup(activePopup);
-      if (nextPopup) {
-        setActivePopup(nextPopup);
-      } else {
-        setActivePopup(null);
-        router.push("/soulmate/email");
-      }
+    } catch (err: unknown) {
+      // Do NOT advance on error; retain current modal and show retryable error (Finding 2)
+      const msg = err instanceof Error ? err.message : "Failed to save answer";
+      setError({
+        message: msg,
+        onRetry: () => handleModalAnswer(answer),
+      });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -210,6 +243,8 @@ function LoadingContent() {
             )
           }
           onContinue={handleContinue}
+          loading={isLoading}
+          error={error}
         >
           {shouldShowMarketingClaims ? (
             <div className="space-y-4 my-2 text-left">
@@ -285,6 +320,8 @@ function LoadingContent() {
             />
           }
           onContinue={handleContinue}
+          loading={isLoading}
+          error={error}
         />
       )}
 
@@ -305,6 +342,8 @@ function LoadingContent() {
             />
           }
           onContinue={handleContinue}
+          loading={isLoading}
+          error={error}
         />
       )}
 
@@ -316,8 +355,10 @@ function LoadingContent() {
           subtitle={
             <span>
               Based on intuitive guidance, many{" "}
-              <strong className="text-[#6b38c2]">{transition3Data.zodiacLabel}</strong>{" "}
-              {transition3Data.decisionCopy}
+              <strong className="text-[#6b38c2]">
+                {(flowState?.step_metadata?.zodiac_label as string | undefined) || transition3Data.zodiacLabel}
+              </strong>{" "}
+              {(flowState?.step_metadata?.decision_copy as string | undefined) || transition3Data.decisionCopy}
             </span>
           }
           illustration={
@@ -331,6 +372,8 @@ function LoadingContent() {
             />
           }
           onContinue={handleContinue}
+          loading={isLoading}
+          error={error}
         />
       )}
 
@@ -351,6 +394,8 @@ function LoadingContent() {
             />
           }
           onContinue={handleContinue}
+          loading={isLoading}
+          error={error}
         />
       )}
 
@@ -361,6 +406,8 @@ function LoadingContent() {
           title="Connecting to the universe"
           continueLabel="See Results"
           onContinue={handleContinue}
+          loading={isLoading}
+          error={error}
         >
           <Transition5Progress />
         </TransitionShell>
@@ -372,6 +419,8 @@ function LoadingContent() {
           type={activePopup}
           isOpen={true}
           onAnswer={handleModalAnswer}
+          loading={isLoading}
+          error={error}
         />
       )}
     </>

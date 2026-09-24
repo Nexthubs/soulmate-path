@@ -7,6 +7,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import ValidationError
 from app.db.base import utc_now
+from app.db.models.quiz import SoulmateQuizVersion
 from app.db.models.session import SoulmateAnswer, SoulmateSession
 from app.quiz.constants import CANONICAL_QUIZ_VERSION
 from app.quiz.loader import get_cached_quiz_config
@@ -14,7 +15,7 @@ from app.quiz.schema import QuestionType, QuizConfig, QuizQuestion
 from app.soulmate.domain.session_state import SessionStatus
 from app.soulmate.domain.step_resolver import (
     resolve_next_step_for_question,
-    validate_can_answer_question,
+    validate_can_submit_question,
 )
 from app.soulmate.domain.zodiac import get_zodiac_for_date
 from app.soulmate.schema import AnswerSubmitRequest, AnswerSubmitResponse
@@ -39,7 +40,7 @@ class AnswerService:
         persists answer row into soulmate_answers (DEV-SPEC §15.3).
         """
         # 1. Retrieve quiz configuration matching the session's pinned version
-        config = cls._get_quiz_config(session.quiz_version)
+        config = await cls._get_quiz_config(db, session.quiz_version)
 
         # 2. Locate question definition
         question = next((q for q in config.questions if q.code == question_code), None)
@@ -48,11 +49,11 @@ class AnswerService:
                 f"Question '{question_code}' does not exist in quiz version '{session.quiz_version}'."
             )
 
-        # 2.5 Flow skip prevention guard (DEV-SPEC §15.3, SP-203)
+        # 2.5 Flow step & skip prevention guard (DEV-SPEC §15.3, SP-203)
         ans_stmt = select(SoulmateAnswer.question_code).where(SoulmateAnswer.session_id == session.id)
         ans_res = await db.execute(ans_stmt)
         answered_codes = set(ans_res.scalars().all())
-        validate_can_answer_question(question_code, answered_codes)
+        validate_can_submit_question(question_code, session.current_step, answered_codes)
 
         # 3. Validate type-specific payload and option membership
         answer_payload = cls._validate_payload(question, req)
@@ -106,13 +107,20 @@ class AnswerService:
         )
 
 
-    @staticmethod
-    def _get_quiz_config(quiz_version: str) -> QuizConfig:
-        """Loads quiz configuration pinned to the given version."""
+    @classmethod
+    async def _get_quiz_config(cls, db: AsyncSession, quiz_version: str) -> QuizConfig:
+        """Loads quiz configuration pinned to the given version from cache or DB."""
         if quiz_version == CANONICAL_QUIZ_VERSION:
             return get_cached_quiz_config()
-        # Fallback to cached canonical version if matching prefix
-        return get_cached_quiz_config()
+
+        # Query immutable quiz version record from DB (DEV-SPEC §4.5, §15.2)
+        stmt = select(SoulmateQuizVersion).where(SoulmateQuizVersion.version == quiz_version)
+        result = await db.execute(stmt)
+        record = result.scalar_one_or_none()
+        if record and record.config_json:
+            return QuizConfig.model_validate(record.config_json)
+
+        raise ValidationError(f"Unknown or unseeded quiz version: '{quiz_version}'.")
 
     @classmethod
     def _validate_payload(

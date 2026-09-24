@@ -13,7 +13,7 @@ from app.soulmate.domain.step_resolver import (
     INTERSTITIAL_CODES,
     INTERSTITIAL_CODES_SET,
     resolve_next_step_for_interstitial,
-    validate_can_answer_interstitial,
+    validate_can_submit_interstitial,
 )
 from app.soulmate.schema import InterstitialSubmitRequest, InterstitialSubmitResponse
 from app.soulmate.services.flow_service import FlowService
@@ -90,11 +90,11 @@ class InterstitialService:
         # 2. Normalize and validate payload value
         norm_val = cls.normalize_interstitial_value(interstitial_code, req.value)
 
-        # 3. Skip prevention guard (DEV-SPEC §5.7, §15.4, SP-206)
+        # 3. Skip and transition prevention guard (DEV-SPEC §5.7, §15.4, SP-206)
         ans_stmt = select(SoulmateAnswer.question_code).where(SoulmateAnswer.session_id == session.id)
         ans_res = await db.execute(ans_stmt)
         answered_codes: Set[str] = set(ans_res.scalars().all())
-        validate_can_answer_interstitial(interstitial_code, answered_codes)
+        validate_can_submit_interstitial(interstitial_code, session.current_step, answered_codes)
 
         # 4. Atomic PostgreSQL upsert (idempotent across network retries)
         now = utc_now()

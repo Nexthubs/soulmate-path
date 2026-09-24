@@ -5,9 +5,10 @@
 
 import { clientConfig, ClientConfig } from "../config";
 import { SoulmateProfileV1 } from "../domain/profile";
+import { QuizConfig } from "../quiz/types";
 import { parseApiError } from "./errors";
 
-export type { SoulmateProfileV1 };
+export type { SoulmateProfileV1, QuizConfig };
 
 export interface SessionCreateResponse {
   session_id: string;
@@ -306,5 +307,29 @@ export async function submitInterstitialAnswer(
   }
 
   return (await res.json()) as InterstitialSubmitResponse;
+}
+
+/**
+ * Fetches immutable Quiz configuration from server (DEV-SPEC §15.2).
+ * Optionally specifies version string or retrieves the active session's pinned configuration.
+ */
+export async function getQuizConfig(
+  version?: string,
+  config: ClientConfig = clientConfig
+): Promise<QuizConfig> {
+  const query = version ? `?version=${encodeURIComponent(version)}` : "";
+  const url = `${config.apiBaseUrl}/quiz/config${query}`;
+
+  const res = await fetch(url, {
+    method: "GET",
+    credentials: "include",
+  });
+
+  if (!res.ok) {
+    const errorPayload = await res.json().catch(() => null);
+    throw parseApiError(res.status, errorPayload);
+  }
+
+  return (await res.json()) as QuizConfig;
 }
 

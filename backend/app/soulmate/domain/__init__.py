@@ -23,6 +23,8 @@ from app.soulmate.domain.step_resolver import (
     validate_can_advance_transition,
     validate_can_answer_interstitial,
     validate_can_answer_question,
+    validate_can_submit_interstitial,
+    validate_can_submit_question,
 )
 from app.soulmate.domain.profile import (
     OPTIONAL_INTERSTITIAL_KEYS,
@@ -89,6 +91,8 @@ __all__ = [
     "validate_can_advance_transition",
     "validate_can_answer_interstitial",
     "validate_can_answer_question",
+    "validate_can_submit_interstitial",
+    "validate_can_submit_question",
     "ZodiacSign",
     "ZodiacDetail",
     "ZODIAC_DEFINITIONS",

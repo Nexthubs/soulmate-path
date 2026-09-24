@@ -191,6 +191,7 @@ async def test_q08_submission_returns_and_persists_zodiac(db_session):
                     updated_at=now,
                 )
             )
+        sess.current_step = "q08"
         db_session.commit()
 
         # Submit Q08 (birth date)
@@ -258,6 +259,7 @@ async def test_age_01_not_invented_permits_reasonable_dates(db_session):
                     updated_at=now,
                 )
             )
+        sess.current_step = "q08"
         db_session.commit()
 
         # 1. 16-year old birth date (2010) is accepted without inventing an unapproved 18+ gate

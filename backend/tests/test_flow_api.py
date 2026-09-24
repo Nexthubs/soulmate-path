@@ -261,3 +261,138 @@ async def test_navigate_back_from_initial_step_fails():
         back_res = await client.post(f"/api/soulmate/sessions/{session_id}/step/back")
         assert back_res.status_code == 409
         assert back_res.json()["error_code"] == "INVALID_FLOW_STATE"
+
+
+@pytest.mark.asyncio
+async def test_question_submission_cannot_bypass_active_transition():
+    """
+    Acceptance (Audit High - SP-203):
+    - Submitting q02 when current_step is transition_0 is rejected with 409 INVALID_FLOW_STATE.
+    - Submitting q07 when current_step is transition_1 is rejected with 409 INVALID_FLOW_STATE.
+    """
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        res = await client.post("/api/soulmate/sessions", json={})
+        session_id = res.json()["session_id"]
+
+        # 1. Attempt q02 while at transition_0
+        q02_bypass = await client.put(
+            f"/api/soulmate/sessions/{session_id}/answers/q02",
+            json={"value": "female"},
+        )
+        assert q02_bypass.status_code == 409
+        assert q02_bypass.json()["error_code"] == "INVALID_FLOW_STATE"
+        assert "transition_0" in q02_bypass.json()["message"]
+
+        # Advance transition_0
+        await client.post(f"/api/soulmate/sessions/{session_id}/transitions/transition_0/continue")
+
+        # Now q02 succeeds
+        q02_ok = await client.put(
+            f"/api/soulmate/sessions/{session_id}/answers/q02",
+            json={"value": "female"},
+        )
+        assert q02_ok.status_code == 200
+
+        # Answer q03..q06 to reach transition_1
+        await client.put(f"/api/soulmate/sessions/{session_id}/answers/q03", json={"value": "male"})
+        await client.put(f"/api/soulmate/sessions/{session_id}/answers/q04", json={"value": "single"})
+        await client.put(f"/api/soulmate/sessions/{session_id}/answers/q05", json={"value": "age_20_30"})
+        q06 = await client.put(f"/api/soulmate/sessions/{session_id}/answers/q06", json={"value": "caucasian_white"})
+        assert q06.json()["next_step"] == "transition_1"
+
+        # 2. Attempt q07 while at transition_1
+        q07_bypass = await client.put(
+            f"/api/soulmate/sessions/{session_id}/answers/q07",
+            json={"value": "kindness"},
+        )
+        assert q07_bypass.status_code == 409
+        assert q07_bypass.json()["error_code"] == "INVALID_FLOW_STATE"
+        assert "transition_1" in q07_bypass.json()["message"]
+
+        # Advance transition_1
+        await client.post(f"/api/soulmate/sessions/{session_id}/transitions/transition_1/continue")
+
+        # Now q07 succeeds
+        q07_ok = await client.put(
+            f"/api/soulmate/sessions/{session_id}/answers/q07",
+            json={"value": "kindness"},
+        )
+        assert q07_ok.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_interstitial_submission_cannot_bypass_active_transition(db_session):
+    """
+    Acceptance (Audit High - SP-203):
+    - Submitting interstitial when current_step is transition_5 is rejected with 409 INVALID_FLOW_STATE.
+    - Continuing transition_5 allows interstitial submission.
+    """
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        res = await client.post("/api/soulmate/sessions", json={})
+        session_id = res.json()["session_id"]
+
+        # Advance transition_0
+        await client.post(f"/api/soulmate/sessions/{session_id}/transitions/transition_0/continue")
+
+        # Answer all questions q02..q18
+        answers = {
+            "q02": {"value": "female"},
+            "q03": {"value": "male"},
+            "q04": {"value": "single"},
+            "q05": {"value": "age_20_30"},
+            "q06": {"value": "caucasian_white"},
+            "q07": {"value": "kindness"},
+            "q08": {"value": "1994-08-25"},
+            "q09": {"value": "water"},
+            "q10": {"value": "heart"},
+            "q11": {"value": "building_trust"},
+            "q12": {"value": "lack_of_trust"},
+            "q13": {"value": "similar_to_me"},
+            "q14": {"value": "partnership"},
+            "q15": {"value": "words_of_affirmation"},
+            "q16": {"value": "deep_and_intimate"},
+            "q17": {"value": "losing_trust"},
+            "q18": {"values": ["personal_growth"]},
+        }
+
+        # Transition map after certain questions
+        transitions_to_continue = {
+            "q06": "transition_1",
+            "q07": "transition_2",
+            "q10": "transition_3",
+            "q11": "transition_4",
+        }
+
+        for q_code, payload in answers.items():
+            ans_res = await client.put(f"/api/soulmate/sessions/{session_id}/answers/{q_code}", json=payload)
+            assert ans_res.status_code == 200
+            if q_code in transitions_to_continue:
+                trans = transitions_to_continue[q_code]
+                t_res = await client.post(f"/api/soulmate/sessions/{session_id}/transitions/{trans}/continue")
+                assert t_res.status_code == 200
+
+        # After q18, current_step is transition_5
+        flow_res = await client.get(f"/api/soulmate/sessions/{session_id}/flow/state")
+        assert flow_res.json()["current_step"] == "transition_5"
+
+        # Attempt to submit interstitial spiritual_person while at transition_5
+        inter_bypass = await client.put(
+            f"/api/soulmate/sessions/{session_id}/interstitials/spiritual_person",
+            json={"value": "yes"},
+        )
+        assert inter_bypass.status_code == 409
+        assert inter_bypass.json()["error_code"] == "INVALID_FLOW_STATE"
+        assert "transition_5" in inter_bypass.json()["message"]
+
+        # Continue transition_5
+        t5_res = await client.post(f"/api/soulmate/sessions/{session_id}/transitions/transition_5/continue")
+        assert t5_res.status_code == 200
+
+        # Now interstitial submission succeeds
+        inter_ok = await client.put(
+            f"/api/soulmate/sessions/{session_id}/interstitials/spiritual_person",
+            json={"value": "yes"},
+        )
+        assert inter_ok.status_code == 200

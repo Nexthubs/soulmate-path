@@ -9,6 +9,8 @@ import {
   getSession,
   submitAnswer,
   navigateBack,
+  getQuizConfig,
+  QuizConfig,
   SavedAnswerDetail,
   SessionCurrentResponse,
 } from "@/soulmate/api/session";
@@ -57,14 +59,18 @@ function QuizPageContent() {
 
   const questionStartTime = useRef<number>(Date.now());
 
-  // Current active question definition from canonical quiz config
+  // Dynamic quiz configuration matching the session's pinned version (DEV-SPEC §15.2)
+  const [activeQuizConfig, setActiveQuizConfig] = useState<QuizConfig>(quizData as QuizConfig);
+
+  // Current active question definition from active quiz config
   const currentQuestion =
-    quizData.questions.find((q) => q.code === activeStepCode) ||
-    quizData.questions[0];
+    activeQuizConfig.questions.find((q) => q.code === activeStepCode) ||
+    activeQuizConfig.questions[0];
 
   // Helper to pre-populate answers for a question (Acceptance: refresh at any question restores answer/state)
-  const restoreAnswerForQuestion = (qCode: string, savedAnswer?: SavedAnswerDetail) => {
-    const qDef = quizData.questions.find((q) => q.code === qCode);
+  const restoreAnswerForQuestion = (qCode: string, savedAnswer?: SavedAnswerDetail, config?: QuizConfig) => {
+    const qList = config ? config.questions : activeQuizConfig.questions;
+    const qDef = qList.find((q) => q.code === qCode);
     if (!qDef) return;
 
     if (qDef.type === "single") {
@@ -136,10 +142,22 @@ function QuizPageContent() {
           return;
         }
 
+        // Fetch session-pinned immutable quiz configuration (DEV-SPEC §15.2, Finding 4)
+        let loadedConfig = activeQuizConfig;
+        try {
+          const config = await getQuizConfig(currentSess.quiz_version);
+          if (!isCancelled) {
+            setActiveQuizConfig(config);
+            loadedConfig = config;
+          }
+        } catch {
+          // Keep local fallback if offline
+        }
+
         // Authoritative step resolution:
-        // Use codeParam if valid question, else serverStep if question, else "q02"
+        // Use codeParam if valid question in loaded config, else serverStep if question, else "q02"
         const targetStep =
-          codeParam && quizData.questions.some((q) => q.code === codeParam)
+          codeParam && loadedConfig.questions.some((q) => q.code === codeParam)
             ? codeParam
             : serverStep.startsWith("q")
             ? serverStep
@@ -150,7 +168,7 @@ function QuizPageContent() {
 
         // Restore saved answer if present (Acceptance: refresh at any question restores answer/state)
         const savedAnswer = currentSess.answers[targetStep];
-        restoreAnswerForQuestion(targetStep, savedAnswer);
+        restoreAnswerForQuestion(targetStep, savedAnswer, loadedConfig);
       } catch (err: unknown) {
         if (isCancelled) return;
         const msg = err instanceof Error ? err.message : "Failed to load session";

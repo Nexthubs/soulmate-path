@@ -49,6 +49,11 @@ export interface TransitionShellProps {
   loading?: boolean;
 
   /**
+   * Non-blocking error message and optional retry callback.
+   */
+  error?: { message: string; onRetry?: () => void } | string | null;
+
+  /**
    * Optional extra container class name.
    */
   className?: string;
@@ -68,8 +73,11 @@ export function TransitionShell({
   onContinue,
   continueLabel = "Continue",
   loading = false,
+  error = null,
   className = "",
 }: TransitionShellProps) {
+  const errorMessage = typeof error === "string" ? error : error?.message;
+  const onRetry = typeof error === "object" && error !== null ? error.onRetry : undefined;
   return (
     <div
       data-testid={`transition-shell-step-${step}`}
@@ -109,6 +117,41 @@ export function TransitionShell({
 
       {/* Bottom Action Area */}
       <footer className="w-full max-w-[348px] pt-4 pb-2">
+        {/* Error Banner with In-Place Retry (DEV-SPEC §4.2) */}
+        {errorMessage && (
+          <div
+            role="alert"
+            data-testid="transition-error-banner"
+            className="w-full mb-3 p-3.5 rounded-xl bg-red-50/90 border border-red-200/80 text-red-700 text-xs flex items-center justify-between shadow-xs"
+          >
+            <div className="flex items-center gap-2">
+              <svg
+                className="w-4 h-4 text-red-500 shrink-0"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                />
+              </svg>
+              <span>{errorMessage}</span>
+            </div>
+            {onRetry && (
+              <button
+                type="button"
+                onClick={onRetry}
+                className="font-medium underline hover:text-red-900 cursor-pointer ml-2 shrink-0"
+              >
+                Retry
+              </button>
+            )}
+          </div>
+        )}
+
         <button
           type="button"
           onClick={onContinue}

@@ -1,11 +1,15 @@
 from fastapi import APIRouter
 from app.api.soulmate.health import router as health_router
+from app.api.soulmate.quiz import router as quiz_router
 from app.api.soulmate.sessions import router as sessions_router
 
 api_router = APIRouter()
 
 # Mount health check endpoint
 api_router.include_router(health_router, tags=["Health"])
+
+# Mount quiz config endpoint (DEV-SPEC §15.2)
+api_router.include_router(quiz_router, prefix="/quiz", tags=["Quiz"])
 
 # Mount sessions endpoints (DEV-SPEC §15.1, SP-201)
 api_router.include_router(sessions_router, prefix="/sessions", tags=["Sessions"])

@@ -260,6 +260,74 @@ def validate_can_answer_interstitial(
         )
 
 
+def validate_can_submit_question(
+    question_code: str,
+    current_step: str,
+    answered_codes: Set[str],
+) -> None:
+    """
+    Comprehensive Step & Skip Prevention Guard (DEV-SPEC §15.3, SP-203):
+    1. Prerequisite questions must be answered (cannot skip ahead).
+    2. Rejects if current_step is currently parked at an uncompleted transition screen.
+    3. Allows re-answering already answered questions (Back/re-answer path).
+    4. For first-time answers, verifies that current_step matches the attempted question.
+    """
+    # 1. Prerequisite questions check
+    validate_can_answer_question(question_code, answered_codes)
+
+    # 2. Cannot bypass transition screens
+    if current_step.startswith("transition_"):
+        raise InvalidFlowStateError(
+            f"Cannot answer '{question_code}': current active step is transition '{current_step}'. Transition must be continued first.",
+            details={"current_step": current_step, "attempted_question": question_code},
+        )
+
+    # 3. Allow legitimate Back/re-answer edits
+    if question_code in answered_codes:
+        return
+
+    # 4. First-time answer requires current_step == question_code
+    if current_step != question_code:
+        raise InvalidFlowStateError(
+            f"Cannot answer '{question_code}': current active step is '{current_step}'.",
+            details={"current_step": current_step, "attempted_question": question_code},
+        )
+
+
+def validate_can_submit_interstitial(
+    interstitial_code: str,
+    current_step: str,
+    answered_codes: Set[str],
+) -> None:
+    """
+    Comprehensive Step & Skip Prevention Guard for Interstitials (DEV-SPEC §5.7, §15.4, SP-206):
+    1. All prerequisite questions and prior interstitials must be answered.
+    2. Rejects if current_step is currently parked on a transition step (e.g. transition_5).
+    3. Allows re-answering already answered interstitials.
+    4. For first-time answers, verifies current_step matches the interstitial.
+    """
+    # 1. Prerequisite interstitials check
+    validate_can_answer_interstitial(interstitial_code, answered_codes)
+
+    # 2. Cannot bypass transition screens (e.g. transition_5)
+    if current_step.startswith("transition_"):
+        raise InvalidFlowStateError(
+            f"Cannot answer interstitial '{interstitial_code}': current active step is transition '{current_step}'. Transition must be continued first.",
+            details={"current_step": current_step, "attempted_interstitial": interstitial_code},
+        )
+
+    # 3. Allow re-answering
+    if interstitial_code in answered_codes:
+        return
+
+    # 4. First-time answer requires current_step == interstitial_code
+    if current_step != interstitial_code:
+        raise InvalidFlowStateError(
+            f"Cannot answer interstitial '{interstitial_code}': current active step is '{current_step}'.",
+            details={"current_step": current_step, "attempted_interstitial": interstitial_code},
+        )
+
+
 def resolve_transition_metadata(
     transition_code: str,
     answers_map: Dict[str, Any],
@@ -330,7 +398,7 @@ def resolve_transition_metadata(
             "zodiac_label": zodiac_label,
             "decision_style": q10_value,
             "decision_copy": decision_copy,
-            "title": "We're almost there...",
+            "title": "Good to know!",
             "subtitle": subtitle,
         })
     elif transition_code == "transition_4":

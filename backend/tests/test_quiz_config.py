@@ -3,9 +3,13 @@ import json
 from pathlib import Path
 import uuid
 import pytest
+from httpx import ASGITransport, AsyncClient
+from app.core.config import settings
+from app.db.base import utc_now
 from app.db.models.quiz import SoulmateQuizVersion
 from app.db.models.session import SoulmateSession
 from app.db.session import SessionLocal
+from app.main import app
 from app.quiz.constants import CANONICAL_QUIZ_VERSION
 from app.quiz.loader import get_cached_quiz_config, invalidate_quiz_config_cache, load_quiz_config
 from app.quiz.schema import QuestionType, QuizConfig, QuizOption, QuizQuestion
@@ -297,4 +301,110 @@ def test_seed_quiz_version_rejects_content_mutation_on_same_version(db_session, 
     err_text = str(exc_info.value)
     assert "is immutable and already exists with different content" in err_text
     assert "Changing questions requires publishing a new version identifier" in err_text
+
+
+@pytest.mark.asyncio
+async def test_quiz_config_api_endpoint(db_session):
+    """
+    Acceptance (Audit High - SP-201/SP-207, DEV-SPEC §15.2):
+    - GET /api/soulmate/quiz/config returns active version (v1) by default;
+    - Query parameter ?version=v1 returns requested version;
+    - Non-existent version returns 404 VERSION_NOT_FOUND;
+    - Client with session cookie resolves the session's quiz_version.
+    """
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # 1. Default without params
+        res = await client.get("/api/soulmate/quiz/config")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["version"] == CANONICAL_QUIZ_VERSION
+        assert len(data["questions"]) == 17
+
+        # 2. Query param ?version=soulmate-quiz-v1
+        res_v1 = await client.get(f"/api/soulmate/quiz/config?version={CANONICAL_QUIZ_VERSION}")
+        assert res_v1.status_code == 200
+        assert res_v1.json()["version"] == CANONICAL_QUIZ_VERSION
+
+        # 3. Query param non-existent version -> 404
+        res_404 = await client.get("/api/soulmate/quiz/config?version=v999_missing")
+        assert res_404.status_code == 404
+        assert res_404.json()["error_code"] == "NOT_FOUND"
+
+        # 4. With session cookie
+        create_res = await client.post("/api/soulmate/sessions", json={})
+        assert create_res.status_code == 201
+
+        res_sess = await client.get("/api/soulmate/quiz/config")
+        assert res_sess.status_code == 200
+        assert res_sess.json()["version"] == CANONICAL_QUIZ_VERSION
+
+
+@pytest.mark.asyncio
+async def test_quiz_version_isolation_in_answer_submission(db_session):
+    """
+    Acceptance (Audit High - SP-201/SP-202/SP-207):
+    - Session bound to non-canonical quiz version validates answers against its own version schema;
+    - Options valid only in v2 succeed for v2 session, but fail for v1 session.
+    """
+    v_name = f"v2_test_{uuid.uuid4().hex[:8]}"
+    base_config = load_quiz_config()
+    v2_data = base_config.model_dump(mode="json")
+    v2_data["version"] = v_name
+    # Add new option 'non_binary' to q02
+    v2_data["questions"][0]["options"].append({"code": "non_binary", "label": "Non-binary"})
+
+    v2_row = SoulmateQuizVersion(
+        version=v_name,
+        is_active=False,
+        config_json=v2_data,
+        created_at=utc_now(),
+    )
+    db_session.add(v2_row)
+    db_session.commit()
+
+    transport = ASGITransport(app=app)
+    # 1. Create normal v1 session
+    async with AsyncClient(transport=transport, base_url="http://test") as client_v1:
+        s1_res = await client_v1.post("/api/soulmate/sessions", json={})
+        s1_id = s1_res.json()["session_id"]
+        await client_v1.post(f"/api/soulmate/sessions/{s1_id}/transitions/transition_0/continue")
+
+        # In v1, 'non_binary' is invalid option
+        fail_res = await client_v1.put(
+            f"/api/soulmate/sessions/{s1_id}/answers/q02",
+            json={"value": "non_binary"},
+        )
+        assert fail_res.status_code == 400
+        assert fail_res.json()["error_code"] == "VALIDATION_ERROR"
+
+    # 2. Create session with v2_test version
+    async with AsyncClient(transport=transport, base_url="http://test") as client_v2:
+        s2_res = await client_v2.post("/api/soulmate/sessions", json={})
+        s2_id = s2_res.json()["session_id"]
+
+        # Manually bind session to v2_test and set current_step to q02
+        with SessionLocal() as db:
+            from sqlalchemy import select
+            sess = db.execute(select(SoulmateSession).where(SoulmateSession.public_id == s2_id)).scalar_one()
+            sess.quiz_version = v_name
+            sess.current_step = "q02"
+            db.commit()
+
+        # In v2_test, 'non_binary' is valid!
+        ok_res = await client_v2.put(
+            f"/api/soulmate/sessions/{s2_id}/answers/q02",
+            json={"value": "non_binary"},
+        )
+        assert ok_res.status_code == 200
+        assert ok_res.json()["saved"] is True
+        assert ok_res.json()["next_step"] == "q03"
+
+        # Verify GET /api/soulmate/quiz/config with v2 cookie returns v2_test schema
+        cfg_res = await client_v2.get("/api/soulmate/quiz/config")
+        assert cfg_res.status_code == 200
+        assert cfg_res.json()["version"] == v_name
+        q02_opts = [opt["code"] for opt in cfg_res.json()["questions"][0]["options"]]
+        assert "non_binary" in q02_opts
+
 

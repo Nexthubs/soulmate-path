@@ -55,6 +55,16 @@ export interface InterstitialModalProps {
    * Optional dismiss/close handler. If omitted, calls onAnswer(false).
    */
   onDismiss?: () => void;
+
+  /**
+   * Non-blocking error message and optional retry callback.
+   */
+  error?: { message: string; onRetry?: () => void } | string | null;
+
+  /**
+   * Whether modal submit is in flight.
+   */
+  loading?: boolean;
 }
 
 const MODAL_CONTENT = {
@@ -86,9 +96,14 @@ export function InterstitialModal({
   customTitle,
   customDescription,
   onDismiss,
+  error = null,
+  loading = false,
 }: InterstitialModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const initialFocusRef = useRef<HTMLButtonElement>(null);
+
+  const errorMessage = typeof error === "string" ? error : error?.message;
+  const onRetry = typeof error === "object" && error !== null ? error.onRetry : undefined;
 
   const content = MODAL_CONTENT[type];
   const title = customTitle || content.title;
@@ -193,12 +208,47 @@ export function InterstitialModal({
         )}
 
         {/* Action Buttons: No / Yes */}
+        {errorMessage && (
+          <div
+            role="alert"
+            data-testid="interstitial-error-banner"
+            className="w-full p-2.5 rounded-xl bg-red-50/90 border border-red-200/80 text-red-700 text-xs flex items-center justify-between shadow-xs"
+          >
+            <div className="flex items-center gap-1.5 text-left">
+              <svg
+                className="w-3.5 h-3.5 text-red-500 shrink-0"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                />
+              </svg>
+              <span>{errorMessage}</span>
+            </div>
+            {onRetry && (
+              <button
+                type="button"
+                onClick={onRetry}
+                className="font-medium underline hover:text-red-900 cursor-pointer ml-1.5 shrink-0"
+              >
+                Retry
+              </button>
+            )}
+          </div>
+        )}
+
         <div className="w-full flex items-center gap-3 pt-2">
           <button
             ref={initialFocusRef}
             type="button"
             onClick={() => onAnswer(false)}
-            className="flex-1 h-[52px] rounded-xl bg-black hover:bg-neutral-800 active:bg-neutral-900 text-white font-sans font-semibold text-[16px] transition-colors shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-600 focus-visible:ring-offset-2 cursor-pointer"
+            disabled={loading}
+            className="flex-1 h-[52px] rounded-xl bg-black hover:bg-neutral-800 active:bg-neutral-900 text-white font-sans font-semibold text-[16px] transition-colors shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-600 focus-visible:ring-offset-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             aria-label="No"
           >
             No
@@ -206,10 +256,21 @@ export function InterstitialModal({
           <button
             type="button"
             onClick={() => onAnswer(true)}
-            className="flex-1 h-[52px] rounded-xl bg-black hover:bg-neutral-800 active:bg-neutral-900 text-white font-sans font-semibold text-[16px] transition-colors shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-600 focus-visible:ring-offset-2 cursor-pointer"
+            disabled={loading}
+            className="flex-1 h-[52px] rounded-xl bg-black hover:bg-neutral-800 active:bg-neutral-900 text-white font-sans font-semibold text-[16px] transition-colors shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-600 focus-visible:ring-offset-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             aria-label="Yes"
           >
-            Yes
+            {loading ? (
+              <>
+                <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+                <span>Saving...</span>
+              </>
+            ) : (
+              "Yes"
+            )}
           </button>
         </div>
       </div>
