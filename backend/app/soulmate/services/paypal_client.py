@@ -378,3 +378,70 @@ class PayPalClient:
         )
         return False
 
+    # --------------------------------------------------------------------------
+    # Webhooks API (DEV-SPEC §9.5–9.6, SP-405)
+    # --------------------------------------------------------------------------
+
+    async def verify_webhook_signature(
+        self,
+        auth_algo: str,
+        cert_url: str,
+        transmission_id: str,
+        transmission_sig: str,
+        transmission_time: str,
+        webhook_id: str,
+        webhook_event: Dict[str, Any],
+    ) -> bool:
+        """
+        Verify incoming webhook signature using official PayPal API (DEV-SPEC §9.6, SP-405).
+        Endpoint: POST /v1/notifications/verify-webhook-signature
+        Returns True if verification_status == 'SUCCESS', False otherwise.
+        """
+        payload = {
+            "auth_algo": auth_algo,
+            "cert_url": cert_url,
+            "transmission_id": transmission_id,
+            "transmission_sig": transmission_sig,
+            "transmission_time": transmission_time,
+            "webhook_id": webhook_id,
+            "webhook_event": webhook_event,
+        }
+        resp = await self._request("POST", "/v1/notifications/verify-webhook-signature", json_body=payload)
+        if resp.status_code != 200:
+            logger.warning(
+                "PayPal webhook signature verification API returned HTTP %s: %s",
+                resp.status_code,
+                resp.text,
+            )
+            return False
+
+        data = resp.json()
+        status = str(data.get("verification_status", "")).upper()
+        return status == "SUCCESS"
+
+    async def list_webhooks(self) -> List[Dict[str, Any]]:
+        """List registered webhooks on PayPal."""
+        resp = await self._request("GET", "/v1/notifications/webhooks")
+        if resp.status_code != 200:
+            return []
+        data = resp.json()
+        return data.get("webhooks", [])
+
+    async def create_webhook(
+        self,
+        url: str,
+        event_types: Optional[List[str]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Register a webhook endpoint on PayPal."""
+        from app.soulmate.domain.webhook_models import RECOGNIZED_WEBHOOK_EVENTS
+        events = event_types or list(RECOGNIZED_WEBHOOK_EVENTS)
+        payload = {
+            "url": url,
+            "event_types": [{"name": e} for e in events],
+        }
+        resp = await self._request("POST", "/v1/notifications/webhooks", json_body=payload)
+        if resp.status_code not in (200, 201):
+            logger.warning("Failed to create PayPal webhook: %s", resp.text)
+            return None
+        return resp.json()
+

@@ -140,13 +140,34 @@ async def test_parse_rejects_missing_event_id_or_type():
         PayPalWebhookService.parse_raw_request(request=DummyRequest(), raw_body=b'{"id": "WH-1"}')
 
 
+from app.soulmate.services.webhook_verifier import get_webhook_verifier
+
+
+class FailingVerifier:
+    async def verify(self, raw_body: bytes, headers: PayPalWebhookHeaders, webhook_event=None, webhook_id=None, **kwargs) -> bool:
+        return False
+
+
+class SuccessfulVerifier:
+    async def verify(self, raw_body: bytes, headers: PayPalWebhookHeaders, webhook_event=None, webhook_id=None, **kwargs) -> bool:
+        return True
+
+
+@pytest.fixture
+def mock_webhook_verifier():
+    """Bypasses signature verification with SuccessfulVerifier for routing/retry integration tests."""
+    app.dependency_overrides[get_webhook_verifier] = lambda: SuccessfulVerifier()
+    yield
+    app.dependency_overrides.pop(get_webhook_verifier, None)
+
+
 # ==============================================================================
 # 2. Endpoint Auth Exemption (Acceptance #2) & Route Aliases
 # ==============================================================================
 
 
 @pytest.mark.asyncio
-async def test_endpoint_unprotected_by_normal_user_auth():
+async def test_endpoint_unprotected_by_normal_user_auth(mock_webhook_verifier):
     """Webhook endpoint processes incoming requests with NO cookies, tokens, or auth headers."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -164,7 +185,7 @@ async def test_endpoint_unprotected_by_normal_user_auth():
 
 
 @pytest.mark.asyncio
-async def test_endpoint_mounted_at_both_canonical_and_alias_paths():
+async def test_endpoint_mounted_at_both_canonical_and_alias_paths(mock_webhook_verifier):
     """Both /api/webhooks/paypal (DEV-SPEC §9.6) and /api/soulmate/webhooks/paypal are active."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -190,16 +211,6 @@ async def test_endpoint_mounted_at_both_canonical_and_alias_paths():
 # ==============================================================================
 # 3. High-Risk Invariant PAY-AUTH-01: Unverified Events Never Mutate Business State (Acceptance #3)
 # ==============================================================================
-
-
-class FailingVerifier:
-    async def verify(self, raw_body: bytes, headers: PayPalWebhookHeaders, webhook_id=None) -> bool:
-        return False
-
-
-class SuccessfulVerifier:
-    async def verify(self, raw_body: bytes, headers: PayPalWebhookHeaders, webhook_id=None) -> bool:
-        return True
 
 
 @pytest.mark.asyncio
@@ -419,7 +430,7 @@ async def test_http_endpoint_unverified_payment_completed_mutates_no_session(asy
 
 
 @pytest.mark.asyncio
-async def test_http_endpoint_duplicate_event_returns_200_duplicate_true():
+async def test_http_endpoint_duplicate_event_returns_200_duplicate_true(mock_webhook_verifier):
     """HTTP endpoint returns 200 with duplicate=True when identical event ID is received again."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -442,7 +453,7 @@ async def test_http_endpoint_duplicate_event_returns_200_duplicate_true():
 
 
 @pytest.mark.asyncio
-async def test_http_endpoint_server_error_returns_500_for_paypal_retry(monkeypatch):
+async def test_http_endpoint_server_error_returns_500_for_paypal_retry(monkeypatch, mock_webhook_verifier):
     """
     Acceptance #4: If an unexpected internal database error occurs during event processing,
     the endpoint returns HTTP 500, which instructs PayPal to retry delivery according to its schedule.

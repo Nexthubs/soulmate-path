@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db
 from app.soulmate.domain.webhook_models import PayPalWebhookResponse
 from app.soulmate.services.webhook_service import PayPalWebhookService
+from app.soulmate.services.webhook_verifier import PayPalWebhookVerifier, get_webhook_verifier
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ router = APIRouter()
 async def paypal_webhook_endpoint(
     request: Request,
     db: AsyncSession = Depends(get_db),
+    verifier: PayPalWebhookVerifier = Depends(get_webhook_verifier),
 ) -> PayPalWebhookResponse:
     """
     Ingest incoming PayPal webhook event.
@@ -49,6 +51,8 @@ async def paypal_webhook_endpoint(
     response = await PayPalWebhookService.process_webhook(
         raw_request=raw_request,
         db=db,
+        verifier=verifier,
+        require_verification=True,
     )
 
     return response

@@ -27,13 +27,15 @@ logger = logging.getLogger(__name__)
 
 
 class WebhookVerifierProtocol(Protocol):
-    """Protocol for pluggable PayPal signature verification (implemented in SP-405)."""
+    """Protocol for pluggable PayPal signature verification (DEV-SPEC §9.6, SP-405)."""
 
     async def verify(
         self,
         raw_body: bytes,
         headers: PayPalWebhookHeaders,
+        webhook_event: Optional[Dict[str, Any]] = None,
         webhook_id: Optional[str] = None,
+        **kwargs: Any,
     ) -> bool:
         ...
 
@@ -162,11 +164,19 @@ class PayPalWebhookService:
 
             if verifier is not None:
                 webhook_id = settings.paypal_webhook_id
-                is_valid = await verifier.verify(
-                    raw_body=raw_request.raw_body,
-                    headers=raw_request.headers,
-                    webhook_id=webhook_id,
-                )
+                try:
+                    is_valid = await verifier.verify(
+                        raw_body=raw_request.raw_body,
+                        headers=raw_request.headers,
+                        webhook_event=raw_request.parsed_json,
+                        webhook_id=webhook_id,
+                    )
+                except TypeError:
+                    is_valid = await verifier.verify(
+                        raw_body=raw_request.raw_body,
+                        headers=raw_request.headers,
+                        webhook_id=webhook_id,
+                    )
                 if not is_valid:
                     log_event(
                         event_type="paypal_webhook_signature_failed",

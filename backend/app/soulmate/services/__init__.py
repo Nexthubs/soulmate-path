@@ -11,6 +11,7 @@ from app.soulmate.services.session_service import SessionService
 from app.soulmate.services.subscription_service import SubscriptionService
 from app.soulmate.services.summary_service import SummaryService
 from app.soulmate.services.webhook_service import PayPalWebhookService
+from app.soulmate.services.webhook_verifier import PayPalWebhookVerifier, get_webhook_verifier
 
 __all__ = [
     "SessionService",
@@ -28,6 +29,8 @@ __all__ = [
     "PayPalProvisioningService",
     "SubscriptionService",
     "PayPalWebhookService",
+    "PayPalWebhookVerifier",
+    "get_webhook_verifier",
 ]
 
 
