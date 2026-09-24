@@ -303,6 +303,54 @@ async def test_re_capturing_email_in_same_session_is_idempotent(db_session):
     ).scalar_one()
     assert rec.email == "second@example.com"
     assert rec.email_normalized == "second@example.com"
+    # M-1 & H-2: Anonymous session identity remains user_id=None across email updates
+    assert rec.user_id is None
+
+
+@pytest.mark.asyncio
+async def test_re_capturing_email_on_authenticated_session_preserves_user_id_m1(db_session):
+    """
+    DEV-SPEC §8.3 & M-1: On an authenticated session with user_id, updating email updates
+    session contact/delivery email while preserving the authenticated user_id consistently.
+    """
+    transport = ASGITransport(app=app)
+    auth_user_id = uuid.uuid4()
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        create_res = await client.post("/api/soulmate/sessions", json={})
+        session_id = create_res.json()["session_id"]
+        _mark_session_quiz_completed(db_session, session_id)
+
+        # Bind authenticated user_id to session
+        rec = db_session.execute(
+            select(SoulmateSession).where(SoulmateSession.public_id == session_id)
+        ).scalar_one()
+        rec.user_id = auth_user_id
+        db_session.commit()
+
+        # Capture first email
+        res1 = await client.post(
+            f"/api/soulmate/sessions/{session_id}/email",
+            json={"email": "first_auth@example.com"},
+        )
+        assert res1.status_code == 200
+
+        # Update to second email
+        res2 = await client.post(
+            f"/api/soulmate/sessions/{session_id}/email",
+            json={"email": "second_auth@example.com"},
+        )
+        assert res2.status_code == 200
+
+    db_session.expire_all()
+    updated_rec = db_session.execute(
+        select(SoulmateSession).where(SoulmateSession.public_id == session_id)
+    ).scalar_one()
+    # Contact email updated to new email
+    assert updated_rec.email == "second_auth@example.com"
+    assert updated_rec.email_normalized == "second_auth@example.com"
+    # Authenticated user_id strictly preserved
+    assert updated_rec.user_id == auth_user_id
 
 
 # ============================================================================

@@ -16,11 +16,15 @@ function EmailPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // DEV-SPEC §3: Route Guard for /soulmate/email (Quiz must be completed)
-  const isFixture = searchParams.get("fixture") === "true";
-  useRouteGuard({
+  // DEV-SPEC §3, M-3 Audit Remediation: Route Guard for /soulmate/email (Quiz must be completed)
+  // In production, Route Guard is strictly enforced; fixture bypass is only allowed in non-production.
+  const isProduction = process.env.NODE_ENV === "production";
+  const isFixture = !isProduction && searchParams.get("fixture") === "true";
+  const guardEnabled = isProduction || !isFixture;
+
+  const guard = useRouteGuard({
     targetRoute: "/soulmate/email",
-    enabled: !isFixture,
+    enabled: guardEnabled,
   });
 
   // Read quiz summary parameters from URL or state (DEV-SPEC §8.1; M-1)
@@ -101,6 +105,11 @@ function EmailPageContent() {
     summaryData?.user_gender || userGender;
 
   const handleSubmit = async (email: string) => {
+    // If route guard explicitly denied access, block submission
+    if (guardEnabled && guard.allowed === false) {
+      return;
+    }
+
     // DEV-SPEC §20 PII Boundary: Email is PII and must never be exposed in URL query parameters.
     if (typeof window !== "undefined") {
       try {
@@ -128,6 +137,27 @@ function EmailPageContent() {
     const query = params.toString();
     router.push(query ? `${nextRoute}?${query}` : nextRoute);
   };
+
+  // Block interaction when route guard check explicitly evaluated to false (M-3 remediation)
+  if (guardEnabled && guard.allowed === false) {
+    return (
+      <main className="min-h-screen max-w-[390px] mx-auto flex flex-col items-center justify-center p-6 text-center space-y-4">
+        <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center mx-auto text-xl">
+          ⚠️
+        </div>
+        <h2 className="text-xl font-bold text-neutral-900">Quiz Completion Required</h2>
+        <p className="text-sm text-neutral-600">
+          {guard.verdict?.reason || "Please complete all quiz questions before submitting your email."}
+        </p>
+        <button
+          onClick={() => router.push(guard.verdict?.redirect_to || "/soulmate/quiz")}
+          className="w-full py-3 px-4 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-semibold text-sm transition-colors"
+        >
+          Continue Quiz
+        </button>
+      </main>
+    );
+  }
 
   return (
     <EmailCaptureView

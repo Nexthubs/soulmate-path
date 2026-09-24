@@ -276,6 +276,50 @@ async def test_get_email_summary_unanswered_session_returns_sample_data():
         assert data["ethnicity_display"] == "Latino"
 
 
+@pytest.mark.asyncio
+async def test_partial_answers_marks_sample_fallbacks_m2(db_session):
+    """
+    DEV-SPEC §8.1 & M-2: When only partial answers exist (e.g. only Q5 answered),
+    missing fields are explicitly flagged with is_sample=True, and is_sample_data is True.
+    """
+    transport = ASGITransport(app=app)
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        create_res = await client.post("/api/soulmate/sessions", json={})
+        session_id = create_res.json()["session_id"]
+
+        rec = db_session.execute(
+            select(SoulmateSession).where(SoulmateSession.public_id == session_id)
+        ).scalar_one()
+
+        # Only submit Q5 (age range)
+        ans_q05 = SoulmateAnswer(
+            session_id=rec.id,
+            question_code="q05",
+            answer_json={"value": "age_20_30"},
+        )
+        db_session.add(ans_q05)
+        db_session.commit()
+
+        res = await client.get(f"/api/soulmate/sessions/{session_id}/email-summary")
+        assert res.status_code == 200
+        data = res.json()
+
+        # Composite flag is True because missing answers relied on sample defaults
+        assert data["is_sample_data"] is True
+        # Real user answer for Q5
+        assert data["partner_age_range"]["code"] == "age_20_30"
+        assert data["partner_age_range"]["label"] == "20-30"
+        assert data["partner_age_range"]["is_sample"] is False
+        # Sample fallbacks for missing Q3 and Q6
+        assert data["partner_gender"]["code"] == "female"
+        assert data["partner_gender"]["label"] == "Female"
+        assert data["partner_gender"]["is_sample"] is True
+        assert data["partner_ethnicity"]["code"] == "hispanic_latino"
+        assert data["partner_ethnicity"]["label"] == "Latino"
+        assert data["partner_ethnicity"]["is_sample"] is True
+
+
 # ============================================================================
 # 3. Security, IDOR, and Failure Path Tests (DEV-SPEC §20)
 # ============================================================================

@@ -2,23 +2,28 @@
 
 import React, { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { getSubscriptionOffer, SubscriptionOfferResponse } from "@/soulmate/api";
 import { useRouteGuard } from "@/soulmate/hooks/useRouteGuard";
 import { SOULMATE_ROUTES } from "@/soulmate/domain";
 
 function SubscribeContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const query = searchParams.toString();
   const resultUrl = `${SOULMATE_ROUTES.RESULT}${query ? `?${query}` : ""}`;
   const sessionId = searchParams.get("session_id") || undefined;
 
-  // DEV-SPEC §3: Route Guard for /soulmate/subscribe (Email must be captured)
-  const isFixture = searchParams.get("fixture") === "true";
+  // DEV-SPEC §3, M-3 Audit Remediation: Route Guard for /soulmate/subscribe (Email must be captured)
+  // In production, Route Guard is strictly enforced; fixture bypass is only allowed in non-production.
+  const isProduction = process.env.NODE_ENV === "production";
+  const isFixture = !isProduction && searchParams.get("fixture") === "true";
+  const guardEnabled = isProduction || !isFixture;
+
   const guard = useRouteGuard({
     targetRoute: "/soulmate/subscribe",
     sessionId,
-    enabled: !isFixture,
+    enabled: guardEnabled,
   });
 
   const [offer, setOffer] = useState<SubscriptionOfferResponse | null>(null);
@@ -54,6 +59,27 @@ function SubscribeContent() {
       isMounted = false;
     };
   }, [sessionId]);
+
+  // Block interaction when route guard check explicitly evaluated to false (M-3 remediation)
+  if (guardEnabled && guard.allowed === false) {
+    return (
+      <main className="min-h-screen max-w-[390px] mx-auto flex flex-col items-center justify-center p-6 text-center space-y-4">
+        <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center mx-auto text-xl">
+          ⚠️
+        </div>
+        <h2 className="text-xl font-bold text-neutral-900">Email Submission Required</h2>
+        <p className="text-sm text-neutral-600">
+          {guard.verdict?.reason || "Please submit your email before proceeding to subscription checkout."}
+        </p>
+        <button
+          onClick={() => router.push(guard.verdict?.redirect_to || "/soulmate/email")}
+          className="w-full py-3 px-4 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-semibold text-sm transition-colors"
+        >
+          Go to Email Step
+        </button>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen max-w-[390px] mx-auto flex flex-col items-center justify-between p-6 bg-gradient-to-b from-[#fff0f3] via-[#fef4e9] to-[#fef3de] text-neutral-900">

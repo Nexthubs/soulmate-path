@@ -159,6 +159,7 @@ class SummaryBadgeItem(BaseModel):
     """Display-ready summary badge item with raw code and formatted human label."""
     code: str = Field(..., description="Raw option code, e.g. age_30_40")
     label: str = Field(..., description="Display-ready formatted label, e.g. 30-40")
+    is_sample: bool = Field(default=False, description="True if value is a fallback default rather than user answer")
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -369,6 +369,7 @@ export async function saveSessionEmail(
 export interface SummaryBadgeItem {
   code: string;
   label: string;
+  is_sample?: boolean;
 }
 
 export interface EmailSummaryResponse {

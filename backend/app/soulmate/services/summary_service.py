@@ -44,12 +44,17 @@ class SummaryService:
         profile_rec = res.scalar_one_or_none()
 
         if profile_rec is not None:
+            has_all_profile_fields = bool(
+                profile_rec.preferred_partner_gender
+                and profile_rec.preferred_partner_age_range
+                and profile_rec.preferred_partner_ethnicity
+            )
             return build_email_summary(
                 preferred_partner_gender=profile_rec.preferred_partner_gender,
                 preferred_partner_age_range=profile_rec.preferred_partner_age_range,
                 preferred_partner_ethnicity=profile_rec.preferred_partner_ethnicity,
                 user_gender=profile_rec.user_gender,
-                is_sample_data=False,
+                is_sample_data=not has_all_profile_fields,
             )
 
         # 2. Check for answers in session
@@ -73,12 +78,13 @@ class SummaryService:
         q02 = answers_map.get("q02")
 
         if q03 or q05 or q06:
+            has_all_answers = bool(q03 and q05 and q06)
             return build_email_summary(
                 preferred_partner_gender=q03,
                 preferred_partner_age_range=q05,
                 preferred_partner_ethnicity=q06,
                 user_gender=q02,
-                is_sample_data=False,
+                is_sample_data=not has_all_answers,
             )
 
         # 3. Fallback sample demo summary

@@ -143,6 +143,20 @@ describe("App Router Page-Level Behavioral Integration (M-3 Audit Remediation)",
       expect(html).toContain("data-testid=\"subscribe-payment-pending\"");
       expect(html).not.toContain('href="/soulmate/result');
     });
+
+    it("M-3: strictly enforces Route Guard and denies fixture bypass in production mode", () => {
+      const originalEnv = process.env.NODE_ENV;
+      try {
+        (process.env as Record<string, string | undefined>).NODE_ENV = "production";
+        mockSearchParams = new URLSearchParams({ fixture: "true" });
+
+        const html = renderToStaticMarkup(<SoulmateSubscribePage />);
+        // In production, ?fixture=true does not bypass payment or enable result link
+        expect(html).not.toContain('href="/soulmate/result?fixture=true');
+      } finally {
+        (process.env as Record<string, string | undefined>).NODE_ENV = originalEnv;
+      }
+    });
   });
 
   describe("6. /soulmate/result (Result Dashboard Page & H-4 Guard)", () => {
