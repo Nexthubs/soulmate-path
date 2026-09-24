@@ -59,6 +59,17 @@ from app.soulmate.domain.guard import (
     evaluate_route_guard,
     normalize_route_path,
 )
+from app.soulmate.domain.paypal_models import (
+    PayPalBillingCycle,
+    PayPalFixedPrice,
+    PayPalFrequency,
+    PayPalPaymentPreferences,
+    PayPalPlanPayload,
+    PayPalPlanVerificationResult,
+    PayPalPricingScheme,
+    PayPalProductPayload,
+    ProvisioningSummary,
+)
 
 
 # Canonical immutable quiz version
@@ -133,5 +144,14 @@ __all__ = [
     "normalize_route_path",
     "calculate_unlock_times",
     "evaluate_route_guard",
+    "PayPalFrequency",
+    "PayPalFixedPrice",
+    "PayPalPricingScheme",
+    "PayPalBillingCycle",
+    "PayPalPaymentPreferences",
+    "PayPalPlanPayload",
+    "PayPalProductPayload",
+    "PayPalPlanVerificationResult",
+    "ProvisioningSummary",
 ]
 

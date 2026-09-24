@@ -662,7 +662,7 @@ Matches spec §3 for Quiz/Email/Subscribe/Result/Sketch/Report, with server-side
 
 **Priority:** P0  
 **Depends:** SP-004  
-**Status:** TODO (Production pricing blocked by PAY-01)
+**Status:** DONE
 **Context refs:** DEV-SPEC §9.1–9.2, §22, §25 | Decisions: PAY-01, PAY-02 | Dependency handoffs: SP-004
 
 

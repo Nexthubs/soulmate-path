@@ -36,13 +36,14 @@ Email summary API/view model (`SP-302`) completed and evidenced in `docs/handoff
 Subscribe offer/config API (`SP-303`) completed and evidenced in `docs/handoffs/SP-303.md`.
 Route guards (`SP-304`) completed and evidenced in `docs/handoffs/SP-304.md`.
 *(Note: WAVE 3 is now 100% complete)*
+PayPal Product/Plan provisioning (`SP-401`) completed and evidenced in `docs/handoffs/SP-401.md`.
 
 ## 2. Milestone status
 
 | Milestone | Status | Review artifact |
 |---|---|---|
 | M1 Quiz Funnel Ready | PASS | `docs/reviews/M1-QUIZ-FUNNEL-REVIEW.md` |
-| M2 Sandbox Revenue Ready | NOT_STARTED | `docs/reviews/M2-PAYPAL-SANDBOX-REVIEW.md` |
+| M2 Sandbox Revenue Ready | IN_PROGRESS | `docs/reviews/M2-PAYPAL-SANDBOX-REVIEW.md` |
 | M3 Entitlement / Result Ready | NOT_STARTED | `docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md` |
 | M4 Sketch Ready | NOT_STARTED | `docs/reviews/M4-SKETCH-REVIEW.md` |
 | M5 Report Scaffold Ready | NOT_STARTED | `docs/reviews/M5-REPORT-SCAFFOLD-REVIEW.md` |
@@ -50,7 +51,7 @@ Route guards (`SP-304`) completed and evidenced in `docs/handoffs/SP-304.md`.
 
 ## 3. Active / blocked work
 
-Active tasks: None (M1 findings M1-F1, M1-F2, M1-F3, and submit race risk remediated and verified). Next: Begin Milestone M2 (SP-401–SP-408: PayPal Sandbox Checkout & Webhooks).
+Active tasks: SP-402 (PayPal JS subscription checkout). SP-401 completed.
 
 
 Blocking decision IDs:
@@ -90,8 +91,9 @@ Report production provider: disabled / decision pending
 ## 6. Next safe tasks
 
 ```text
-1. Begin Milestone M2 — Sandbox Revenue Ready (SP-401: PayPal SDK client & configuration baseline).
-2. Continue with SP-402 (Order creation API & intent verification) through SP-408.
+1. SP-402 (PayPal JS subscription checkout).
+2. SP-403 (Confirm subscription API & backend status check).
+3. SP-404..408 (PayPal webhook endpoint, signature verification, payment ledger).
 ```
 
 ## 7. Update rule
