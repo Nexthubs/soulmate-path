@@ -786,7 +786,7 @@ Associate approved provider subscription with the authorized user/session and ex
 
 **Priority:** P0  
 **Depends:** SP-406  
-**Status:** TODO
+**Status:** DONE
 **Context refs:** DEV-SPEC §9.4–9.7, §14 | Decisions: PAY-AUTH-01 | Dependency handoffs: SP-406
 
 

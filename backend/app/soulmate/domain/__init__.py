@@ -70,6 +70,13 @@ from app.soulmate.domain.paypal_models import (
     PayPalProductPayload,
     ProvisioningSummary,
 )
+from app.soulmate.domain.ledger_models import (
+    LedgerSearchQuery,
+    LedgerSearchResult,
+    PaymentLedgerRecord,
+    PaymentLedgerSummary,
+    PaymentRecordCreate,
+)
 
 
 # Canonical immutable quiz version
@@ -153,5 +160,10 @@ __all__ = [
     "PayPalProductPayload",
     "PayPalPlanVerificationResult",
     "ProvisioningSummary",
+    "PaymentRecordCreate",
+    "PaymentLedgerRecord",
+    "PaymentLedgerSummary",
+    "LedgerSearchQuery",
+    "LedgerSearchResult",
 ]
 

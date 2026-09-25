@@ -22,6 +22,8 @@ from app.soulmate.security import (
     verify_session_ownership,
     verify_session_token,
 )
+from app.soulmate.domain.ledger_models import PaymentLedgerRecord
+from app.soulmate.services.ledger_service import PaymentLedgerService
 from app.soulmate.services.offer_service import OfferService
 from app.soulmate.services.session_service import SessionService
 from app.soulmate.services.subscription_service import SubscriptionService
@@ -128,3 +130,42 @@ async def get_subscription_status_endpoint(
             return SubscriptionStatusResponse(status="NONE", is_paid=False)
 
     return await SubscriptionService.get_subscription_status(db=db, session=session)
+
+
+@router.get(
+    "/payments",
+    response_model=list[PaymentLedgerRecord],
+    summary="Get payment history for authenticated session (SP-407)",
+)
+async def get_session_payments_endpoint(
+    request: Request,
+    session_id: Optional[str] = Query(default=None, description="Optional public session ID"),
+    db: AsyncSession = Depends(get_db),
+) -> list[PaymentLedgerRecord]:
+    """
+    Get payment history for the current authenticated session.
+    Protected against IDOR: session ID must match signed session token.
+    """
+    session: Optional[SoulmateSession] = None
+    if session_id:
+        authenticated_id = get_authenticated_session_public_id(request)
+        verify_session_ownership(requested_public_id=session_id, authenticated_public_id=authenticated_id)
+        session = await SessionService.get_session_by_public_id(db, session_id)
+        if not session:
+            raise NotFoundError(f"Session with ID '{session_id}' not found.")
+    else:
+        token = extract_session_token(request)
+        if not token:
+            return []
+        try:
+            authenticated_id = verify_session_token(token)
+            session = await SessionService.get_session_by_public_id(db, authenticated_id)
+            if not session:
+                return []
+        except Exception:
+            return []
+
+    return await PaymentLedgerService.get_payments_by_session_public_id(
+        db=db,
+        public_id=session.public_id,
+    )

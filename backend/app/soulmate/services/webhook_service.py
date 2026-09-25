@@ -21,11 +21,13 @@ from app.db.base import utc_now
 from app.db.models.artifact import SoulmateArtifact
 from app.db.models.billing import PayPalWebhookEvent, Subscription, SubscriptionPayment
 from app.db.models.session import SoulmateSession
+from app.soulmate.domain.ledger_models import PaymentRecordCreate
 from app.soulmate.domain.webhook_models import (
     PayPalWebhookHeaders,
     PayPalWebhookRawRequest,
     PayPalWebhookResponse,
 )
+from app.soulmate.services.ledger_service import PaymentLedgerService
 from app.soulmate.services.paypal_client import PayPalClient
 
 logger = logging.getLogger(__name__)
@@ -357,18 +359,8 @@ class PayPalWebhookService:
 
         paid_at = parse_iso_datetime(resource.get("create_time")) or parse_iso_datetime(raw_request.create_time) or utc_now()
 
-        # Idempotency check: prevent duplicate SubscriptionPayment row
+        # Idempotently record payment in durable ledger via PaymentLedgerService (SP-407)
         if pay_id:
-            pay_stmt = select(SubscriptionPayment).where(SubscriptionPayment.provider_payment_id == pay_id)
-            existing_payment = (await db.execute(pay_stmt)).scalars().first()
-        else:
-            existing_payment = None
-
-        if existing_payment is None and pay_id:
-            count_stmt = select(func.count(SubscriptionPayment.id)).where(SubscriptionPayment.subscription_id == sub.id)
-            cycle_no = (await db.execute(count_stmt)).scalar() or 0
-            cycle_no += 1
-
             amount_str = resource.get("amount", {}).get("total", "0.00")
             try:
                 amount = Decimal(str(amount_str))
@@ -377,21 +369,23 @@ class PayPalWebhookService:
 
             currency = resource.get("amount", {}).get("currency", sub.currency or "USD")
 
-            payment = SubscriptionPayment(
-                subscription_id=sub.id,
-                provider_payment_id=pay_id,
-                provider_event_id=raw_request.event_id,
-                cycle_no=cycle_no,
-                amount=amount,
-                currency=currency,
-                status="COMPLETED",
-                paid_at=paid_at,
-                raw_json=resource,
+            payment, created = await PaymentLedgerService.record_payment(
+                db=db,
+                create_data=PaymentRecordCreate(
+                    subscription_id=sub.id,
+                    provider_payment_id=pay_id,
+                    provider_event_id=raw_request.event_id,
+                    amount=amount,
+                    currency=currency,
+                    status="COMPLETED",
+                    paid_at=paid_at,
+                    raw_json=resource,
+                ),
             )
-            db.add(payment)
-            logger.info("Recorded payment ledger %s (cycle %d) for subscription %s", pay_id, cycle_no, provider_sub_id)
-        else:
-            logger.info("Payment %s already recorded for subscription %s (idempotent)", pay_id, provider_sub_id)
+            if created:
+                logger.info("Recorded payment ledger %s (cycle %d) for subscription %s", pay_id, payment.cycle_no or 1, provider_sub_id)
+            else:
+                logger.info("Payment %s already recorded for subscription %s (idempotent)", pay_id, provider_sub_id)
 
         # Update first_payment_at if initial payment
         if sub.first_payment_at is None:
@@ -604,31 +598,26 @@ class PayPalWebhookService:
 
         payment_id = resource.get("id") or f"FAILED-{raw_request.event_id}"
 
-        pay_stmt = select(SubscriptionPayment).where(SubscriptionPayment.provider_payment_id == payment_id)
-        existing = (await db.execute(pay_stmt)).scalars().first()
-        if not existing:
-            amount_str = resource.get("amount", {}).get("total", "0.00")
-            try:
-                amount = Decimal(str(amount_str))
-            except Exception:
-                amount = Decimal("0.00")
-            currency = resource.get("amount", {}).get("currency", sub.currency or "USD")
+        amount_str = resource.get("amount", {}).get("total", "0.00")
+        try:
+            amount = Decimal(str(amount_str))
+        except Exception:
+            amount = Decimal("0.00")
+        currency = resource.get("amount", {}).get("currency", sub.currency or "USD")
 
-            count_stmt = select(func.count(SubscriptionPayment.id)).where(SubscriptionPayment.subscription_id == sub.id)
-            cycle_no = (await db.execute(count_stmt)).scalar() or 0
-            cycle_no += 1
-
-            failed_pay = SubscriptionPayment(
+        await PaymentLedgerService.record_payment(
+            db=db,
+            create_data=PaymentRecordCreate(
                 subscription_id=sub.id,
                 provider_payment_id=payment_id,
                 provider_event_id=raw_request.event_id,
-                cycle_no=cycle_no,
                 amount=amount,
                 currency=currency,
                 status="FAILED",
+                paid_at=None,
                 raw_json=resource,
-            )
-            db.add(failed_pay)
+            ),
+        )
 
         # Invariant checks:
         # If first payment never succeeded, ensure subscription_success_at remains None
@@ -650,12 +639,15 @@ class PayPalWebhookService:
         if not parent_id:
             return
 
-        pay_stmt = select(SubscriptionPayment).where(SubscriptionPayment.provider_payment_id == parent_id)
-        payment = (await db.execute(pay_stmt)).scalars().first()
-        if payment:
-            payment.status = "REFUNDED" if "REFUNDED" in raw_request.event_type else "REVERSED"
-            payment.refunded_at = parse_iso_datetime(resource.get("create_time")) or utc_now()
-            logger.info("Payment %s marked as %s", parent_id, payment.status)
+        status = "REFUNDED" if "REFUNDED" in raw_request.event_type else "REVERSED"
+        refunded_at = parse_iso_datetime(resource.get("create_time")) or utc_now()
+        await PaymentLedgerService.record_refund(
+            db=db,
+            provider_payment_id=parent_id,
+            refunded_at=refunded_at,
+            status=status,
+            raw_json=resource,
+        )
 
     @classmethod
     async def _ensure_artifacts_initialized(

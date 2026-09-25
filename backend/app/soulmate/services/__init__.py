@@ -3,6 +3,7 @@ from app.soulmate.services.flow_service import FlowService
 from app.soulmate.services.guard_service import GuardService
 from app.soulmate.services.identity_service import IdentityService
 from app.soulmate.services.interstitial_service import InterstitialService
+from app.soulmate.services.ledger_service import PaymentLedgerService
 from app.soulmate.services.offer_service import OfferService
 from app.soulmate.services.paypal_client import PayPalAPIError, PayPalAuthError, PayPalClient
 from app.soulmate.services.paypal_provisioning import PayPalProvisioningService
@@ -30,6 +31,7 @@ __all__ = [
     "SubscriptionService",
     "PayPalWebhookService",
     "PayPalWebhookVerifier",
+    "PaymentLedgerService",
     "get_webhook_verifier",
 ]
 
