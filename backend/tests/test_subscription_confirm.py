@@ -83,6 +83,7 @@ async def test_confirm_subscription_success_and_pay_auth_01(test_session: Soulma
         "id": sub_id,
         "status": "APPROVAL_PENDING",
         "plan_id": plan_id,
+        "custom_id": test_session.public_id,
         "shipping_amount": {"currency_code": "USD", "value": "0.00"},
         "billing_info": {
             "next_billing_time": "2026-10-24T12:00:00Z",
@@ -132,6 +133,7 @@ async def test_confirm_subscription_idempotency_duplicate(test_session: Soulmate
         "id": sub_id,
         "status": "APPROVED",
         "plan_id": plan_id,
+        "custom_id": test_session.public_id,
     }
     mock_client = MockPayPalClient({sub_id: mock_payload})
 
@@ -195,6 +197,7 @@ async def test_confirm_subscription_cross_session_hijack_prevention(db_session: 
         "id": sub_id,
         "status": "APPROVED",
         "plan_id": plan_id,
+        "custom_id": sess_a.public_id,
     }
     mock_client = MockPayPalClient({sub_id: mock_payload})
 
@@ -247,6 +250,7 @@ async def test_confirm_subscription_unapproved_plan_rejected(test_session: Soulm
         "id": sub_id,
         "status": "APPROVED",
         "plan_id": "P-UNAPPROVED-ROGUE-PLAN",
+        "custom_id": test_session.public_id,
     }
     mock_client = MockPayPalClient({sub_id: mock_payload})
 
@@ -273,6 +277,7 @@ async def test_confirm_subscription_fails_closed_when_no_plans_configured(test_s
         "id": sub_id,
         "status": "APPROVED",
         "plan_id": "P-ANY-PLAN",
+        "custom_id": test_session.public_id,
     }
     mock_client = MockPayPalClient({sub_id: mock_payload})
 
@@ -298,6 +303,7 @@ async def test_confirm_subscription_fails_closed_when_provider_plan_id_missing(t
         "id": sub_id,
         "status": "APPROVED",
         "plan_id": None,
+        "custom_id": test_session.public_id,
     }
     mock_client = MockPayPalClient({sub_id: mock_payload})
 
@@ -324,6 +330,7 @@ async def test_confirm_subscription_invalid_status_rejected(test_session: Soulma
         "id": sub_id,
         "status": "CANCELLED",
         "plan_id": plan_id,
+        "custom_id": test_session.public_id,
     }
     mock_client = MockPayPalClient({sub_id: mock_payload})
 
@@ -355,6 +362,7 @@ async def test_api_confirm_subscription_endpoint(test_session: SoulmateSession, 
         "id": sub_id,
         "status": "APPROVED",
         "plan_id": plan_id,
+        "custom_id": test_session.public_id,
     }
 
     # Monkeypatch PayPalClient.get_subscription
@@ -482,6 +490,7 @@ async def test_router_aliases_matching_dev_spec(test_session: SoulmateSession, m
         "id": sub_id,
         "status": "APPROVED",
         "plan_id": plan_id,
+        "custom_id": test_session.public_id,
     }
 
     async def mock_get_sub(self, s_id: str):
@@ -553,29 +562,34 @@ async def test_confirm_subscription_rejects_unattached_subscription_with_mismatc
 
 
 @pytest.mark.asyncio
-async def test_confirm_subscription_rejects_unattached_subscription_with_mismatched_subscriber_email(
+async def test_confirm_subscription_rejects_missing_custom_id_even_if_subscriber_email_matches(
     test_session: SoulmateSession, monkeypatch
 ):
     """
-    C-1 Verification:
-    When custom_id is absent, reject claiming subscription if subscriber email differs from session email.
+    Critical Finding Remediation (DEV-SPEC §15.7, §20):
+    Even if subscriber email matches the session's captured email,
+    confirmation MUST be rejected if custom_id is absent because quiz funnel emails are unverified.
     """
     plan_id = "P-SOULMATE-C1-TEST"
     monkeypatch.setattr(settings, "paypal_soulmate_intro_plan_id", plan_id)
 
-    sub_id = f"I-UNATTACHED-MISMATCH-EMAIL-{uuid.uuid4().hex[:8].upper()}"
+    # Use test_session's email
+    matching_email = test_session.email_normalized or "user@example.com"
+    test_session.email_normalized = matching_email
+
+    sub_id = f"I-MISSING-CUSTOM-ID-{uuid.uuid4().hex[:8].upper()}"
     mock_payload = {
         "id": sub_id,
         "status": "APPROVED",
         "plan_id": plan_id,
         # No custom_id
-        "subscriber": {"email_address": "victim_buyer@example.com"},
+        "subscriber": {"email_address": matching_email},
         "billing_info": {"next_billing_time": "2026-10-25T12:00:00Z"},
     }
     mock_client = MockPayPalClient({sub_id: mock_payload})
 
     async with AsyncSessionLocal() as async_db:
-        with pytest.raises(ForbiddenOwnershipError, match="subscriber does not match this session"):
+        with pytest.raises(ForbiddenOwnershipError, match="lacks valid session binding"):
             await SubscriptionService.confirm_paypal_subscription(
                 db=async_db,
                 session=test_session,
@@ -585,45 +599,32 @@ async def test_confirm_subscription_rejects_unattached_subscription_with_mismatc
 
 
 @pytest.mark.asyncio
-async def test_confirm_subscription_rejects_subscriber_email_when_session_has_no_email(
-    db_session: Session, monkeypatch
+async def test_confirm_subscription_rejects_when_both_custom_id_and_email_are_missing(
+    test_session: SoulmateSession, monkeypatch
 ):
     """
-    C-1 Verification:
-    If a session has no captured email and PayPal returns subscriber email without custom_id,
-    reject claiming with ForbiddenOwnershipError.
+    Critical Finding Remediation (DEV-SPEC §15.7, §20):
+    When both custom_id and subscriber email are missing from PayPal response,
+    confirmation must reject fail-closed with ForbiddenOwnershipError.
     """
     plan_id = "P-SOULMATE-C1-TEST"
     monkeypatch.setattr(settings, "paypal_soulmate_intro_plan_id", plan_id)
 
-    # Create session with no email
-    no_email_sess = SoulmateSession(
-        public_id=f"test_no_email_{uuid.uuid4().hex[:8]}",
-        quiz_version="soulmate-quiz-v1",
-        status=SessionStatus.QUIZ_IN_PROGRESS.value,
-        current_step="quiz_q5",
-        email=None,
-        email_normalized=None,
-    )
-    db_session.add(no_email_sess)
-    db_session.commit()
-    db_session.refresh(no_email_sess)
-
-    sub_id = f"I-UNATTACHED-NO-EMAIL-{uuid.uuid4().hex[:8].upper()}"
+    sub_id = f"I-NO-BINDING-{uuid.uuid4().hex[:8].upper()}"
     mock_payload = {
         "id": sub_id,
         "status": "APPROVED",
         "plan_id": plan_id,
-        "subscriber": {"email_address": "someone@example.com"},
+        # No custom_id and no subscriber
         "billing_info": {"next_billing_time": "2026-10-25T12:00:00Z"},
     }
     mock_client = MockPayPalClient({sub_id: mock_payload})
 
     async with AsyncSessionLocal() as async_db:
-        with pytest.raises(ForbiddenOwnershipError, match="subscriber does not match this session"):
+        with pytest.raises(ForbiddenOwnershipError, match="lacks valid session binding"):
             await SubscriptionService.confirm_paypal_subscription(
                 db=async_db,
-                session=no_email_sess,
+                session=test_session,
                 paypal_subscription_id=sub_id,
                 paypal_client=mock_client,
             )

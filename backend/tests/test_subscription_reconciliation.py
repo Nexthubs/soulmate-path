@@ -911,3 +911,57 @@ async def test_reconciliation_skips_ledger_write_without_fictitious_id_when_no_t
     payments = (await async_db.execute(pay_stmt)).scalars().all()
     assert len(payments) == 0
 
+
+@pytest.mark.asyncio
+async def test_reconciliation_rejects_foreign_custom_id_without_falling_back_to_email(
+    async_db: AsyncSession, monkeypatch
+):
+    """
+    Critical Finding Remediation:
+    When custom_id is specified on a PayPal subscription but unknown in local sessions,
+    reconciliation MUST reject binding and return None, refusing to fall back to subscriber email.
+    """
+    plan_id = "P-SOULMATE-INTRO-VALID"
+    monkeypatch.setattr(settings, "paypal_soulmate_intro_plan_id", plan_id)
+
+    victim_email = f"victim_{uuid.uuid4().hex[:8]}@example.com"
+    sess = SoulmateSession(
+        public_id=f"test_victim_{uuid.uuid4().hex[:8]}",
+        quiz_version="soulmate-quiz-v1",
+        status="email_captured",
+        current_step="quiz_q5",
+        email=victim_email,
+        email_normalized=victim_email,
+    )
+    async_db.add(sess)
+    await async_db.commit()
+
+    sub_id = f"I-FOREIGN-CUSTOM-{uuid.uuid4().hex[:8].upper()}"
+    mock_payload = {
+        "id": sub_id,
+        "status": "ACTIVE",
+        "plan_id": plan_id,
+        # Foreign custom_id unknown in database
+        "custom_id": "sess_foreign_unknown_999",
+        # Subscriber email matches victim's session
+        "subscriber": {"email_address": victim_email},
+        "billing_info": {
+            "next_billing_time": "2026-10-25T15:00:00Z",
+        },
+    }
+    client = MockPayPalClient({sub_id: mock_payload})
+
+    reconciled = await SubscriptionService.reconcile_subscription(
+        db=async_db,
+        provider_subscription_id=sub_id,
+        paypal_client=client,
+    )
+
+    # Must return None (rejected fail-closed)
+    assert reconciled is None
+
+    # Assert no subscription was created/bound to victim's session
+    stmt = select(Subscription).where(Subscription.session_id == sess.id)
+    assert (await async_db.execute(stmt)).scalars().first() is None
+
+

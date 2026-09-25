@@ -124,29 +124,28 @@ class SubscriptionService:
         if not sub_data:
             raise NotFoundError(f"Subscription '{sub_id_clean}' was not found on PayPal.")
 
-        # 3. Ownership & Session Binding Verification (C-1, DEV-SPEC §15.7)
-        # Prevents claiming an unattached subscription belonging to another user/session
-        remote_custom_id = sub_data.get("custom_id")
-        remote_subscriber = sub_data.get("subscriber") or {}
-        remote_subscriber_email = remote_subscriber.get("email_address")
+        # 3. Ownership & Session Binding Verification (C-1, DEV-SPEC §15.7, §20)
+        # Prevents claiming an unattached subscription belonging to another user/session.
+        # Front-end creates subscriptions with custom_id set to session.public_id.
+        # Confirmation requires a strictly matching custom_id.
+        # Subscriptions lacking custom_id, or with mismatched custom_id, are rejected fail-closed.
+        # Fallback to unverified captured email or claiming orphan subscriptions is strictly forbidden.
+        remote_custom_id = (sub_data.get("custom_id") or "").strip()
+        if not remote_custom_id:
+            logger.warning(
+                "Subscription confirmation rejected: PayPal subscription %s lacks custom_id to bind to session %s",
+                sub_id_clean,
+                session.public_id,
+            )
+            raise ForbiddenOwnershipError("PayPal subscription lacks valid session binding (custom_id required).")
 
-        if remote_custom_id:
-            if remote_custom_id.strip() != session.public_id:
-                logger.warning(
-                    "Cross-session subscription confirmation rejected: custom_id '%s' does not match session '%s'",
-                    remote_custom_id,
-                    session.public_id,
-                )
-                raise ForbiddenOwnershipError("PayPal subscription does not belong to this session.")
-        elif remote_subscriber_email:
-            session_email = (session.email_normalized or session.email or "").strip().lower()
-            if not session_email or remote_subscriber_email.strip().lower() != session_email:
-                logger.warning(
-                    "Cross-session subscription confirmation rejected: subscriber email '%s' does not match session email '%s'",
-                    remote_subscriber_email,
-                    session_email,
-                )
-                raise ForbiddenOwnershipError("PayPal subscription subscriber does not match this session.")
+        if remote_custom_id != session.public_id:
+            logger.warning(
+                "Cross-session subscription confirmation rejected: custom_id '%s' does not match session '%s'",
+                remote_custom_id,
+                session.public_id,
+            )
+            raise ForbiddenOwnershipError("PayPal subscription does not belong to this session.")
 
         provider_plan_id = sub_data.get("plan_id")
         provider_status = sub_data.get("status", "APPROVAL_PENDING").upper()
@@ -498,21 +497,22 @@ class SubscriptionService:
             )
             return None
 
-        # 2. Prioritize session lookup via custom_id (matches session public_id)
-        custom_id = remote_data.get("custom_id")
+        # 2. Session lookup via custom_id (matches session public_id)
+        custom_id = (remote_data.get("custom_id") or "").strip()
         session: Optional[SoulmateSession] = None
         if custom_id:
-            sess_stmt = select(SoulmateSession).where(SoulmateSession.public_id == custom_id.strip())
+            sess_stmt = select(SoulmateSession).where(SoulmateSession.public_id == custom_id)
             session = (await db.execute(sess_stmt)).scalars().first()
             if not session:
                 logger.warning(
-                    "Reconciliation: custom_id '%s' on subscription %s not found in sessions",
+                    "Reconciliation rejected: custom_id '%s' on subscription %s not found in sessions. "
+                    "Refusing fallback to email to prevent cross-session hijacking.",
                     custom_id,
                     sub_id,
                 )
-
-        # 3. Fallback to subscriber email with ambiguity & safety checks
-        if not session:
+                return None
+        else:
+            # 3. Fallback to subscriber email ONLY when custom_id is completely absent, with strict ambiguity checks
             subscriber_email = remote_data.get("subscriber", {}).get("email_address")
             if subscriber_email:
                 clean_email = subscriber_email.strip().lower()
@@ -550,6 +550,12 @@ class SubscriptionService:
                             len(unpaid_sessions),
                         )
                         return None
+            else:
+                logger.warning(
+                    "Reconciliation rejected: subscription %s has neither custom_id nor subscriber email.",
+                    sub_id,
+                )
+                return None
 
         if session:
             sub = Subscription(
