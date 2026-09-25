@@ -5,25 +5,44 @@ Preserves exact raw body bytes, extracts transmission headers, enforces signatur
 guarantees unverified events never mutate business state, and implements idempotency and PayPal retry semantics.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 import json
 import logging
 from typing import Any, Dict, Optional, Protocol
 from fastapi import Request
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.errors import ValidationError, WebhookVerificationError
 from app.core.logging import log_event
-from app.db.models.billing import PayPalWebhookEvent
+from app.db.base import utc_now
+from app.db.models.artifact import SoulmateArtifact
+from app.db.models.billing import PayPalWebhookEvent, Subscription, SubscriptionPayment
+from app.db.models.session import SoulmateSession
 from app.soulmate.domain.webhook_models import (
     PayPalWebhookHeaders,
     PayPalWebhookRawRequest,
     PayPalWebhookResponse,
 )
+from app.soulmate.services.paypal_client import PayPalClient
 
 logger = logging.getLogger(__name__)
+
+
+def parse_iso_datetime(dt_str: Optional[str]) -> Optional[datetime]:
+    """Parse ISO8601 string to timezone-aware UTC datetime."""
+    if not dt_str:
+        return None
+    try:
+        clean_str = dt_str.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(clean_str)
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except Exception:
+        return None
 
 
 class WebhookVerifierProtocol(Protocol):
@@ -130,6 +149,7 @@ class PayPalWebhookService:
         db: AsyncSession,
         verifier: Optional[WebhookVerifierProtocol] = None,
         require_verification: bool = True,
+        client: Optional[PayPalClient] = None,
     ) -> PayPalWebhookResponse:
         """
         Process parsed PayPal webhook request:
@@ -137,6 +157,7 @@ class PayPalWebhookService:
         2. High-Risk Invariant PAY-AUTH-01: Unverified events never mutate business state.
         3. Enforces idempotency via unique paypal_event_id DB constraint.
         4. Replays return 200 OK without re-executing business mutations (Acceptance #4).
+        5. Atomic event dispatch with out-of-order state regression protection (SP-406).
         """
         event_id = raw_request.event_id
         event_type = raw_request.event_type
@@ -231,7 +252,7 @@ class PayPalWebhookService:
             )
 
         # ----------------------------------------------------------------------
-        # 3. Record verified event in database transaction
+        # 3. Record verified event & dispatch business transitions in transaction
         # ----------------------------------------------------------------------
         new_event = PayPalWebhookEvent(
             paypal_event_id=event_id,
@@ -242,8 +263,24 @@ class PayPalWebhookService:
             processed_at=datetime.now(timezone.utc),
         )
         db.add(new_event)
-        await db.commit()
-        await db.refresh(new_event)
+        await db.flush()
+
+        try:
+            await cls._dispatch_event(
+                event_type=event_type,
+                raw_request=raw_request,
+                db=db,
+                client=client,
+            )
+            await db.commit()
+            await db.refresh(new_event)
+        except Exception as e:
+            await db.rollback()
+            new_event.processing_error = str(e)
+            db.add(new_event)
+            await db.commit()
+            logger.error("Error processing PayPal webhook %s (%s): %s", event_id, event_type, e, exc_info=True)
+            raise
 
         log_event(
             event_type="paypal_webhook_recorded",
@@ -258,3 +295,502 @@ class PayPalWebhookService:
             event_type=event_type,
             duplicate=False,
         )
+
+    @classmethod
+    async def _dispatch_event(
+        cls,
+        event_type: str,
+        raw_request: PayPalWebhookRawRequest,
+        db: AsyncSession,
+        client: Optional[PayPalClient] = None,
+    ) -> None:
+        """Route webhook event to specialized state machine and ledger handlers (SP-406)."""
+        if event_type == "PAYMENT.SALE.COMPLETED":
+            await cls._handle_payment_sale_completed(raw_request, db, client)
+        elif event_type == "BILLING.SUBSCRIPTION.ACTIVATED":
+            await cls._handle_subscription_activated(raw_request, db, client)
+        elif event_type == "BILLING.SUBSCRIPTION.CANCELLED":
+            await cls._handle_subscription_cancelled(raw_request, db)
+        elif event_type == "BILLING.SUBSCRIPTION.SUSPENDED":
+            await cls._handle_subscription_suspended(raw_request, db)
+        elif event_type == "BILLING.SUBSCRIPTION.EXPIRED":
+            await cls._handle_subscription_expired(raw_request, db)
+        elif event_type == "BILLING.SUBSCRIPTION.PAYMENT.FAILED":
+            await cls._handle_payment_failed(raw_request, db)
+        elif event_type in ("PAYMENT.SALE.REFUNDED", "PAYMENT.SALE.REVERSED"):
+            await cls._handle_payment_refunded(raw_request, db)
+        else:
+            logger.info("No specific business handler required for webhook event_type %s", event_type)
+
+    @classmethod
+    async def _handle_payment_sale_completed(
+        cls,
+        raw_request: PayPalWebhookRawRequest,
+        db: AsyncSession,
+        client: Optional[PayPalClient] = None,
+    ) -> None:
+        """
+        Handle PAYMENT.SALE.COMPLETED (DEV-SPEC §9.4, §10, §14, Decisions: PAY-AUTH-01, TIME-01).
+        - Idempotently creates SubscriptionPayment ledger entry.
+        - Activates first_payment_at and SoulmateSession.subscription_success_at if not set.
+        - Does NOT regress provider_status if already CANCELLED or EXPIRED.
+        - Replays of same event create zero duplicate ledger entries.
+        """
+        resource = raw_request.parsed_json.get("resource", {})
+        pay_id = resource.get("id") or raw_request.resource_id
+        provider_sub_id = resource.get("billing_agreement_id") or resource.get("custom")
+
+        if not provider_sub_id:
+            logger.warning("PAYMENT.SALE.COMPLETED event %s missing billing_agreement_id", raw_request.event_id)
+            return
+
+        stmt = select(Subscription).where(Subscription.provider_subscription_id == provider_sub_id)
+        sub = (await db.execute(stmt)).scalars().first()
+
+        if sub is None:
+            # Reconciliation path: check remote PayPal or create linked record if found
+            sub = await cls.reconcile_subscription(provider_subscription_id=provider_sub_id, db=db, client=client)
+
+        if sub is None:
+            logger.warning("PAYMENT.SALE.COMPLETED: Subscription %s not found in local database", provider_sub_id)
+            return
+
+        paid_at = parse_iso_datetime(resource.get("create_time")) or parse_iso_datetime(raw_request.create_time) or utc_now()
+
+        # Idempotency check: prevent duplicate SubscriptionPayment row
+        if pay_id:
+            pay_stmt = select(SubscriptionPayment).where(SubscriptionPayment.provider_payment_id == pay_id)
+            existing_payment = (await db.execute(pay_stmt)).scalars().first()
+        else:
+            existing_payment = None
+
+        if existing_payment is None and pay_id:
+            count_stmt = select(func.count(SubscriptionPayment.id)).where(SubscriptionPayment.subscription_id == sub.id)
+            cycle_no = (await db.execute(count_stmt)).scalar() or 0
+            cycle_no += 1
+
+            amount_str = resource.get("amount", {}).get("total", "0.00")
+            try:
+                amount = Decimal(str(amount_str))
+            except Exception:
+                amount = Decimal("0.00")
+
+            currency = resource.get("amount", {}).get("currency", sub.currency or "USD")
+
+            payment = SubscriptionPayment(
+                subscription_id=sub.id,
+                provider_payment_id=pay_id,
+                provider_event_id=raw_request.event_id,
+                cycle_no=cycle_no,
+                amount=amount,
+                currency=currency,
+                status="COMPLETED",
+                paid_at=paid_at,
+                raw_json=resource,
+            )
+            db.add(payment)
+            logger.info("Recorded payment ledger %s (cycle %d) for subscription %s", pay_id, cycle_no, provider_sub_id)
+        else:
+            logger.info("Payment %s already recorded for subscription %s (idempotent)", pay_id, provider_sub_id)
+
+        # Update first_payment_at if initial payment
+        if sub.first_payment_at is None:
+            sub.first_payment_at = paid_at
+
+        # Out-of-order protection: Do NOT regress provider_status if already CANCELLED or EXPIRED
+        if sub.provider_status not in ("CANCELLED", "EXPIRED"):
+            sub.provider_status = "ACTIVE"
+            sub.suspended_at = None
+
+        # Activate entitlement on SoulmateSession (PAY-AUTH-01, TIME-01)
+        sess_stmt = select(SoulmateSession).where(SoulmateSession.id == sub.session_id)
+        session = (await db.execute(sess_stmt)).scalars().first()
+
+        if session is not None:
+            if session.subscription_success_at is None:
+                session.subscription_success_at = paid_at
+                session.status = "paid"
+                session.current_step = "result"
+                log_event(
+                    event_type="entitlement_activated",
+                    message=f"Entitlement activated for session {session.public_id} via PAYMENT.SALE.COMPLETED",
+                    level=logging.INFO,
+                    extra_data={
+                        "session_public_id": session.public_id,
+                        "subscription_id": str(sub.id),
+                        "provider_sub_id": provider_sub_id,
+                        "subscription_success_at": paid_at.isoformat(),
+                    },
+                )
+                await cls._ensure_artifacts_initialized(session=session, paid_at=paid_at, db=db)
+            else:
+                logger.info(
+                    "Session %s already entitled at %s (invariant TIME-01 preserved)",
+                    session.public_id,
+                    session.subscription_success_at.isoformat(),
+                )
+
+    @classmethod
+    async def _handle_subscription_activated(
+        cls,
+        raw_request: PayPalWebhookRawRequest,
+        db: AsyncSession,
+        client: Optional[PayPalClient] = None,
+    ) -> None:
+        """
+        Handle BILLING.SUBSCRIPTION.ACTIVATED.
+        Out-of-order rules:
+        - Do not regress if already CANCELLED or EXPIRED.
+        - Do not regress if event timestamp is older than existing status timestamp.
+        """
+        resource = raw_request.parsed_json.get("resource", {})
+        provider_sub_id = resource.get("id") or raw_request.resource_id
+        if not provider_sub_id:
+            return
+
+        stmt = select(Subscription).where(Subscription.provider_subscription_id == provider_sub_id)
+        sub = (await db.execute(stmt)).scalars().first()
+        if not sub:
+            sub = await cls.reconcile_subscription(provider_sub_id=provider_sub_id, db=db, client=client)
+            if not sub:
+                return
+
+        event_time = parse_iso_datetime(raw_request.create_time) or utc_now()
+
+        # Out-of-order check 1: Terminal states
+        if sub.provider_status in ("CANCELLED", "EXPIRED"):
+            logger.warning(
+                "Ignoring stale/out-of-order BILLING.SUBSCRIPTION.ACTIVATED for %s; currently in terminal state %s",
+                provider_sub_id,
+                sub.provider_status,
+            )
+            return
+
+        # Out-of-order check 2: Timestamp ordering vs cancelled_at / suspended_at
+        if sub.cancelled_at and event_time <= sub.cancelled_at:
+            logger.warning(
+                "Ignoring stale BILLING.SUBSCRIPTION.ACTIVATED for %s (event_time %s <= cancelled_at %s)",
+                provider_sub_id,
+                event_time,
+                sub.cancelled_at,
+            )
+            return
+
+        if sub.suspended_at and event_time <= sub.suspended_at:
+            logger.warning(
+                "Ignoring stale BILLING.SUBSCRIPTION.ACTIVATED for %s (event_time %s <= suspended_at %s)",
+                provider_sub_id,
+                event_time,
+                sub.suspended_at,
+            )
+            return
+
+        # Valid transition
+        sub.provider_status = "ACTIVE"
+        sub.suspended_at = None
+        logger.info("Subscription %s updated to ACTIVE from webhook", provider_sub_id)
+
+    @classmethod
+    async def _handle_subscription_cancelled(
+        cls,
+        raw_request: PayPalWebhookRawRequest,
+        db: AsyncSession,
+    ) -> None:
+        """
+        Handle BILLING.SUBSCRIPTION.CANCELLED.
+        Marks provider_status = CANCELLED.
+        Invariants (DEV-SPEC §9.8, PAY-AUTH-01):
+        - Never deletes existing payments, session, or artifacts.
+        - Preserves entitlement for paid_through_at period.
+        """
+        resource = raw_request.parsed_json.get("resource", {})
+        provider_sub_id = resource.get("id") or raw_request.resource_id
+        if not provider_sub_id:
+            return
+
+        stmt = select(Subscription).where(Subscription.provider_subscription_id == provider_sub_id)
+        sub = (await db.execute(stmt)).scalars().first()
+        if not sub:
+            return
+
+        event_time = parse_iso_datetime(raw_request.create_time) or utc_now()
+
+        sub.provider_status = "CANCELLED"
+        if not sub.cancelled_at or event_time > sub.cancelled_at:
+            sub.cancelled_at = event_time
+
+        logger.info("Subscription %s cancelled at %s", provider_sub_id, sub.cancelled_at)
+
+    @classmethod
+    async def _handle_subscription_suspended(
+        cls,
+        raw_request: PayPalWebhookRawRequest,
+        db: AsyncSession,
+    ) -> None:
+        """
+        Handle BILLING.SUBSCRIPTION.SUSPENDED.
+        Out-of-order rule: Do not regress if already CANCELLED or EXPIRED.
+        """
+        resource = raw_request.parsed_json.get("resource", {})
+        provider_sub_id = resource.get("id") or raw_request.resource_id
+        if not provider_sub_id:
+            return
+
+        stmt = select(Subscription).where(Subscription.provider_subscription_id == provider_sub_id)
+        sub = (await db.execute(stmt)).scalars().first()
+        if not sub:
+            return
+
+        event_time = parse_iso_datetime(raw_request.create_time) or utc_now()
+
+        if sub.provider_status in ("CANCELLED", "EXPIRED"):
+            logger.warning(
+                "Ignoring SUSPENDED event for %s; already in terminal state %s",
+                provider_sub_id,
+                sub.provider_status,
+            )
+            return
+
+        if sub.cancelled_at and event_time <= sub.cancelled_at:
+            return
+
+        sub.provider_status = "SUSPENDED"
+        if not sub.suspended_at or event_time > sub.suspended_at:
+            sub.suspended_at = event_time
+
+        logger.info("Subscription %s suspended at %s", provider_sub_id, sub.suspended_at)
+
+    @classmethod
+    async def _handle_subscription_expired(
+        cls,
+        raw_request: PayPalWebhookRawRequest,
+        db: AsyncSession,
+    ) -> None:
+        """Handle BILLING.SUBSCRIPTION.EXPIRED. Terminal state."""
+        resource = raw_request.parsed_json.get("resource", {})
+        provider_sub_id = resource.get("id") or raw_request.resource_id
+        if not provider_sub_id:
+            return
+
+        stmt = select(Subscription).where(Subscription.provider_subscription_id == provider_sub_id)
+        sub = (await db.execute(stmt)).scalars().first()
+        if not sub:
+            return
+
+        event_time = parse_iso_datetime(raw_request.create_time) or utc_now()
+        sub.provider_status = "EXPIRED"
+        sub.expired_at = event_time
+        logger.info("Subscription %s expired at %s", provider_sub_id, event_time)
+
+    @classmethod
+    async def _handle_payment_failed(
+        cls,
+        raw_request: PayPalWebhookRawRequest,
+        db: AsyncSession,
+    ) -> None:
+        """
+        Handle BILLING.SUBSCRIPTION.PAYMENT.FAILED (DEV-SPEC §9.7).
+        Records failed payment ledger record without removing existing entitlement.
+        """
+        resource = raw_request.parsed_json.get("resource", {})
+        provider_sub_id = resource.get("billing_agreement_id") or resource.get("id")
+        if not provider_sub_id:
+            return
+
+        stmt = select(Subscription).where(Subscription.provider_subscription_id == provider_sub_id)
+        sub = (await db.execute(stmt)).scalars().first()
+        if not sub:
+            return
+
+        payment_id = resource.get("id") or f"FAILED-{raw_request.event_id}"
+
+        pay_stmt = select(SubscriptionPayment).where(SubscriptionPayment.provider_payment_id == payment_id)
+        existing = (await db.execute(pay_stmt)).scalars().first()
+        if not existing:
+            amount_str = resource.get("amount", {}).get("total", "0.00")
+            try:
+                amount = Decimal(str(amount_str))
+            except Exception:
+                amount = Decimal("0.00")
+            currency = resource.get("amount", {}).get("currency", sub.currency or "USD")
+
+            count_stmt = select(func.count(SubscriptionPayment.id)).where(SubscriptionPayment.subscription_id == sub.id)
+            cycle_no = (await db.execute(count_stmt)).scalar() or 0
+            cycle_no += 1
+
+            failed_pay = SubscriptionPayment(
+                subscription_id=sub.id,
+                provider_payment_id=payment_id,
+                provider_event_id=raw_request.event_id,
+                cycle_no=cycle_no,
+                amount=amount,
+                currency=currency,
+                status="FAILED",
+                raw_json=resource,
+            )
+            db.add(failed_pay)
+
+        # Invariant checks:
+        # If first payment never succeeded, ensure subscription_success_at remains None
+        if sub.first_payment_at is None:
+            sess_stmt = select(SoulmateSession).where(SoulmateSession.id == sub.session_id)
+            session = (await db.execute(sess_stmt)).scalars().first()
+            if session:
+                session.subscription_success_at = None
+
+    @classmethod
+    async def _handle_payment_refunded(
+        cls,
+        raw_request: PayPalWebhookRawRequest,
+        db: AsyncSession,
+    ) -> None:
+        """Handle PAYMENT.SALE.REFUNDED and PAYMENT.SALE.REVERSED."""
+        resource = raw_request.parsed_json.get("resource", {})
+        parent_id = resource.get("parent_payment") or resource.get("sale_id")
+        if not parent_id:
+            return
+
+        pay_stmt = select(SubscriptionPayment).where(SubscriptionPayment.provider_payment_id == parent_id)
+        payment = (await db.execute(pay_stmt)).scalars().first()
+        if payment:
+            payment.status = "REFUNDED" if "REFUNDED" in raw_request.event_type else "REVERSED"
+            payment.refunded_at = parse_iso_datetime(resource.get("create_time")) or utc_now()
+            logger.info("Payment %s marked as %s", parent_id, payment.status)
+
+    @classmethod
+    async def _ensure_artifacts_initialized(
+        cls,
+        session: SoulmateSession,
+        paid_at: datetime,
+        db: AsyncSession,
+    ) -> None:
+        """
+        Initialize durable artifact rows for SKETCH (+12h) and REPORT (+24h) per Spec §10, TIME-01.
+        Idempotent: skips if row already exists.
+        """
+        sketch_unlock = paid_at + timedelta(hours=12)
+        report_unlock = paid_at + timedelta(hours=24)
+        email = session.email_normalized or session.email or ""
+
+        # 1. Sketch Artifact (enforces uq_soulmate_one_sketch_per_email)
+        sketch_cond = (SoulmateArtifact.session_id == session.id)
+        if email:
+            sketch_cond = sketch_cond | (SoulmateArtifact.email_normalized == email)
+        stmt_sketch = select(SoulmateArtifact).where(
+            sketch_cond,
+            SoulmateArtifact.artifact_type == "SKETCH",
+        )
+        if not (await db.execute(stmt_sketch)).scalars().first():
+            db.add(SoulmateArtifact(
+                session_id=session.id,
+                email_normalized=email,
+                artifact_type="SKETCH",
+                artifact_version="v1",
+                unlock_at=sketch_unlock,
+                generation_status="NOT_STARTED",
+            ))
+
+        # 2. Report Artifact
+        stmt_report = select(SoulmateArtifact).where(
+            SoulmateArtifact.session_id == session.id,
+            SoulmateArtifact.artifact_type == "REPORT",
+            SoulmateArtifact.artifact_version == "v1",
+        )
+        if not (await db.execute(stmt_report)).scalars().first():
+            db.add(SoulmateArtifact(
+                session_id=session.id,
+                email_normalized=email,
+                artifact_type="REPORT",
+                artifact_version="v1",
+                unlock_at=report_unlock,
+                generation_status="NOT_STARTED",
+            ))
+
+    @classmethod
+    async def reconcile_subscription(
+        cls,
+        provider_subscription_id: str,
+        db: AsyncSession,
+        client: Optional[PayPalClient] = None,
+    ) -> Optional[Subscription]:
+        """
+        Reconcile subscription state against PayPal REST API for ambiguous state (Work #4).
+        Enforces monotonicity: never regresses terminal CANCELLED/EXPIRED states.
+        """
+        if not provider_subscription_id or not provider_subscription_id.startswith("I-"):
+            return None
+
+        stmt = select(Subscription).where(Subscription.provider_subscription_id == provider_subscription_id)
+        sub = (await db.execute(stmt)).scalars().first()
+
+        paypal_client = client or PayPalClient(
+            client_id=settings.paypal_client_id,
+            client_secret=settings.paypal_client_secret,
+            environment=settings.paypal_env,
+        )
+
+        try:
+            remote_data = await paypal_client.get_subscription(provider_subscription_id)
+        except Exception as e:
+            logger.warning("Failed to fetch PayPal subscription %s during reconciliation: %s", provider_subscription_id, e)
+            return sub
+
+        if not remote_data:
+            return sub
+
+        remote_status = str(remote_data.get("status", "")).upper()
+        billing_info = remote_data.get("billing_info", {})
+        next_billing_str = billing_info.get("next_billing_time")
+        next_billing_at = parse_iso_datetime(next_billing_str)
+
+        if sub is not None:
+            # Monotonicity rule: Do not regress CANCELLED or EXPIRED if local state is already terminal
+            if sub.provider_status in ("CANCELLED", "EXPIRED") and remote_status in ("ACTIVE", "APPROVAL_PENDING"):
+                logger.info(
+                    "Reconciliation skipped status regression for %s: local=%s, remote=%s",
+                    provider_subscription_id,
+                    sub.provider_status,
+                    remote_status,
+                )
+            else:
+                if remote_status:
+                    sub.provider_status = remote_status
+            if next_billing_at:
+                sub.next_billing_at = next_billing_at
+                if not sub.paid_through_at or next_billing_at > sub.paid_through_at:
+                    sub.paid_through_at = next_billing_at
+            return sub
+
+        # If sub does not exist locally yet, locate session via custom_id or subscriber email
+        custom_id = remote_data.get("custom_id")
+        session: Optional[SoulmateSession] = None
+        if custom_id:
+            sess_stmt = select(SoulmateSession).where(SoulmateSession.public_id == custom_id)
+            session = (await db.execute(sess_stmt)).scalars().first()
+
+        if not session:
+            subscriber_email = remote_data.get("subscriber", {}).get("email_address")
+            if subscriber_email:
+                sess_stmt = select(SoulmateSession).where(SoulmateSession.email_normalized == subscriber_email.lower().strip())
+                session = (await db.execute(sess_stmt)).scalars().first()
+
+        if session:
+            sub = Subscription(
+                session_id=session.id,
+                user_id=session.user_id,
+                provider="paypal",
+                provider_subscription_id=provider_subscription_id,
+                provider_plan_id=remote_data.get("plan_id", ""),
+                provider_status=remote_status or "APPROVAL_PENDING",
+                currency=settings.soulmate_currency or "USD",
+                intro_price=settings.soulmate_intro_price,
+                regular_price=settings.soulmate_regular_price or Decimal("29.00"),
+                next_billing_at=next_billing_at,
+                paid_through_at=next_billing_at,
+            )
+            db.add(sub)
+            await db.flush()
+            return sub
+
+        return None
+

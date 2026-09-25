@@ -41,6 +41,7 @@ PayPal JS subscription checkout (`SP-402`) completed and evidenced in `docs/hand
 Confirm subscription API (`SP-403`) completed and evidenced in `docs/handoffs/SP-403.md`.
 PayPal webhook endpoint with raw body (`SP-404`) completed and evidenced in `docs/handoffs/SP-404.md`.
 PayPal webhook signature verification (`SP-405`) completed and evidenced in `docs/handoffs/SP-405.md`.
+Event idempotency and out-of-order handling (`SP-406`) completed and evidenced in `docs/handoffs/SP-406.md`.
 
 ## 2. Milestone status
 
@@ -55,7 +56,7 @@ PayPal webhook signature verification (`SP-405`) completed and evidenced in `doc
 
 ## 3. Active / blocked work
 
-Active tasks: SP-406 (Event idempotency and out-of-order handling). SP-405 completed.
+Active tasks: SP-407 (Payment ledger). SP-406 completed.
 
 
 Blocking decision IDs:
@@ -95,8 +96,8 @@ Report production provider: disabled / decision pending
 ## 6. Next safe tasks
 
 ```text
-1. SP-406 (Event idempotency and out-of-order handling).
-2. SP-407..408 (Payment ledger, state reconciliation).
+1. SP-407 (Payment ledger).
+2. SP-408 (Subscription reconciliation/state mapping).
 ```
 
 ## 7. Update rule
