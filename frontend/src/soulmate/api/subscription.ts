@@ -126,14 +126,19 @@ export async function confirmPayPalSubscription(
 }
 
 /**
- * Poll current subscription and payment status for the session (DEV-SPEC §15.8, SP-403).
+ * Poll current subscription and payment status for the session (DEV-SPEC §15.8, SP-403, SP-408, SP-410).
  * Used by payment-processing screen to detect webhook payment reconciliation.
+ * When `reconcile: true`, triggers authoritative PayPal REST API check on the backend.
  */
 export async function getSubscriptionStatus(
   sessionId?: string,
+  reconcile?: boolean,
   config: ClientConfig = clientConfig
 ): Promise<SubscriptionStatusResponse> {
-  const queryParam = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : "";
+  const params = new URLSearchParams();
+  if (sessionId) params.append("session_id", sessionId);
+  if (reconcile) params.append("reconcile", "true");
+  const queryParam = params.toString() ? `?${params.toString()}` : "";
   const url = `${config.apiBaseUrl}/subscription/status${queryParam}`;
 
   const res = await fetch(url, {

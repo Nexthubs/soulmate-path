@@ -45,6 +45,7 @@ Event idempotency and out-of-order handling (`SP-406`) completed and evidenced i
 Payment ledger (`SP-407`) completed and evidenced in `docs/handoffs/SP-407.md`.
 Subscription reconciliation/state mapping (`SP-408`) completed and evidenced in `docs/handoffs/SP-408.md`.
 Cancellation and Settings action (`SP-409`) completed and evidenced in `docs/handoffs/SP-409.md`.
+Payment-processing frontend state (`SP-410`) completed and evidenced in `docs/handoffs/SP-410.md`.
 
 ## 2. Milestone status
 
@@ -59,7 +60,7 @@ Cancellation and Settings action (`SP-409`) completed and evidenced in `docs/han
 
 ## 3. Active / blocked work
 
-Active tasks: SP-410 (Payment-processing frontend state). SP-409 completed.
+Active tasks: SP-411 (Sandbox checkout verification). SP-410 completed.
 
 
 Blocking decision IDs:
@@ -99,8 +100,8 @@ Report production provider: disabled / decision pending
 ## 6. Next safe tasks
 
 ```text
-1. SP-410 (Payment-processing frontend state).
-2. SP-411 (Sandbox checkout verification).
+1. SP-411 (Sandbox checkout verification).
+2. M2 Milestone Review (M2-PAYPAL-SANDBOX-REVIEW.md).
 ```
 
 ## 7. Update rule

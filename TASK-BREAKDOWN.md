@@ -836,7 +836,7 @@ Map provider state into application subscription/entitlement state without trust
 
 **Priority:** P1  
 **Depends:** SP-403, SP-408  
-**Status:** TODO
+**Status:** DONE (docs/handoffs/SP-410.md)
 **Context refs:** DEV-SPEC §9.3–9.4 | Decisions: PAY-AUTH-01 | Dependency handoffs: SP-403, SP-408
 
 

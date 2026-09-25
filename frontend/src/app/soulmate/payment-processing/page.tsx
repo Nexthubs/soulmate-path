@@ -1,7 +1,6 @@
 "use client";
 
-import React, { Suspense, useEffect, useState, useRef } from "react";
-import Link from "next/link";
+import React, { Suspense, useEffect, useState, useRef, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { SOULMATE_ROUTES } from "@/soulmate/domain";
 import { confirmPayPalSubscription, getSubscriptionStatus } from "@/soulmate/api";
@@ -18,8 +17,13 @@ function PaymentProcessingContent() {
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [isConfirmed, setIsConfirmed] = useState(false);
   const [isPolling, setIsPolling] = useState(false);
+  const [isTerminalState, setIsTerminalState] = useState(false);
+  const [terminalMessage, setTerminalMessage] = useState<string | null>(null);
+  const [isManualChecking, setIsManualChecking] = useState(false);
+  const [manualCheckNote, setManualCheckNote] = useState<string | null>(null);
 
   const confirmedRef = useRef(false);
+  const pollCountRef = useRef(0);
 
   // 1. Initial Confirmation Request (DEV-SPEC §9.3, §15.7, SP-403)
   useEffect(() => {
@@ -31,19 +35,24 @@ function PaymentProcessingContent() {
 
     async function performConfirmation(idToConfirm: string) {
       try {
-        await confirmPayPalSubscription({
+        const resp = await confirmPayPalSubscription({
           session_id: sessionId,
           paypal_subscription_id: idToConfirm,
         });
         if (isMounted) {
           setIsConfirmed(true);
+          // If already paid at confirmation time, navigate immediately (PAY-AUTH-01)
+          if (resp.is_paid) {
+            router.push(resultUrl);
+            return;
+          }
           setIsPolling(true);
         }
       } catch (err: unknown) {
         if (isMounted) {
           const msg = err instanceof Error ? err.message : "Failed to confirm subscription with server.";
           setConfirmError(msg);
-          // Still allow polling in case it was already registered
+          // Still allow polling in case server recorded the subscription asynchronously
           setIsPolling(true);
         }
       }
@@ -54,22 +63,38 @@ function PaymentProcessingContent() {
     return () => {
       isMounted = false;
     };
-  }, [subscriptionId, sessionId]);
+  }, [subscriptionId, sessionId, resultUrl, router]);
 
-  // 2. Polling Loop for Server Entitlement Status (DEV-SPEC §15.8, PAY-AUTH-01)
+  // 2. Polling Loop for Server Entitlement Status (DEV-SPEC §15.8, SP-410, PAY-AUTH-01)
   useEffect(() => {
-    if (!isPolling) return;
+    if (!isPolling || isTerminalState) return;
 
     let isMounted = true;
 
-    // Check status every 2.5 seconds
+    // Check status every 2.5 seconds (DEV-SPEC §15.8: 2–3s)
     const interval = setInterval(async () => {
+      pollCountRef.current += 1;
+      // After 3 polls (~7.5s) without webhook arrival, trigger live REST API reconciliation (SP-408)
+      const shouldReconcile = pollCountRef.current >= 3;
+
       try {
-        const res = await getSubscriptionStatus(sessionId);
-        if (isMounted && res.is_paid) {
+        const res = await getSubscriptionStatus(sessionId, shouldReconcile);
+        if (!isMounted) return;
+
+        // Terminal state detection (e.g. cancelled/expired/suspended during checkout)
+        if (res.status === "CANCELLED" || res.status === "SUSPENDED" || res.status === "EXPIRED") {
           clearInterval(interval);
-          // HIGH-RISK INVARIANT (PAY-AUTH-01):
-          // Only navigate to result dashboard when server confirms is_paid === true.
+          setIsPolling(false);
+          setIsTerminalState(true);
+          setTerminalMessage(`Subscription status is ${res.status}. Payment could not be confirmed.`);
+          return;
+        }
+
+        // HIGH-RISK INVARIANT (PAY-AUTH-01):
+        // Only navigate to result dashboard when server confirms is_paid === true.
+        if (res.is_paid) {
+          clearInterval(interval);
+          setIsPolling(false);
           router.push(resultUrl);
         }
       } catch {
@@ -81,16 +106,48 @@ function PaymentProcessingContent() {
       isMounted = false;
       clearInterval(interval);
     };
-  }, [isPolling, sessionId, resultUrl, router]);
+  }, [isPolling, isTerminalState, sessionId, resultUrl, router]);
 
   // 3. Elapsed Timer for 60s timeout handling (DEV-SPEC §15.8)
   useEffect(() => {
+    if (isTerminalState) return;
+
     const timer = setInterval(() => {
-      setElapsedSeconds((prev) => prev + 1);
+      setElapsedSeconds((prev) => {
+        const next = prev + 1;
+        // Stop polling after 60 seconds (DEV-SPEC §15.8)
+        if (next >= 60) {
+          setIsPolling(false);
+        }
+        return next;
+      });
     }, 1000);
 
     return () => clearInterval(timer);
-  }, []);
+  }, [isTerminalState]);
+
+  // Manual re-check action for recoverability (Acceptance #3)
+  const handleManualRecheck = useCallback(async () => {
+    setIsManualChecking(true);
+    setManualCheckNote(null);
+    try {
+      const res = await getSubscriptionStatus(sessionId, true);
+      if (res.is_paid) {
+        router.push(resultUrl);
+        return;
+      }
+      if (res.status === "CANCELLED" || res.status === "SUSPENDED" || res.status === "EXPIRED") {
+        setIsTerminalState(true);
+        setTerminalMessage(`Subscription status is ${res.status}. Payment could not be completed.`);
+        return;
+      }
+      setManualCheckNote("Payment is still being processed with PayPal. Please try again in a moment, or check your email for confirmation.");
+    } catch {
+      setManualCheckNote("Unable to reach payment verification service. Please verify your internet connection or try again.");
+    } finally {
+      setIsManualChecking(false);
+    }
+  }, [sessionId, resultUrl, router]);
 
   const isTakingLonger = elapsedSeconds >= 15;
   const isTimeout = elapsedSeconds >= 60;
@@ -102,18 +159,28 @@ function PaymentProcessingContent() {
       </header>
 
       <div className="w-full bg-white/80 backdrop-blur-sm rounded-3xl p-6 shadow-sm border border-neutral-200/60 text-center space-y-5 my-auto">
-        {/* Animated spinner */}
-        <div className="relative w-16 h-16 mx-auto flex items-center justify-center">
-          <div className="w-16 h-16 rounded-full border-4 border-purple-200 border-t-purple-600 animate-spin" />
-          <span className="absolute text-xl">⏳</span>
-        </div>
+        {/* Animated spinner or status icon */}
+        {!isTerminalState ? (
+          <div className="relative w-16 h-16 mx-auto flex items-center justify-center">
+            <div className="w-16 h-16 rounded-full border-4 border-purple-200 border-t-purple-600 animate-spin" />
+            <span className="absolute text-xl">⏳</span>
+          </div>
+        ) : (
+          <div className="w-16 h-16 mx-auto flex items-center justify-center rounded-full bg-rose-100 text-rose-600 text-2xl border border-rose-200">
+            ⚠️
+          </div>
+        )}
 
         <div className="space-y-2">
           <h2 className="text-xl font-bold text-neutral-900" data-testid="processing-title">
-            Confirming Payment
+            {isTerminalState ? "Payment Could Not Be Confirmed" : isTimeout ? "Confirmation Pending" : "Confirming Payment"}
           </h2>
           <p className="text-xs text-neutral-600 leading-relaxed" data-testid="processing-description">
-            We are securely verifying your PayPal subscription. Please do not close or refresh this window.
+            {isTerminalState
+              ? terminalMessage || "Your transaction was cancelled or declined."
+              : isTimeout
+              ? "Payment confirmation is taking longer than expected. Do not submit another payment."
+              : "We are securely verifying your PayPal subscription. Please do not close or refresh this window."}
           </p>
         </div>
 
@@ -137,7 +204,7 @@ function PaymentProcessingContent() {
         )}
 
         {/* Longer wait notification (DEV-SPEC §15.8) */}
-        {isTakingLonger && !isTimeout && (
+        {isTakingLonger && !isTimeout && !isTerminalState && (
           <div
             data-testid="processing-timeout-notice"
             className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900 text-left space-y-1"
@@ -149,20 +216,40 @@ function PaymentProcessingContent() {
           </div>
         )}
 
-        {/* Final timeout notice at 60s (DEV-SPEC §15.8) */}
-        {isTimeout && (
+        {/* Final timeout notice at 60s (DEV-SPEC §15.8, SP-410 Acceptance #3) */}
+        {isTimeout && !isTerminalState && (
           <div
             data-testid="processing-max-timeout-notice"
-            className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 text-left space-y-1"
+            className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 text-left space-y-2"
           >
-            <p className="font-semibold">Confirmation taking longer than normal</p>
-            <p className="text-[11px] text-amber-800">
-              PayPal is still processing your initial transaction. Do not create another subscription. You will receive an email confirmation as soon as your access is active.
+            <p className="font-semibold text-amber-950">Payment confirmation is taking longer than expected</p>
+            <p className="text-[11px] text-amber-800 leading-relaxed">
+              PayPal is still confirming your initial payment. Please do not create another subscription. You will receive an email confirmation once your access is unlocked.
             </p>
+            <div className="pt-1">
+              <button
+                type="button"
+                data-testid="manual-recheck-btn"
+                onClick={handleManualRecheck}
+                disabled={isManualChecking}
+                className="w-full py-2 px-3 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold transition-colors disabled:opacity-50"
+              >
+                {isManualChecking ? "Checking PayPal Status..." : "Check Status Again"}
+              </button>
+            </div>
           </div>
         )}
 
-        {confirmError && (
+        {manualCheckNote && (
+          <div
+            data-testid="manual-check-note"
+            className="p-2.5 bg-neutral-100 border border-neutral-200 rounded-xl text-[11px] text-neutral-700 text-left"
+          >
+            {manualCheckNote}
+          </div>
+        )}
+
+        {confirmError && !isTerminalState && (
           <div
             data-testid="processing-confirm-error"
             className="p-2.5 bg-red-50 border border-red-200 rounded-xl text-[11px] text-red-700 text-left"
@@ -176,13 +263,13 @@ function PaymentProcessingContent() {
           <p>Results dashboard unlocks upon server-verified payment completion (PAY-AUTH-01).</p>
         </div>
 
-        {/* Navigation fallback if missing subscription */}
-        {!subscriptionId && (
+        {/* Navigation fallback for missing subscription or terminal failure */}
+        {(!subscriptionId || isTerminalState) && (
           <button
             type="button"
             data-testid="return-subscribe-btn"
             onClick={() => router.push(SOULMATE_ROUTES.SUBSCRIBE)}
-            className="w-full py-2.5 px-4 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-xl text-xs font-semibold transition-colors"
+            className="w-full py-2.5 px-4 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-semibold transition-colors"
           >
             Return to Subscription Checkout
           </button>
