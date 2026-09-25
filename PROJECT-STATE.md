@@ -60,7 +60,8 @@ Payment-processing frontend state (`SP-410`) completed and evidenced in `docs/ha
 
 ## 3. Active / blocked work
 
-Active tasks: SP-411 (Sandbox checkout verification). SP-410 completed.
+Active tasks: M2 Milestone Review (`docs/reviews/M2-PAYPAL-SANDBOX-REVIEW.md`) / SP-501 (Artifact entitlement rows on first payment). Wave 4 (`SP-401`..`SP-410`) completed.
+
 
 
 Blocking decision IDs:
@@ -100,8 +101,8 @@ Report production provider: disabled / decision pending
 ## 6. Next safe tasks
 
 ```text
-1. SP-411 (Sandbox checkout verification).
-2. M2 Milestone Review (M2-PAYPAL-SANDBOX-REVIEW.md).
+1. M2 Milestone Review (docs/reviews/M2-PAYPAL-SANDBOX-REVIEW.md).
+2. SP-501 (Artifact entitlement rows on first payment).
 ```
 
 ## 7. Update rule
