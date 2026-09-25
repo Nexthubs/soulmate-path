@@ -124,10 +124,34 @@ class SubscriptionService:
         if not sub_data:
             raise NotFoundError(f"Subscription '{sub_id_clean}' was not found on PayPal.")
 
+        # 3. Ownership & Session Binding Verification (C-1, DEV-SPEC §15.7)
+        # Prevents claiming an unattached subscription belonging to another user/session
+        remote_custom_id = sub_data.get("custom_id")
+        remote_subscriber = sub_data.get("subscriber") or {}
+        remote_subscriber_email = remote_subscriber.get("email_address")
+
+        if remote_custom_id:
+            if remote_custom_id.strip() != session.public_id:
+                logger.warning(
+                    "Cross-session subscription confirmation rejected: custom_id '%s' does not match session '%s'",
+                    remote_custom_id,
+                    session.public_id,
+                )
+                raise ForbiddenOwnershipError("PayPal subscription does not belong to this session.")
+        elif remote_subscriber_email:
+            session_email = (session.email_normalized or session.email or "").strip().lower()
+            if not session_email or remote_subscriber_email.strip().lower() != session_email:
+                logger.warning(
+                    "Cross-session subscription confirmation rejected: subscriber email '%s' does not match session email '%s'",
+                    remote_subscriber_email,
+                    session_email,
+                )
+                raise ForbiddenOwnershipError("PayPal subscription subscriber does not match this session.")
+
         provider_plan_id = sub_data.get("plan_id")
         provider_status = sub_data.get("status", "APPROVAL_PENDING").upper()
 
-        # 3. Validate Plan ID against allowed Soulmate plans (DEV-SPEC §15.7 step 3, fail-closed)
+        # 4. Validate Plan ID against allowed Soulmate plans (DEV-SPEC §15.7 step 3, fail-closed)
         allowed_plans: Set[str] = set()
         if settings.paypal_soulmate_intro_plan_id:
             allowed_plans.add(settings.paypal_soulmate_intro_plan_id)
@@ -146,11 +170,11 @@ class SubscriptionService:
             )
             raise ValidationError(f"Subscription plan '{provider_plan_id}' does not match configured Soulmate plans.")
 
-        # 4. Validate Provider Status (Reject terminal invalid states)
+        # 5. Validate Provider Status (Reject terminal invalid states)
         if provider_status in {"CANCELLED", "EXPIRED", "SUSPENDED"}:
             raise ValidationError(f"PayPal subscription is in invalid status: '{provider_status}'.")
 
-        # 5. Extract Details & Dates
+        # 6. Extract Details & Dates
         currency = settings.soulmate_currency or "USD"
         intro_price = settings.soulmate_intro_price
         regular_price = settings.soulmate_regular_price or Decimal("29.00")
@@ -158,7 +182,7 @@ class SubscriptionService:
         billing_info = sub_data.get("billing_info", {})
         next_billing_at = parse_iso_datetime(billing_info.get("next_billing_time"))
 
-        # 6. Upsert Local Subscription Record
+        # 7. Upsert Local Subscription Record
         # HIGH-RISK INVARIANT (PAY-AUTH-01):
         # first_payment_at MUST remain None here. Entitlement is only granted upon
         # verified PAYMENT.SALE.COMPLETED webhook event.
@@ -375,18 +399,76 @@ class SubscriptionService:
             await db.flush()
             return sub
 
-        # If sub does not exist locally yet, locate session via custom_id or subscriber email
+        # If sub does not exist locally yet, validate plan and locate session via custom_id or subscriber email (C-2, DEV-SPEC §8.3)
+        # 1. Validate Plan ID against allowed Soulmate plans (fail-closed)
+        allowed_plans: Set[str] = set()
+        if settings.paypal_soulmate_intro_plan_id:
+            allowed_plans.add(settings.paypal_soulmate_intro_plan_id)
+        if settings.paypal_soulmate_standard_plan_id:
+            allowed_plans.add(settings.paypal_soulmate_standard_plan_id)
+
+        remote_plan_id = remote_data.get("plan_id")
+        if not allowed_plans or not remote_plan_id or remote_plan_id not in allowed_plans:
+            logger.warning(
+                "Reconciliation rejected for unknown subscription %s: plan '%s' is not in allowed Soulmate plans %s",
+                sub_id,
+                remote_plan_id,
+                allowed_plans,
+            )
+            return None
+
+        # 2. Prioritize session lookup via custom_id (matches session public_id)
         custom_id = remote_data.get("custom_id")
         session: Optional[SoulmateSession] = None
         if custom_id:
-            sess_stmt = select(SoulmateSession).where(SoulmateSession.public_id == custom_id)
+            sess_stmt = select(SoulmateSession).where(SoulmateSession.public_id == custom_id.strip())
             session = (await db.execute(sess_stmt)).scalars().first()
+            if not session:
+                logger.warning(
+                    "Reconciliation: custom_id '%s' on subscription %s not found in sessions",
+                    custom_id,
+                    sub_id,
+                )
 
+        # 3. Fallback to subscriber email with ambiguity & safety checks
         if not session:
             subscriber_email = remote_data.get("subscriber", {}).get("email_address")
             if subscriber_email:
-                sess_stmt = select(SoulmateSession).where(SoulmateSession.email_normalized == subscriber_email.lower().strip())
-                session = (await db.execute(sess_stmt)).scalars().first()
+                clean_email = subscriber_email.strip().lower()
+                sess_stmt = select(SoulmateSession).where(SoulmateSession.email_normalized == clean_email)
+                matching_sessions = (await db.execute(sess_stmt)).scalars().all()
+
+                if len(matching_sessions) == 1:
+                    session = matching_sessions[0]
+                    logger.warning(
+                        "Reconciliation: bound unknown subscription %s to session %s via fallback subscriber email '%s' (custom_id missing)",
+                        sub_id,
+                        session.public_id,
+                        clean_email,
+                    )
+                elif len(matching_sessions) > 1:
+                    # Filter for candidates that haven't already had a subscription succeeded
+                    unpaid_sessions = [
+                        s for s in matching_sessions
+                        if s.subscription_success_at is None and s.status != "paid"
+                    ]
+                    if len(unpaid_sessions) == 1:
+                        session = unpaid_sessions[0]
+                        logger.warning(
+                            "Reconciliation: bound unknown subscription %s to unique unpaid session %s for email '%s'",
+                            sub_id,
+                            session.public_id,
+                            clean_email,
+                        )
+                    else:
+                        logger.error(
+                            "Reconciliation rejected: ambiguous subscriber email '%s' for subscription %s matches %d sessions (unpaid=%d). Refusing automatic binding to prevent cross-session confusion.",
+                            clean_email,
+                            sub_id,
+                            len(matching_sessions),
+                            len(unpaid_sessions),
+                        )
+                        return None
 
         if session:
             sub = Subscription(

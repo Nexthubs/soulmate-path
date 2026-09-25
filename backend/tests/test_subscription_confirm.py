@@ -512,3 +512,189 @@ async def test_router_aliases_matching_dev_spec(test_session: SoulmateSession, m
         assert resp3.status_code == 200
         assert resp3.json()["subscription_id"] == sub_id
         assert resp3.json()["status"] == "PROCESSING"
+
+
+# ==============================================================================
+# 5. Security & Ownership Verification Tests (C-1 Audit Remediation, DEV-SPEC §15.7)
+# ==============================================================================
+
+
+@pytest.mark.asyncio
+async def test_confirm_subscription_rejects_unattached_subscription_with_mismatched_custom_id(
+    test_session: SoulmateSession, monkeypatch
+):
+    """
+    C-1 Verification:
+    Reject claiming an unattached subscription if its custom_id belongs to another session.
+    Must raise ForbiddenOwnershipError (HTTP 403).
+    """
+    plan_id = "P-SOULMATE-C1-TEST"
+    monkeypatch.setattr(settings, "paypal_soulmate_intro_plan_id", plan_id)
+
+    sub_id = f"I-UNATTACHED-MISMATCH-CUSTOM-{uuid.uuid4().hex[:8].upper()}"
+    mock_payload = {
+        "id": sub_id,
+        "status": "APPROVED",
+        "plan_id": plan_id,
+        "custom_id": "sess_different_session_999",
+        "subscriber": {"email_address": "buyer@example.com"},
+        "billing_info": {"next_billing_time": "2026-10-25T12:00:00Z"},
+    }
+    mock_client = MockPayPalClient({sub_id: mock_payload})
+
+    async with AsyncSessionLocal() as async_db:
+        with pytest.raises(ForbiddenOwnershipError, match="does not belong to this session"):
+            await SubscriptionService.confirm_paypal_subscription(
+                db=async_db,
+                session=test_session,
+                paypal_subscription_id=sub_id,
+                paypal_client=mock_client,
+            )
+
+
+@pytest.mark.asyncio
+async def test_confirm_subscription_rejects_unattached_subscription_with_mismatched_subscriber_email(
+    test_session: SoulmateSession, monkeypatch
+):
+    """
+    C-1 Verification:
+    When custom_id is absent, reject claiming subscription if subscriber email differs from session email.
+    """
+    plan_id = "P-SOULMATE-C1-TEST"
+    monkeypatch.setattr(settings, "paypal_soulmate_intro_plan_id", plan_id)
+
+    sub_id = f"I-UNATTACHED-MISMATCH-EMAIL-{uuid.uuid4().hex[:8].upper()}"
+    mock_payload = {
+        "id": sub_id,
+        "status": "APPROVED",
+        "plan_id": plan_id,
+        # No custom_id
+        "subscriber": {"email_address": "victim_buyer@example.com"},
+        "billing_info": {"next_billing_time": "2026-10-25T12:00:00Z"},
+    }
+    mock_client = MockPayPalClient({sub_id: mock_payload})
+
+    async with AsyncSessionLocal() as async_db:
+        with pytest.raises(ForbiddenOwnershipError, match="subscriber does not match this session"):
+            await SubscriptionService.confirm_paypal_subscription(
+                db=async_db,
+                session=test_session,
+                paypal_subscription_id=sub_id,
+                paypal_client=mock_client,
+            )
+
+
+@pytest.mark.asyncio
+async def test_confirm_subscription_rejects_subscriber_email_when_session_has_no_email(
+    db_session: Session, monkeypatch
+):
+    """
+    C-1 Verification:
+    If a session has no captured email and PayPal returns subscriber email without custom_id,
+    reject claiming with ForbiddenOwnershipError.
+    """
+    plan_id = "P-SOULMATE-C1-TEST"
+    monkeypatch.setattr(settings, "paypal_soulmate_intro_plan_id", plan_id)
+
+    # Create session with no email
+    no_email_sess = SoulmateSession(
+        public_id=f"test_no_email_{uuid.uuid4().hex[:8]}",
+        quiz_version="soulmate-quiz-v1",
+        status=SessionStatus.QUIZ_IN_PROGRESS.value,
+        current_step="quiz_q5",
+        email=None,
+        email_normalized=None,
+    )
+    db_session.add(no_email_sess)
+    db_session.commit()
+    db_session.refresh(no_email_sess)
+
+    sub_id = f"I-UNATTACHED-NO-EMAIL-{uuid.uuid4().hex[:8].upper()}"
+    mock_payload = {
+        "id": sub_id,
+        "status": "APPROVED",
+        "plan_id": plan_id,
+        "subscriber": {"email_address": "someone@example.com"},
+        "billing_info": {"next_billing_time": "2026-10-25T12:00:00Z"},
+    }
+    mock_client = MockPayPalClient({sub_id: mock_payload})
+
+    async with AsyncSessionLocal() as async_db:
+        with pytest.raises(ForbiddenOwnershipError, match="subscriber does not match this session"):
+            await SubscriptionService.confirm_paypal_subscription(
+                db=async_db,
+                session=no_email_sess,
+                paypal_subscription_id=sub_id,
+                paypal_client=mock_client,
+            )
+
+
+@pytest.mark.asyncio
+async def test_confirm_subscription_accepts_matching_custom_id_even_with_different_paypal_email(
+    test_session: SoulmateSession, monkeypatch
+):
+    """
+    C-1 Verification:
+    When custom_id strictly matches session public_id, confirmation succeeds
+    even if the user paid using a personal PayPal account with a different email address.
+    """
+    plan_id = "P-SOULMATE-C1-TEST"
+    monkeypatch.setattr(settings, "paypal_soulmate_intro_plan_id", plan_id)
+
+    sub_id = f"I-MATCH-CUSTOM-{uuid.uuid4().hex[:8].upper()}"
+    mock_payload = {
+        "id": sub_id,
+        "status": "APPROVAL_PENDING",
+        "plan_id": plan_id,
+        "custom_id": test_session.public_id,
+        "subscriber": {"email_address": "different_paypal_acct@example.com"},
+        "billing_info": {"next_billing_time": "2026-10-25T12:00:00Z"},
+    }
+    mock_client = MockPayPalClient({sub_id: mock_payload})
+
+    async with AsyncSessionLocal() as async_db:
+        result = await SubscriptionService.confirm_paypal_subscription(
+            db=async_db,
+            session=test_session,
+            paypal_subscription_id=sub_id,
+            paypal_client=mock_client,
+        )
+        assert result.provider_subscription_id == sub_id
+        assert result.session_id == test_session.public_id
+
+
+@pytest.mark.asyncio
+async def test_confirm_subscription_endpoint_returns_403_on_mismatched_unattached_sub(
+    test_session: SoulmateSession, monkeypatch
+):
+    """
+    C-1 Integration Verification:
+    POST /api/soulmate/paypal/confirm returns 403 Forbidden when trying to claim an unattached
+    subscription belonging to someone else.
+    """
+    plan_id = "P-SOULMATE-C1-TEST"
+    monkeypatch.setattr(settings, "paypal_soulmate_intro_plan_id", plan_id)
+
+    sub_id = f"I-UNATTACHED-403-{uuid.uuid4().hex[:8].upper()}"
+    mock_payload = {
+        "id": sub_id,
+        "status": "APPROVED",
+        "plan_id": plan_id,
+        "custom_id": "sess_foreign_victim",
+    }
+
+    async def mock_get_sub(self, s_id: str):
+        if s_id == sub_id:
+            return mock_payload
+        return None
+
+    monkeypatch.setattr(PayPalClient, "get_subscription", mock_get_sub)
+
+    token = generate_session_token(test_session.public_id)
+    transport = ASGITransport(app=app)
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        client.cookies.set("soulmate_sid", token)
+        resp = await client.post("/api/soulmate/paypal/confirm", json={"paypal_subscription_id": sub_id})
+        assert resp.status_code == 403
+        assert "does not belong to this session" in resp.json()["message"]

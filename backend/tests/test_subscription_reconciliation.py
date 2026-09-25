@@ -17,6 +17,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.db.models.artifact import SoulmateArtifact
 from app.db.models.billing import Subscription, SubscriptionPayment
 from app.db.models.session import SoulmateSession
@@ -473,3 +474,265 @@ async def test_api_status_polling_with_reconcile_query(async_db: AsyncSession, m
         data = resp.json()
         assert data["status"] == "ACTIVE"
         assert data["is_paid"] is True
+
+
+# ==============================================================================
+# 6. Unknown Subscription Reconciliation Security & Ambiguity Protection (C-2, DEV-SPEC §8.3)
+# ==============================================================================
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_rejects_unknown_subscription_with_unconfigured_or_invalid_plan(
+    async_db: AsyncSession, monkeypatch
+):
+    """
+    C-2 Verification:
+    Reconciliation of an unknown subscription must validate plan_id against allowed Soulmate plans.
+    Foreign plans or unknown plans must return None and refuse to persist.
+    """
+    plan_id = "P-SOULMATE-INTRO-VALID"
+    monkeypatch.setattr(settings, "paypal_soulmate_intro_plan_id", plan_id)
+
+    sub_id = f"I-INVALID-PLAN-{uuid.uuid4().hex[:8].upper()}"
+    mock_payload = {
+        "id": sub_id,
+        "status": "ACTIVE",
+        "plan_id": "P-ROGUE-FOREIGN-PRODUCT",
+        "custom_id": f"test_sess_{uuid.uuid4().hex[:8]}",
+        "billing_info": {
+            "next_billing_time": "2026-10-25T15:00:00Z",
+        },
+    }
+    client = MockPayPalClient({sub_id: mock_payload})
+
+    reconciled = await SubscriptionService.reconcile_subscription(
+        db=async_db,
+        provider_subscription_id=sub_id,
+        paypal_client=client,
+    )
+    assert reconciled is None
+
+    # Verify no subscription created in DB
+    stmt = select(Subscription).where(Subscription.provider_subscription_id == sub_id)
+    persisted = (await async_db.execute(stmt)).scalars().first()
+    assert persisted is None
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_prioritizes_custom_id_over_subscriber_email(
+    async_db: AsyncSession, monkeypatch
+):
+    """
+    C-2 Verification:
+    custom_id takes strict precedence over subscriber email when binding unknown subscriptions.
+    """
+    plan_id = "P-SOULMATE-INTRO-VALID"
+    monkeypatch.setattr(settings, "paypal_soulmate_intro_plan_id", plan_id)
+
+    payer_email = f"paypal_payer_{uuid.uuid4().hex[:8]}@example.com"
+    sess_a_email = f"sess_a_{uuid.uuid4().hex[:8]}@example.com"
+
+    # Session A: target of custom_id
+    sess_a_id = f"test_sess_a_{uuid.uuid4().hex[:8]}"
+    sess_a = SoulmateSession(
+        public_id=sess_a_id,
+        quiz_version="soulmate-quiz-v1",
+        status="email_captured",
+        current_step="subscribe",
+        email=sess_a_email,
+        email_normalized=sess_a_email,
+    )
+    # Session B: matches subscriber email
+    sess_b_id = f"test_sess_b_{uuid.uuid4().hex[:8]}"
+    sess_b = SoulmateSession(
+        public_id=sess_b_id,
+        quiz_version="soulmate-quiz-v1",
+        status="email_captured",
+        current_step="subscribe",
+        email=payer_email,
+        email_normalized=payer_email,
+    )
+    async_db.add_all([sess_a, sess_b])
+    await async_db.commit()
+
+    sub_id = f"I-CUSTOM-PRIORITY-{uuid.uuid4().hex[:8].upper()}"
+    mock_payload = {
+        "id": sub_id,
+        "status": "ACTIVE",
+        "plan_id": plan_id,
+        "custom_id": sess_a.public_id,
+        "subscriber": {"email_address": payer_email},
+        "billing_info": {
+            "next_billing_time": "2026-10-25T15:00:00Z",
+        },
+    }
+    client = MockPayPalClient({sub_id: mock_payload})
+
+    reconciled = await SubscriptionService.reconcile_subscription(
+        db=async_db,
+        provider_subscription_id=sub_id,
+        paypal_client=client,
+    )
+    assert reconciled is not None
+    assert reconciled.session_id == sess_a.id
+    assert reconciled.session_id != sess_b.id
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_fallback_to_subscriber_email_when_custom_id_missing(
+    async_db: AsyncSession, monkeypatch
+):
+    """
+    C-2 Verification:
+    When custom_id is missing, fallback binds to single session matching subscriber email.
+    """
+    plan_id = "P-SOULMATE-INTRO-VALID"
+    monkeypatch.setattr(settings, "paypal_soulmate_intro_plan_id", plan_id)
+
+    single_email = f"buyer_single_{uuid.uuid4().hex[:8]}@example.com"
+    sess = SoulmateSession(
+        public_id=f"test_sess_single_{uuid.uuid4().hex[:8]}",
+        quiz_version="soulmate-quiz-v1",
+        status="email_captured",
+        current_step="subscribe",
+        email=single_email,
+        email_normalized=single_email,
+    )
+    async_db.add(sess)
+    await async_db.commit()
+
+    sub_id = f"I-EMAIL-FALLBACK-{uuid.uuid4().hex[:8].upper()}"
+    mock_payload = {
+        "id": sub_id,
+        "status": "ACTIVE",
+        "plan_id": plan_id,
+        # No custom_id
+        "subscriber": {"email_address": single_email},
+        "billing_info": {
+            "next_billing_time": "2026-10-25T15:00:00Z",
+        },
+    }
+    client = MockPayPalClient({sub_id: mock_payload})
+
+    reconciled = await SubscriptionService.reconcile_subscription(
+        db=async_db,
+        provider_subscription_id=sub_id,
+        paypal_client=client,
+    )
+    assert reconciled is not None
+    assert reconciled.session_id == sess.id
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_rejects_ambiguous_multiple_unpaid_sessions_for_same_email(
+    async_db: AsyncSession, monkeypatch
+):
+    """
+    C-2 Verification:
+    When multiple unpaid sessions share the same email, refusing to bind prevents cross-session confusion.
+    """
+    plan_id = "P-SOULMATE-INTRO-VALID"
+    monkeypatch.setattr(settings, "paypal_soulmate_intro_plan_id", plan_id)
+
+    ambiguous_email = f"ambiguous_{uuid.uuid4().hex[:8]}@example.com"
+    sess1 = SoulmateSession(
+        public_id=f"test_sess_ambig1_{uuid.uuid4().hex[:8]}",
+        quiz_version="soulmate-quiz-v1",
+        status="email_captured",
+        current_step="subscribe",
+        email=ambiguous_email,
+        email_normalized=ambiguous_email,
+    )
+    sess2 = SoulmateSession(
+        public_id=f"test_sess_ambig2_{uuid.uuid4().hex[:8]}",
+        quiz_version="soulmate-quiz-v1",
+        status="email_captured",
+        current_step="subscribe",
+        email=ambiguous_email,
+        email_normalized=ambiguous_email,
+    )
+    async_db.add_all([sess1, sess2])
+    await async_db.commit()
+
+    sub_id = f"I-AMBIGUOUS-{uuid.uuid4().hex[:8].upper()}"
+    mock_payload = {
+        "id": sub_id,
+        "status": "ACTIVE",
+        "plan_id": plan_id,
+        # No custom_id
+        "subscriber": {"email_address": ambiguous_email},
+        "billing_info": {
+            "next_billing_time": "2026-10-25T15:00:00Z",
+        },
+    }
+    client = MockPayPalClient({sub_id: mock_payload})
+
+    reconciled = await SubscriptionService.reconcile_subscription(
+        db=async_db,
+        provider_subscription_id=sub_id,
+        paypal_client=client,
+    )
+    # Refuses ambiguous auto-binding
+    assert reconciled is None
+
+    stmt = select(Subscription).where(Subscription.provider_subscription_id == sub_id)
+    persisted = (await async_db.execute(stmt)).scalars().first()
+    assert persisted is None
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_binds_to_unique_unpaid_session_when_prior_session_already_paid(
+    async_db: AsyncSession, monkeypatch
+):
+    """
+    C-2 Verification:
+    When a user has a previously paid session and a newer unpaid session,
+    the fallback binds to the unique active unpaid session.
+    """
+    plan_id = "P-SOULMATE-INTRO-VALID"
+    monkeypatch.setattr(settings, "paypal_soulmate_intro_plan_id", plan_id)
+
+    email = f"returning_{uuid.uuid4().hex[:8]}@example.com"
+    # Session 1: previously completed/paid
+    sess_paid = SoulmateSession(
+        public_id=f"test_sess_paid_{uuid.uuid4().hex[:8]}",
+        quiz_version="soulmate-quiz-v1",
+        status="paid",
+        current_step="result",
+        email=email,
+        email_normalized=email,
+        subscription_success_at=datetime(2026, 8, 1, 12, 0, tzinfo=timezone.utc),
+    )
+    # Session 2: active unpaid attempt
+    sess_unpaid = SoulmateSession(
+        public_id=f"test_sess_unpaid_{uuid.uuid4().hex[:8]}",
+        quiz_version="soulmate-quiz-v1",
+        status="email_captured",
+        current_step="subscribe",
+        email=email,
+        email_normalized=email,
+        subscription_success_at=None,
+    )
+    async_db.add_all([sess_paid, sess_unpaid])
+    await async_db.commit()
+
+    sub_id = f"I-RETURNING-UNPAID-{uuid.uuid4().hex[:8].upper()}"
+    mock_payload = {
+        "id": sub_id,
+        "status": "ACTIVE",
+        "plan_id": plan_id,
+        # No custom_id
+        "subscriber": {"email_address": email},
+        "billing_info": {
+            "next_billing_time": "2026-10-25T15:00:00Z",
+        },
+    }
+    client = MockPayPalClient({sub_id: mock_payload})
+
+    reconciled = await SubscriptionService.reconcile_subscription(
+        db=async_db,
+        provider_subscription_id=sub_id,
+        paypal_client=client,
+    )
+    assert reconciled is not None
+    assert reconciled.session_id == sess_unpaid.id

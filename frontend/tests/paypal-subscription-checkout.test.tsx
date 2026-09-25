@@ -155,12 +155,39 @@ describe("SP-402: PayPal JS Subscription Checkout", () => {
       };
 
       // Direct simulation of createSubscription callback contract
-      const createSubscription = (_data: unknown, act: typeof actions) => {
-        return act.subscription.create({ plan_id: mockPlanId });
+      const createSubscription = (_data: unknown, act: typeof actions, sessionId?: string) => {
+        return act.subscription.create({
+          plan_id: mockPlanId,
+          ...(sessionId ? { custom_id: sessionId } : {}),
+        });
       };
 
       createSubscription({}, actions);
       expect(mockCreate).toHaveBeenCalledWith({ plan_id: "P-SERVER-PLAN-888" });
+    });
+
+    it("passes custom_id with session_id to PayPal SDK createSubscription to prevent cross-session ambiguity (C-2, DEV-SPEC §8.3)", () => {
+      const mockPlanId = "P-SERVER-PLAN-888";
+      const mockSessionId = "sess_customer_abc123";
+      const mockCreate = vi.fn().mockReturnValue(Promise.resolve("I-NEW-SUB-ID"));
+      const actions = {
+        subscription: {
+          create: mockCreate,
+        },
+      };
+
+      const createSubscription = (_data: unknown, act: typeof actions, sessionId?: string) => {
+        return act.subscription.create({
+          plan_id: mockPlanId,
+          ...(sessionId ? { custom_id: sessionId } : {}),
+        });
+      };
+
+      createSubscription({}, actions, mockSessionId);
+      expect(mockCreate).toHaveBeenCalledWith({
+        plan_id: "P-SERVER-PLAN-888",
+        custom_id: "sess_customer_abc123",
+      });
     });
   });
 

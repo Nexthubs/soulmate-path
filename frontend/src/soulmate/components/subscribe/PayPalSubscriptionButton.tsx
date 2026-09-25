@@ -13,6 +13,7 @@ export interface PayPalSubscriptionButtonProps {
   clientId: string;
   planId: string;
   currency?: string;
+  sessionId?: string;
   isBlocked?: boolean;
   disabled?: boolean;
   onApprove: (data: PayPalSubscriptionApprovalData) => void | Promise<void>;
@@ -31,6 +32,7 @@ export function PayPalSubscriptionButton({
   clientId,
   planId,
   currency = "USD",
+  sessionId,
   isBlocked = false,
   disabled = false,
   onApprove,
@@ -86,6 +88,7 @@ export function PayPalSubscriptionButton({
           createSubscription: (_data: unknown, actions: any) => {
             return actions.subscription.create({
               plan_id: planId,
+              ...(sessionId ? { custom_id: sessionId } : {}),
             });
           },
           onApprove: async (data: any) => {
@@ -127,7 +130,7 @@ export function PayPalSubscriptionButton({
         containerRef.current.innerHTML = "";
       }
     };
-  }, [clientId, planId, currency, isBlocked, loadAttempt, onApprove, onCancel, onError]);
+  }, [clientId, planId, currency, sessionId, isBlocked, loadAttempt, onApprove, onCancel, onError]);
 
   if (isBlocked) {
     return null;

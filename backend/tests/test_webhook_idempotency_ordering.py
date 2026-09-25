@@ -558,7 +558,7 @@ async def test_reconcile_subscription_creates_missing_subscription_linked_to_ses
     mock_client.get_subscription.return_value = {
         "id": ambiguous_sub_id,
         "status": "ACTIVE",
-        "plan_id": "P-SOULMATE-INTRO",
+        "plan_id": settings.paypal_soulmate_intro_plan_id or "P-SOULMATE-INTRO",
         "custom_id": public_id,
         "billing_info": {
             "next_billing_time": "2026-10-25T12:00:00Z",

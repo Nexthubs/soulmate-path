@@ -246,6 +246,7 @@ function SubscribeContent() {
                   clientId={offer.paypal.client_id}
                   planId={offer.paypal.plan_id}
                   currency={offer.currency}
+                  sessionId={sessionId}
                   isBlocked={offer.eligibility.is_blocked}
                   onApprove={handleApprove}
                   onCancel={handleCancel}
@@ -274,6 +275,7 @@ function SubscribeContent() {
               clientId={offer.paypal.client_id}
               planId={offer.paypal.plan_id}
               currency={offer.currency}
+              sessionId={sessionId}
               isBlocked={offer.eligibility.is_blocked}
               onApprove={handleApprove}
               onCancel={handleCancel}
