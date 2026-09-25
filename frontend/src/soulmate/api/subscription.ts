@@ -64,6 +64,8 @@ export interface SubscriptionStatusResponse {
   provider_status?: string | null;
   first_payment_at?: string | null;
   next_billing_at?: string | null;
+  paid_through_at?: string | null;
+  cancelled_at?: string | null;
 }
 
 /**
@@ -149,3 +151,48 @@ export async function getSubscriptionStatus(
 
   return res.json();
 }
+
+export interface SubscriptionCancelPayload {
+  session_id?: string;
+  reason?: string;
+}
+
+export interface SubscriptionCancelResponse {
+  status: string;
+  is_paid: boolean;
+  subscription_id: string;
+  provider_status: string;
+  cancelled_at: string;
+  paid_through_at?: string | null;
+  message: string;
+}
+
+/**
+ * Cancel the active subscription (DEV-SPEC §9.8, §15.9, SP-409).
+ * Idempotent, uses server-side provider API, preserves access until paid_through_at,
+ * and permanently retains previously generated artifacts.
+ */
+export async function cancelSubscription(
+  payload?: SubscriptionCancelPayload,
+  config: ClientConfig = clientConfig
+): Promise<SubscriptionCancelResponse> {
+  const url = `${config.apiBaseUrl}/subscription/cancel`;
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+    },
+    credentials: "include",
+    body: payload ? JSON.stringify(payload) : JSON.stringify({}),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw parseApiError(res.status, errorData);
+  }
+
+  return res.json();
+}
+

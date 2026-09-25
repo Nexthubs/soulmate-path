@@ -514,7 +514,16 @@ class PayPalWebhookService:
         if not sub.cancelled_at or event_time > sub.cancelled_at:
             sub.cancelled_at = event_time
 
-        logger.info("Subscription %s cancelled at %s", provider_sub_id, sub.cancelled_at)
+        billing_info = resource.get("billing_info", {})
+        next_billing_str = billing_info.get("next_billing_time")
+        next_billing_at = parse_iso_datetime(next_billing_str)
+        if next_billing_at and (not sub.paid_through_at or next_billing_at > sub.paid_through_at):
+            sub.paid_through_at = next_billing_at
+        elif not sub.paid_through_at and sub.next_billing_at:
+            sub.paid_through_at = sub.next_billing_at
+        sub.next_billing_at = None
+
+        logger.info("Subscription %s cancelled at %s (paid_through_at: %s)", provider_sub_id, sub.cancelled_at, sub.paid_through_at)
 
     @classmethod
     async def _handle_subscription_suspended(

@@ -363,13 +363,27 @@ class PayPalClient:
 
     async def cancel_subscription(self, subscription_id: str, reason: str = "Customer request") -> bool:
         """
-        Cancel a PayPal subscription.
+        Cancel a PayPal subscription (DEV-SPEC §9.8, SP-409).
         Endpoint: POST /v1/billing/subscriptions/{id}/cancel
+        Returns True if cancelled successfully or if already cancelled on PayPal.
         """
         payload = {"reason": reason}
         resp = await self._request("POST", f"/v1/billing/subscriptions/{subscription_id}/cancel", json_body=payload)
         if resp.status_code in (200, 204):
             return True
+        if resp.status_code == 422:
+            try:
+                err_data = resp.json()
+                for detail in err_data.get("details", []):
+                    if detail.get("issue") == "SUBSCRIPTION_STATUS_INVALID":
+                        logger.info(
+                            "PayPal subscription %s already inactive/cancelled on PayPal: %s",
+                            subscription_id,
+                            detail.get("description"),
+                        )
+                        return True
+            except Exception:
+                pass
         logger.warning(
             "Failed to cancel PayPal subscription %s (HTTP %s): %s",
             subscription_id,

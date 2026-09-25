@@ -28,6 +28,7 @@ from app.db.models.session import SoulmateSession
 from app.soulmate.domain.ledger_models import PaymentRecordCreate
 from app.soulmate.schema import (
     PayPalConfirmResponse,
+    SubscriptionCancelResponse,
     SubscriptionStatusResponse,
 )
 from app.soulmate.services.ledger_service import PaymentLedgerService
@@ -532,3 +533,131 @@ class SubscriptionService:
             paid_through_at=sub.paid_through_at,
             cancelled_at=sub.cancelled_at,
         )
+
+    @classmethod
+    async def cancel_subscription(
+        cls,
+        db: AsyncSession,
+        session: SoulmateSession,
+        reason: str = "Customer request",
+        paypal_client: Optional[PayPalClient] = None,
+    ) -> SubscriptionCancelResponse:
+        """
+        Cancel active PayPal subscription for the authenticated session (DEV-SPEC §9.8, §15.9, SP-409).
+
+        Guarantees & Acceptance Criteria:
+        1. Cancellation uses server-side provider API: POST /v1/billing/subscriptions/{id}/cancel.
+        2. Preserves paid-through access: fetches billing_info.next_billing_time from PayPal before cancel
+           and saves as local paid_through_at.
+        3. Repeated cancel is safe and idempotent.
+        4. Cancelled users retain previously generated artifacts (never deletes artifacts or ledger records).
+        5. Future billing is cleared (next_billing_at = None).
+        """
+        stmt = (
+            select(Subscription)
+            .where(Subscription.session_id == session.id)
+            .order_by(Subscription.created_at.desc())
+        )
+        res = await db.execute(stmt)
+        sub = res.scalars().first()
+        if not sub:
+            raise NotFoundError("No subscription found for this session.")
+
+        # Idempotency check: if already cancelled, return existing cancelled state safely (Acceptance #3)
+        if sub.provider_status == "CANCELLED" or sub.cancelled_at is not None:
+            logger.info(
+                "Idempotent cancel request for session %s: subscription %s already cancelled at %s",
+                session.public_id,
+                sub.provider_subscription_id,
+                sub.cancelled_at,
+            )
+            return SubscriptionCancelResponse(
+                status="CANCELLED",
+                is_paid=sub.first_payment_at is not None,
+                subscription_id=sub.provider_subscription_id,
+                provider_status="CANCELLED",
+                cancelled_at=sub.cancelled_at or utc_now(),
+                paid_through_at=sub.paid_through_at,
+                message="Subscription is already cancelled (idempotent duplicate request).",
+            )
+
+        client = paypal_client or PayPalClient(
+            client_id=settings.paypal_client_id,
+            client_secret=settings.paypal_client_secret,
+            environment=settings.paypal_env,
+        )
+
+        # 1. Fetch provider latest status / next billing time before calling cancel (DEV-SPEC §9.8, §15.9)
+        remote_data = None
+        try:
+            remote_data = await client.get_subscription(sub.provider_subscription_id)
+        except Exception as e:
+            logger.warning(
+                "Failed to fetch PayPal subscription %s before cancellation: %s",
+                sub.provider_subscription_id,
+                e,
+            )
+
+        if remote_data:
+            billing_info = remote_data.get("billing_info", {})
+            next_billing_str = billing_info.get("next_billing_time")
+            next_billing_at = parse_iso_datetime(next_billing_str)
+            if next_billing_at:
+                sub.paid_through_at = next_billing_at
+                sub.next_billing_at = next_billing_at
+
+        # Ensure paid_through_at is established if session has paid
+        if not sub.paid_through_at:
+            if sub.next_billing_at:
+                sub.paid_through_at = sub.next_billing_at
+            elif sub.first_payment_at:
+                # Default to 30 days cycle from first payment if next billing time is unknown
+                sub.paid_through_at = sub.first_payment_at + timedelta(days=30)
+
+        # 2. Call PayPal cancel API (DEV-SPEC §9.8: POST /v1/billing/subscriptions/{id}/cancel, Acceptance #1)
+        success = await client.cancel_subscription(
+            subscription_id=sub.provider_subscription_id,
+            reason=reason or "Customer request",
+        )
+        if not success:
+            logger.error("PayPal API rejected cancellation for subscription %s", sub.provider_subscription_id)
+            raise ValidationError("Failed to cancel subscription with PayPal. Please try again or contact support.")
+
+        # 3. Update local state
+        now = utc_now()
+        sub.provider_status = "CANCELLED"
+        sub.cancelled_at = now
+        sub.next_billing_at = None
+
+        # 4. Invariant: Retain existing artifacts (Acceptance #4, DEV-SPEC §9.8, ASSET-01)
+        art_stmt = select(SoulmateArtifact).where(SoulmateArtifact.session_id == session.id)
+        artifacts = (await db.execute(art_stmt)).scalars().all()
+
+        await db.commit()
+        await db.refresh(sub)
+
+        log_event(
+            event_type="subscription_cancelled",
+            message=f"Subscription {sub.provider_subscription_id} cancelled for session {session.public_id}",
+            level=logging.INFO,
+            extra_data={
+                "session_public_id": session.public_id,
+                "subscription_id": str(sub.id),
+                "provider_subscription_id": sub.provider_subscription_id,
+                "paid_through_at": sub.paid_through_at.isoformat() if sub.paid_through_at else None,
+                "cancelled_at": sub.cancelled_at.isoformat() if sub.cancelled_at else None,
+                "retained_artifacts_count": len(artifacts),
+                "reason": reason,
+            },
+        )
+
+        return SubscriptionCancelResponse(
+            status="CANCELLED",
+            is_paid=sub.first_payment_at is not None,
+            subscription_id=sub.provider_subscription_id,
+            provider_status="CANCELLED",
+            cancelled_at=sub.cancelled_at,
+            paid_through_at=sub.paid_through_at,
+            message="Subscription successfully cancelled. Access remains active through your current billing cycle.",
+        )
+

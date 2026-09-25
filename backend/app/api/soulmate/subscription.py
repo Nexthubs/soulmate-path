@@ -13,6 +13,8 @@ from app.db.session import get_db
 from app.soulmate.schema import (
     PayPalConfirmRequest,
     PayPalConfirmResponse,
+    SubscriptionCancelRequest,
+    SubscriptionCancelResponse,
     SubscriptionOfferResponse,
     SubscriptionStatusResponse,
 )
@@ -206,3 +208,48 @@ async def get_session_payments_endpoint(
         db=db,
         public_id=session.public_id,
     )
+
+
+@router.post(
+    "/cancel",
+    response_model=SubscriptionCancelResponse,
+    summary="Cancel active subscription (DEV-SPEC §9.8, §15.9, SP-409)",
+)
+async def cancel_subscription_endpoint(
+    request: Request,
+    payload: Optional[SubscriptionCancelRequest] = None,
+    db: AsyncSession = Depends(get_db),
+) -> SubscriptionCancelResponse:
+    """
+    Cancel active PayPal subscription for authenticated session (DEV-SPEC §9.8, §15.9, SP-409).
+    Enforces IDOR prevention, preserves paid-through access, cancels via PayPal REST API,
+    and idempotently retains existing artifacts.
+    """
+    session: Optional[SoulmateSession] = None
+    if payload and payload.session_id:
+        authenticated_id = get_authenticated_session_public_id(request)
+        verify_session_ownership(requested_public_id=payload.session_id, authenticated_public_id=authenticated_id)
+        session = await SessionService.get_session_by_public_id(db, payload.session_id)
+        if not session:
+            raise NotFoundError(f"Session with ID '{payload.session_id}' not found.")
+    else:
+        token = extract_session_token(request)
+        if not token:
+            raise ForbiddenOwnershipError("Active session required to cancel subscription.")
+        try:
+            authenticated_id = verify_session_token(token)
+            session = await SessionService.get_session_by_public_id(db, authenticated_id)
+            if not session:
+                raise NotFoundError("Authenticated session not found.")
+        except ForbiddenOwnershipError:
+            raise
+        except Exception:
+            raise ForbiddenOwnershipError("Invalid or expired session credentials.")
+
+    reason = payload.reason if payload and payload.reason else "Customer request"
+    return await SubscriptionService.cancel_subscription(
+        db=db,
+        session=session,
+        reason=reason,
+    )
+

@@ -339,3 +339,32 @@ class SubscriptionStatusResponse(BaseModel):
     cancelled_at: Optional[datetime] = Field(default=None, description="Cancellation UTC timestamp")
 
     model_config = ConfigDict(from_attributes=True, extra="ignore")
+
+
+class SubscriptionCancelRequest(BaseModel):
+    """Payload for canceling a subscription (DEV-SPEC §9.8, §15.9, SP-409)."""
+    session_id: Optional[str] = Field(
+        default=None,
+        description="Public session ID (optional if session cookie soulmate_sid is provided)",
+    )
+    reason: Optional[str] = Field(
+        default="Customer request",
+        description="Cancellation reason sent to provider",
+    )
+
+
+class SubscriptionCancelResponse(BaseModel):
+    """Response returned upon canceling a subscription (DEV-SPEC §9.8, §15.9, SP-409)."""
+    status: str = Field(..., description="Subscription state: 'CANCELLED'")
+    is_paid: bool = Field(..., description="Whether user retains paid access for current cycle")
+    subscription_id: str = Field(..., description="PayPal subscription ID")
+    provider_status: str = Field(..., description="Provider status ('CANCELLED')")
+    cancelled_at: datetime = Field(..., description="UTC cancellation timestamp")
+    paid_through_at: Optional[datetime] = Field(
+        default=None,
+        description="Timestamp through which current access and paid features remain active",
+    )
+    message: str = Field(..., description="Operational status message")
+
+    model_config = ConfigDict(from_attributes=True, extra="ignore")
+

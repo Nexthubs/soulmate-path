@@ -4,6 +4,7 @@ from app.api.soulmate.health import router as health_router
 from app.api.soulmate.quiz import router as quiz_router
 from app.api.soulmate.sessions import router as sessions_router
 from app.api.soulmate.subscription import (
+    cancel_subscription_endpoint,
     confirm_paypal_subscription_endpoint,
     get_subscription_offer,
     get_subscription_status_endpoint,
@@ -13,6 +14,7 @@ from app.api.soulmate.ledger import router as ledger_router
 from app.api.soulmate.webhooks import router as webhooks_router
 from app.soulmate.schema import (
     PayPalConfirmResponse,
+    SubscriptionCancelResponse,
     SubscriptionOfferResponse,
     SubscriptionStatusResponse,
 )
@@ -75,6 +77,15 @@ api_router.add_api_route(
     response_model=SubscriptionStatusResponse,
     tags=["Subscription"],
     summary="Subscription status me alias (DEV-SPEC §15.8)",
+)
+
+api_router.add_api_route(
+    "/subscriptions/cancel",
+    cancel_subscription_endpoint,
+    methods=["POST"],
+    response_model=SubscriptionCancelResponse,
+    tags=["Subscription"],
+    summary="Cancel subscription alias (DEV-SPEC §15.9)",
 )
 
 # Future route registrations per Soulmate-Path-DEV-SPEC-v1.md §15:
