@@ -1085,4 +1085,137 @@ async def test_paypal_client_list_subscription_transactions_defaults_required_pa
     assert captured_params["end_time"].endswith("Z")
 
 
+@pytest.mark.asyncio
+async def test_reconciliation_skips_transactions_with_missing_or_invalid_amounts_and_dates(
+    async_db: AsyncSession, monkeypatch
+):
+    """
+    Medium Finding 4 Remediation:
+    Reconciliation must NOT guess amounts (e.g. 19.00), currencies, or timestamps (utc_now()).
+    Transactions with missing/unparseable amounts or missing timestamps are skipped.
+    """
+    plan_id = "P-SOULMATE-INTRO-VALID"
+    monkeypatch.setattr(settings, "paypal_soulmate_intro_plan_id", plan_id)
+
+    sub_id = f"I-INVALID-TXS-{uuid.uuid4().hex[:8].upper()}"
+    sess, sub = await create_test_session_and_sub(
+        async_db,
+        provider_sub_id=sub_id,
+        first_payment_at=datetime.now(timezone.utc) - timedelta(days=5),
+    )
+
+    mock_payload = {
+        "id": sub_id,
+        "status": "ACTIVE",
+        "plan_id": plan_id,
+        "custom_id": sess.public_id,
+        "billing_info": {
+            "next_billing_time": "2026-10-25T15:00:00Z",
+        },
+    }
+
+    # Transactions with invalid/missing values:
+    # 1. Missing amount
+    # 2. Unparseable amount
+    # 3. Missing time
+    invalid_transactions = [
+        {
+            "id": "TX-MISSING-AMT",
+            "status": "COMPLETED",
+            "time": "2026-09-20T12:00:00Z",
+            # amount missing
+        },
+        {
+            "id": "TX-BAD-AMT",
+            "status": "COMPLETED",
+            "amount_with_breakdown": {"gross_amount": {"value": "invalid_number", "currency_code": "USD"}},
+            "time": "2026-09-21T12:00:00Z",
+        },
+        {
+            "id": "TX-MISSING-TIME",
+            "status": "COMPLETED",
+            "amount_with_breakdown": {"gross_amount": {"value": "19.00", "currency_code": "USD"}},
+            # time missing
+        },
+        {
+            # Valid transaction that should be recorded
+            "id": "TX-VALID-RECORD",
+            "status": "COMPLETED",
+            "amount_with_breakdown": {"gross_amount": {"value": "19.00", "currency_code": "USD"}},
+            "time": "2026-09-22T12:00:00Z",
+        },
+    ]
+
+    client = MockPayPalClient(
+        subscription_responses={sub_id: mock_payload},
+        transactions_responses={sub_id: invalid_transactions},
+    )
+
+    await SubscriptionService.reconcile_subscription(
+        db=async_db,
+        provider_subscription_id=sub_id,
+        paypal_client=client,
+    )
+
+    # Exactly 1 valid payment recorded; the 3 invalid ones were safely skipped without guessing
+    stmt = select(SubscriptionPayment).where(SubscriptionPayment.subscription_id == sub.id)
+    payments = (await async_db.execute(stmt)).scalars().all()
+    assert len(payments) == 1
+    assert payments[0].provider_payment_id == "TX-VALID-RECORD"
+    assert payments[0].amount == Decimal("19.00")
+    assert payments[0].paid_at == datetime(2026, 9, 22, 12, 0, 0, tzinfo=timezone.utc)
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_preserves_failed_payments_count_when_unresolved(
+    async_db: AsyncSession, monkeypatch
+):
+    """
+    Medium Finding 5 Remediation:
+    Reconciliation must NOT wipe failed_payments_count simply because status is ACTIVE
+    if the failure remains unresolved.
+    """
+    plan_id = "P-SOULMATE-INTRO-VALID"
+    monkeypatch.setattr(settings, "paypal_soulmate_intro_plan_id", plan_id)
+
+    sub_id = f"I-RECON-UNRESOLVED-{uuid.uuid4().hex[:8].upper()}"
+    sess, sub = await create_test_session_and_sub(
+        async_db,
+        provider_sub_id=sub_id,
+        status="ACTIVE",
+    )
+    sub.failed_payments_count = 2
+    issue_time = datetime(2026, 9, 25, 8, 0, 0, tzinfo=timezone.utc)
+    sub.billing_issue_detected_at = issue_time
+    await async_db.commit()
+
+    # Remote payload is ACTIVE, but still has failed_payments_count = 2
+    mock_payload = {
+        "id": sub_id,
+        "status": "ACTIVE",
+        "plan_id": plan_id,
+        "custom_id": sess.public_id,
+        "billing_info": {
+            "failed_payments_count": 2,
+            "next_billing_time": "2026-10-25T15:00:00Z",
+        },
+    }
+    client = MockPayPalClient(
+        subscription_responses={sub_id: mock_payload},
+        transactions_responses={sub_id: []},
+    )
+
+    await SubscriptionService.reconcile_subscription(
+        db=async_db,
+        provider_subscription_id=sub_id,
+        paypal_client=client,
+    )
+
+    await async_db.refresh(sub)
+    # Failure count preserved!
+    assert sub.failed_payments_count == 2
+    assert sub.billing_issue_detected_at == issue_time
+
+
+
 

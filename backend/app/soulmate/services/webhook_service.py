@@ -587,10 +587,14 @@ class PayPalWebhookService:
                         sub.expired_at = event_time
                 elif remote_status == "ACTIVE":
                     sub.suspended_at = None
-                    sub.failed_payments_count = 0
-                    sub.billing_issue_detected_at = None
 
         billing_info = resource.get("billing_info", {})
+        provider_failed_count = billing_info.get("failed_payments_count")
+        if provider_failed_count is not None:
+            sub.failed_payments_count = int(provider_failed_count)
+            if sub.failed_payments_count == 0:
+                sub.billing_issue_detected_at = None
+
         next_billing_str = billing_info.get("next_billing_time")
         next_billing_at = parse_iso_datetime(next_billing_str)
         if next_billing_at:

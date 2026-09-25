@@ -319,13 +319,43 @@ class SubscriptionService:
                 tx_id = str(tx_id).strip()
                 gross = tx.get("amount_with_breakdown", {}).get("gross_amount", {})
                 amount_str = gross.get("value") or tx.get("amount", {}).get("value")
+                if not amount_str:
+                    logger.warning(
+                        "Reconciliation: transaction %s for subscription %s missing amount; skipping ledger write to avoid guessing",
+                        tx_id,
+                        sub.provider_subscription_id,
+                    )
+                    continue
                 try:
-                    amount = Decimal(str(amount_str)) if amount_str else (sub.intro_price or Decimal("19.00"))
+                    amount = Decimal(str(amount_str))
                 except Exception:
-                    amount = sub.intro_price or Decimal("19.00")
+                    logger.warning(
+                        "Reconciliation: transaction %s for subscription %s has unparseable amount '%s'; skipping ledger write",
+                        tx_id,
+                        sub.provider_subscription_id,
+                        amount_str,
+                    )
+                    continue
 
-                currency = gross.get("currency_code") or tx.get("amount", {}).get("currency_code") or sub.currency or "USD"
-                paid_at = parse_iso_datetime(tx.get("time")) or utc_now()
+                currency = gross.get("currency_code") or tx.get("amount", {}).get("currency_code") or sub.currency
+                if not currency:
+                    logger.warning(
+                        "Reconciliation: transaction %s for subscription %s missing currency; skipping ledger write",
+                        tx_id,
+                        sub.provider_subscription_id,
+                    )
+                    continue
+
+                raw_time = tx.get("time")
+                paid_at = parse_iso_datetime(raw_time) if raw_time else None
+                if not paid_at:
+                    logger.warning(
+                        "Reconciliation: transaction %s for subscription %s missing or invalid time '%s'; skipping ledger write to avoid guessing",
+                        tx_id,
+                        sub.provider_subscription_id,
+                        raw_time,
+                    )
+                    continue
 
                 await PaymentLedgerService.record_payment(
                     db=db,
@@ -347,12 +377,39 @@ class SubscriptionService:
             if pay_id and str(pay_id).strip():
                 pay_id = str(pay_id).strip()
                 amount_val = last_payment_info.get("amount", {}).get("value")
+                if not amount_val:
+                    logger.warning(
+                        "Reconciliation: last_payment for subscription %s missing amount; skipping ledger write to avoid guessing",
+                        sub.provider_subscription_id,
+                    )
+                    return
                 try:
-                    amount = Decimal(str(amount_val)) if amount_val else (sub.intro_price or Decimal("19.00"))
+                    amount = Decimal(str(amount_val))
                 except Exception:
-                    amount = sub.intro_price or Decimal("19.00")
-                currency = last_payment_info.get("amount", {}).get("currency_code") or sub.currency or "USD"
-                paid_at = parse_iso_datetime(last_payment_info.get("time")) or utc_now()
+                    logger.warning(
+                        "Reconciliation: last_payment for subscription %s has unparseable amount '%s'; skipping ledger write",
+                        sub.provider_subscription_id,
+                        amount_val,
+                    )
+                    return
+
+                currency = last_payment_info.get("amount", {}).get("currency_code") or sub.currency
+                if not currency:
+                    logger.warning(
+                        "Reconciliation: last_payment for subscription %s missing currency; skipping ledger write",
+                        sub.provider_subscription_id,
+                    )
+                    return
+
+                raw_time = last_payment_info.get("time")
+                paid_at = parse_iso_datetime(raw_time) if raw_time else None
+                if not paid_at:
+                    logger.warning(
+                        "Reconciliation: last_payment for subscription %s missing or invalid time '%s'; skipping ledger write to avoid guessing",
+                        sub.provider_subscription_id,
+                        raw_time,
+                    )
+                    return
 
                 await PaymentLedgerService.record_payment(
                     db=db,
@@ -482,10 +539,18 @@ class SubscriptionService:
                     db=db,
                 )
 
-            # Reset billing issues if active
-            if remote_status == "ACTIVE":
-                sub.failed_payments_count = 0
-                sub.billing_issue_detected_at = None
+            # Synchronize billing issues from provider billing_info (Medium Finding 5)
+            billing_info = remote_data.get("billing_info", {}) if remote_data else {}
+            provider_failed_count = billing_info.get("failed_payments_count")
+            if provider_failed_count is not None:
+                sub.failed_payments_count = int(provider_failed_count)
+                if sub.failed_payments_count == 0:
+                    sub.billing_issue_detected_at = None
+            elif remote_status == "ACTIVE":
+                # Only clear if a successful payment occurred on or after the issue was detected
+                if sub.billing_issue_detected_at and last_paid_at and last_paid_at >= sub.billing_issue_detected_at:
+                    sub.failed_payments_count = 0
+                    sub.billing_issue_detected_at = None
 
             await db.flush()
             return sub

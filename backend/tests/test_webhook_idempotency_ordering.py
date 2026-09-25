@@ -816,6 +816,7 @@ async def test_billing_subscription_updated_synchronizes_state_and_resets_failur
             "id": provider_sub_id,
             "status": "ACTIVE",
             "billing_info": {
+                "failed_payments_count": 0,
                 "next_billing_time": "2026-10-25T13:00:00Z",
             },
         },
@@ -834,4 +835,52 @@ async def test_billing_subscription_updated_synchronizes_state_and_resets_failur
     assert sub.failed_payments_count == 0
     assert sub.billing_issue_detected_at is None
     assert sub.next_billing_at == datetime(2026, 10, 25, 13, 0, 0, tzinfo=timezone.utc)
+
+
+@pytest.mark.asyncio
+async def test_billing_subscription_updated_preserves_unresolved_failure_count(async_db_session: AsyncSession):
+    """
+    Medium Finding 5 Remediation:
+    BILLING.SUBSCRIPTION.UPDATED with status ACTIVE must NOT wipe failed_payments_count
+    if the payment failure is still unresolved (e.g. PayPal billing_info has failed_payments_count > 0 or omitted).
+    """
+    provider_sub_id = f"I-UNRESOLVED-EVT-{uuid.uuid4().hex[:8]}"
+    session, sub = await create_test_session_and_sub(
+        db=async_db_session,
+        provider_sub_id=provider_sub_id,
+        status="ACTIVE",
+    )
+    sub.failed_payments_count = 2
+    issue_time = datetime(2026, 9, 25, 9, 0, 0, tzinfo=timezone.utc)
+    sub.billing_issue_detected_at = issue_time
+    await async_db_session.commit()
+
+    # Webhook arrives reporting subscription update, but failure is still pending
+    update_event = {
+        "id": f"WH-UPDATE-PENDING-{uuid.uuid4().hex[:8]}",
+        "create_time": "2026-09-25T13:00:00Z",
+        "event_type": "BILLING.SUBSCRIPTION.UPDATED",
+        "resource": {
+            "id": provider_sub_id,
+            "status": "ACTIVE",
+            "billing_info": {
+                "failed_payments_count": 2,  # PayPal still reports 2 failures
+                "next_billing_time": "2026-10-25T13:00:00Z",
+            },
+        },
+    }
+    raw_req = make_raw_request(update_event)
+    resp = await PayPalWebhookService.process_webhook(
+        raw_request=raw_req,
+        db=async_db_session,
+        verifier=MockSuccessVerifier(),
+    )
+    assert resp.status == "received"
+
+    await async_db_session.refresh(sub)
+    assert sub.provider_status == "ACTIVE"
+    # Preserves failure count and detected timestamp!
+    assert sub.failed_payments_count == 2
+    assert sub.billing_issue_detected_at == issue_time
+
 
