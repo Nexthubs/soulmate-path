@@ -99,16 +99,17 @@ async def confirm_paypal_subscription_endpoint(
 @router.get(
     "/status",
     response_model=SubscriptionStatusResponse,
-    summary="Poll subscription and entitlement status (DEV-SPEC §15.8, SP-403)",
+    summary="Poll subscription and entitlement status (DEV-SPEC §15.8, SP-403, SP-408)",
 )
 async def get_subscription_status_endpoint(
     request: Request,
     session_id: Optional[str] = Query(default=None, description="Optional public session ID"),
+    reconcile: bool = Query(default=False, description="Optionally trigger live reconciliation against PayPal API"),
     db: AsyncSession = Depends(get_db),
 ) -> SubscriptionStatusResponse:
     """
     Get current subscription and payment confirmation status for the active session.
-    Polled by /soulmate/payment-processing to detect when webhook reconciles first payment.
+    Polled by /soulmate/payment-processing to detect when payment is confirmed.
     """
     session: Optional[SoulmateSession] = None
     if session_id:
@@ -129,7 +130,43 @@ async def get_subscription_status_endpoint(
         except Exception:
             return SubscriptionStatusResponse(status="NONE", is_paid=False)
 
-    return await SubscriptionService.get_subscription_status(db=db, session=session)
+    return await SubscriptionService.get_subscription_status(db=db, session=session, auto_reconcile=reconcile)
+
+
+@router.post(
+    "/reconcile",
+    response_model=SubscriptionStatusResponse,
+    summary="Explicitly reconcile subscription against PayPal REST API (DEV-SPEC §9.4, SP-408)",
+)
+async def reconcile_subscription_endpoint(
+    request: Request,
+    session_id: Optional[str] = Query(default=None, description="Optional public session ID"),
+    db: AsyncSession = Depends(get_db),
+) -> SubscriptionStatusResponse:
+    """
+    Explicitly query PayPal Subscriptions API to synchronize local billing and entitlement state.
+    Used for ambiguous state, delayed/missed webhooks, or manual reconciliation.
+    """
+    session: Optional[SoulmateSession] = None
+    if session_id:
+        authenticated_id = get_authenticated_session_public_id(request)
+        verify_session_ownership(requested_public_id=session_id, authenticated_public_id=authenticated_id)
+        session = await SessionService.get_session_by_public_id(db, session_id)
+        if not session:
+            raise NotFoundError(f"Session with ID '{session_id}' not found.")
+    else:
+        token = extract_session_token(request)
+        if not token:
+            return SubscriptionStatusResponse(status="NONE", is_paid=False)
+        try:
+            authenticated_id = verify_session_token(token)
+            session = await SessionService.get_session_by_public_id(db, authenticated_id)
+            if not session:
+                return SubscriptionStatusResponse(status="NONE", is_paid=False)
+        except Exception:
+            return SubscriptionStatusResponse(status="NONE", is_paid=False)
+
+    return await SubscriptionService.reconcile_session_subscription(db=db, session=session)
 
 
 @router.get(

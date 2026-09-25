@@ -801,7 +801,7 @@ Associate approved provider subscription with the authorized user/session and ex
 
 **Priority:** P0  
 **Depends:** SP-403, SP-406, SP-407  
-**Status:** TODO
+**Status:** DONE (docs/handoffs/SP-408.md)
 **Context refs:** DEV-SPEC §9.4–9.8, §10 | Decisions: PAY-AUTH-01 | Dependency handoffs: SP-403, SP-406, SP-407
 
 

@@ -29,6 +29,7 @@ from app.soulmate.domain.webhook_models import (
 )
 from app.soulmate.services.ledger_service import PaymentLedgerService
 from app.soulmate.services.paypal_client import PayPalClient
+from app.soulmate.services.subscription_service import SubscriptionService
 
 logger = logging.getLogger(__name__)
 
@@ -656,47 +657,8 @@ class PayPalWebhookService:
         paid_at: datetime,
         db: AsyncSession,
     ) -> None:
-        """
-        Initialize durable artifact rows for SKETCH (+12h) and REPORT (+24h) per Spec §10, TIME-01.
-        Idempotent: skips if row already exists.
-        """
-        sketch_unlock = paid_at + timedelta(hours=12)
-        report_unlock = paid_at + timedelta(hours=24)
-        email = session.email_normalized or session.email or ""
-
-        # 1. Sketch Artifact (enforces uq_soulmate_one_sketch_per_email)
-        sketch_cond = (SoulmateArtifact.session_id == session.id)
-        if email:
-            sketch_cond = sketch_cond | (SoulmateArtifact.email_normalized == email)
-        stmt_sketch = select(SoulmateArtifact).where(
-            sketch_cond,
-            SoulmateArtifact.artifact_type == "SKETCH",
-        )
-        if not (await db.execute(stmt_sketch)).scalars().first():
-            db.add(SoulmateArtifact(
-                session_id=session.id,
-                email_normalized=email,
-                artifact_type="SKETCH",
-                artifact_version="v1",
-                unlock_at=sketch_unlock,
-                generation_status="NOT_STARTED",
-            ))
-
-        # 2. Report Artifact
-        stmt_report = select(SoulmateArtifact).where(
-            SoulmateArtifact.session_id == session.id,
-            SoulmateArtifact.artifact_type == "REPORT",
-            SoulmateArtifact.artifact_version == "v1",
-        )
-        if not (await db.execute(stmt_report)).scalars().first():
-            db.add(SoulmateArtifact(
-                session_id=session.id,
-                email_normalized=email,
-                artifact_type="REPORT",
-                artifact_version="v1",
-                unlock_at=report_unlock,
-                generation_status="NOT_STARTED",
-            ))
+        """Initialize durable artifact rows via canonical SubscriptionService."""
+        await SubscriptionService._ensure_artifacts_initialized(session=session, paid_at=paid_at, db=db)
 
     @classmethod
     async def reconcile_subscription(
@@ -705,84 +667,10 @@ class PayPalWebhookService:
         db: AsyncSession,
         client: Optional[PayPalClient] = None,
     ) -> Optional[Subscription]:
-        """
-        Reconcile subscription state against PayPal REST API for ambiguous state (Work #4).
-        Enforces monotonicity: never regresses terminal CANCELLED/EXPIRED states.
-        """
-        if not provider_subscription_id or not provider_subscription_id.startswith("I-"):
-            return None
-
-        stmt = select(Subscription).where(Subscription.provider_subscription_id == provider_subscription_id)
-        sub = (await db.execute(stmt)).scalars().first()
-
-        paypal_client = client or PayPalClient(
-            client_id=settings.paypal_client_id,
-            client_secret=settings.paypal_client_secret,
-            environment=settings.paypal_env,
+        """Reconcile subscription via canonical SubscriptionService (SP-408)."""
+        return await SubscriptionService.reconcile_subscription(
+            db=db,
+            provider_subscription_id=provider_subscription_id,
+            paypal_client=client,
         )
-
-        try:
-            remote_data = await paypal_client.get_subscription(provider_subscription_id)
-        except Exception as e:
-            logger.warning("Failed to fetch PayPal subscription %s during reconciliation: %s", provider_subscription_id, e)
-            return sub
-
-        if not remote_data:
-            return sub
-
-        remote_status = str(remote_data.get("status", "")).upper()
-        billing_info = remote_data.get("billing_info", {})
-        next_billing_str = billing_info.get("next_billing_time")
-        next_billing_at = parse_iso_datetime(next_billing_str)
-
-        if sub is not None:
-            # Monotonicity rule: Do not regress CANCELLED or EXPIRED if local state is already terminal
-            if sub.provider_status in ("CANCELLED", "EXPIRED") and remote_status in ("ACTIVE", "APPROVAL_PENDING"):
-                logger.info(
-                    "Reconciliation skipped status regression for %s: local=%s, remote=%s",
-                    provider_subscription_id,
-                    sub.provider_status,
-                    remote_status,
-                )
-            else:
-                if remote_status:
-                    sub.provider_status = remote_status
-            if next_billing_at:
-                sub.next_billing_at = next_billing_at
-                if not sub.paid_through_at or next_billing_at > sub.paid_through_at:
-                    sub.paid_through_at = next_billing_at
-            return sub
-
-        # If sub does not exist locally yet, locate session via custom_id or subscriber email
-        custom_id = remote_data.get("custom_id")
-        session: Optional[SoulmateSession] = None
-        if custom_id:
-            sess_stmt = select(SoulmateSession).where(SoulmateSession.public_id == custom_id)
-            session = (await db.execute(sess_stmt)).scalars().first()
-
-        if not session:
-            subscriber_email = remote_data.get("subscriber", {}).get("email_address")
-            if subscriber_email:
-                sess_stmt = select(SoulmateSession).where(SoulmateSession.email_normalized == subscriber_email.lower().strip())
-                session = (await db.execute(sess_stmt)).scalars().first()
-
-        if session:
-            sub = Subscription(
-                session_id=session.id,
-                user_id=session.user_id,
-                provider="paypal",
-                provider_subscription_id=provider_subscription_id,
-                provider_plan_id=remote_data.get("plan_id", ""),
-                provider_status=remote_status or "APPROVAL_PENDING",
-                currency=settings.soulmate_currency or "USD",
-                intro_price=settings.soulmate_intro_price,
-                regular_price=settings.soulmate_regular_price or Decimal("29.00"),
-                next_billing_at=next_billing_at,
-                paid_through_at=next_billing_at,
-            )
-            db.add(sub)
-            await db.flush()
-            return sub
-
-        return None
 

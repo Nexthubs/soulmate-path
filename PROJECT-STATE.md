@@ -43,6 +43,7 @@ PayPal webhook endpoint with raw body (`SP-404`) completed and evidenced in `doc
 PayPal webhook signature verification (`SP-405`) completed and evidenced in `docs/handoffs/SP-405.md`.
 Event idempotency and out-of-order handling (`SP-406`) completed and evidenced in `docs/handoffs/SP-406.md`.
 Payment ledger (`SP-407`) completed and evidenced in `docs/handoffs/SP-407.md`.
+Subscription reconciliation/state mapping (`SP-408`) completed and evidenced in `docs/handoffs/SP-408.md`.
 
 ## 2. Milestone status
 
@@ -57,7 +58,7 @@ Payment ledger (`SP-407`) completed and evidenced in `docs/handoffs/SP-407.md`.
 
 ## 3. Active / blocked work
 
-Active tasks: SP-408 (Subscription reconciliation/state mapping). SP-407 completed.
+Active tasks: SP-409 (Cancellation and Settings action). SP-408 completed.
 
 
 Blocking decision IDs:
@@ -97,8 +98,8 @@ Report production provider: disabled / decision pending
 ## 6. Next safe tasks
 
 ```text
-1. SP-408 (Subscription reconciliation/state mapping).
-2. SP-409 (Cancellation and Settings action).
+1. SP-409 (Cancellation and Settings action).
+2. SP-410 (Payment-processing frontend state).
 ```
 
 ## 7. Update rule
