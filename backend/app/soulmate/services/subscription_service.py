@@ -120,14 +120,18 @@ class SubscriptionService:
         provider_plan_id = sub_data.get("plan_id")
         provider_status = sub_data.get("status", "APPROVAL_PENDING").upper()
 
-        # 3. Validate Plan ID against allowed Soulmate plans
+        # 3. Validate Plan ID against allowed Soulmate plans (DEV-SPEC §15.7 step 3, fail-closed)
         allowed_plans: Set[str] = set()
         if settings.paypal_soulmate_intro_plan_id:
             allowed_plans.add(settings.paypal_soulmate_intro_plan_id)
         if settings.paypal_soulmate_standard_plan_id:
             allowed_plans.add(settings.paypal_soulmate_standard_plan_id)
 
-        if allowed_plans and provider_plan_id not in allowed_plans:
+        if not allowed_plans:
+            logger.error("No Soulmate subscription plans configured; rejecting subscription confirmation (fail-closed)")
+            raise ValidationError("Soulmate subscription plans are not configured.")
+
+        if not provider_plan_id or provider_plan_id not in allowed_plans:
             logger.warning(
                 "Subscription confirmation rejected: plan %s not in allowed plans %s",
                 provider_plan_id,

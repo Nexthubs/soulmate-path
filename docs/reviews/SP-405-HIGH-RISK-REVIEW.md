@@ -79,7 +79,7 @@ Handoffs:
 ## 4. Verification Summary
 | Check | Status | Evidence |
 |---|---|---|
-| Dedicated Verifier Unit & E2E tests | PASS | 29/29 passed in `backend/tests/test_paypal_webhook_verifier.py` |
+| Dedicated Verifier Unit & E2E tests | PASS | 30/30 passed in `backend/tests/test_paypal_webhook_verifier.py` (including H-1 fail-closed test) |
 | Webhook endpoint tests | PASS | 15/15 passed in `backend/tests/test_paypal_webhooks.py` |
 | Full backend regression | PASS | 385/385 passed in 11.00s |
 | Frontend Vitest regression | PASS | 252/252 passed in 1.23s |

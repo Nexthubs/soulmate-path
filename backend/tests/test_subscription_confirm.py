@@ -263,6 +263,57 @@ async def test_confirm_subscription_unapproved_plan_rejected(test_session: Soulm
 
 
 @pytest.mark.asyncio
+async def test_confirm_subscription_fails_closed_when_no_plans_configured(test_session: SoulmateSession, monkeypatch):
+    """H-2: When neither intro nor standard plan is configured, confirmation rejects fail-closed."""
+    monkeypatch.setattr(settings, "paypal_soulmate_intro_plan_id", None)
+    monkeypatch.setattr(settings, "paypal_soulmate_standard_plan_id", None)
+
+    sub_id = "I-NO-PLANS-CONFIGURED"
+    mock_payload = {
+        "id": sub_id,
+        "status": "APPROVED",
+        "plan_id": "P-ANY-PLAN",
+    }
+    mock_client = MockPayPalClient({sub_id: mock_payload})
+
+    async with AsyncSessionLocal() as async_db:
+        with pytest.raises(ValidationError) as exc_info:
+            await SubscriptionService.confirm_paypal_subscription(
+                db=async_db,
+                session=test_session,
+                paypal_subscription_id=sub_id,
+                paypal_client=mock_client,
+            )
+
+    assert "not configured" in str(exc_info.value).lower()
+
+
+@pytest.mark.asyncio
+async def test_confirm_subscription_fails_closed_when_provider_plan_id_missing(test_session: SoulmateSession, monkeypatch):
+    """H-2: When provider payload lacks plan_id, confirmation rejects fail-closed."""
+    monkeypatch.setattr(settings, "paypal_soulmate_intro_plan_id", "P-APPROVED-1")
+
+    sub_id = "I-MISSING-PLAN-ID"
+    mock_payload = {
+        "id": sub_id,
+        "status": "APPROVED",
+        "plan_id": None,
+    }
+    mock_client = MockPayPalClient({sub_id: mock_payload})
+
+    async with AsyncSessionLocal() as async_db:
+        with pytest.raises(ValidationError) as exc_info:
+            await SubscriptionService.confirm_paypal_subscription(
+                db=async_db,
+                session=test_session,
+                paypal_subscription_id=sub_id,
+                paypal_client=mock_client,
+            )
+
+    assert "does not match configured Soulmate plans" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
 async def test_confirm_subscription_invalid_status_rejected(test_session: SoulmateSession, monkeypatch):
     """Subscription in cancelled or expired terminal status is rejected."""
     plan_id = "P-VALID-PLAN-999"

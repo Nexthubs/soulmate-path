@@ -162,37 +162,46 @@ class PayPalWebhookService:
                     details={"missing_headers": missing},
                 )
 
-            if verifier is not None:
-                webhook_id = settings.paypal_webhook_id
-                try:
-                    is_valid = await verifier.verify(
-                        raw_body=raw_request.raw_body,
-                        headers=raw_request.headers,
-                        webhook_event=raw_request.parsed_json,
-                        webhook_id=webhook_id,
-                    )
-                except TypeError:
-                    is_valid = await verifier.verify(
-                        raw_body=raw_request.raw_body,
-                        headers=raw_request.headers,
-                        webhook_id=webhook_id,
-                    )
-                if not is_valid:
-                    log_event(
-                        event_type="paypal_webhook_signature_failed",
-                        message=f"Signature verification failed for webhook event {event_id}",
-                        level=logging.WARNING,
-                        error_code="VALIDATION_ERROR",
-                        extra_data={"event_id": event_id, "event_type": event_type},
-                    )
-                    raise WebhookVerificationError(
-                        message="PayPal webhook signature verification failed.",
-                        details={"event_id": event_id},
-                    )
-                is_verified = True
-            else:
-                # If require_verification is True and verifier not supplied, default to verified if headers complete in SP-404 baseline
-                is_verified = True
+            if verifier is None:
+                log_event(
+                    event_type="paypal_webhook_unverified",
+                    message=f"Webhook event {event_id} rejected: signature verifier is not provided (fail-closed)",
+                    level=logging.ERROR,
+                    error_code="VALIDATION_ERROR",
+                    extra_data={"event_id": event_id, "event_type": event_type},
+                )
+                raise WebhookVerificationError(
+                    message="Webhook signature verifier is not configured or provided.",
+                    details={"event_id": event_id},
+                )
+
+            webhook_id = settings.paypal_webhook_id
+            try:
+                is_valid = await verifier.verify(
+                    raw_body=raw_request.raw_body,
+                    headers=raw_request.headers,
+                    webhook_event=raw_request.parsed_json,
+                    webhook_id=webhook_id,
+                )
+            except TypeError:
+                is_valid = await verifier.verify(
+                    raw_body=raw_request.raw_body,
+                    headers=raw_request.headers,
+                    webhook_id=webhook_id,
+                )
+            if not is_valid:
+                log_event(
+                    event_type="paypal_webhook_signature_failed",
+                    message=f"Signature verification failed for webhook event {event_id}",
+                    level=logging.WARNING,
+                    error_code="VALIDATION_ERROR",
+                    extra_data={"event_id": event_id, "event_type": event_type},
+                )
+                raise WebhookVerificationError(
+                    message="PayPal webhook signature verification failed.",
+                    details={"event_id": event_id},
+                )
+            is_verified = True
         else:
             is_verified = True
 

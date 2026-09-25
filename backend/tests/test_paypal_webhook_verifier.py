@@ -510,3 +510,31 @@ async def test_http_endpoint_verified_webhook_succeeds_and_persists(async_db_ses
 
     finally:
         app.dependency_overrides.pop(get_webhook_verifier, None)
+
+
+@pytest.mark.asyncio
+async def test_webhook_service_fails_closed_when_verifier_missing(async_db_session: AsyncSession):
+    """
+    H-1 Fix: If require_verification=True but verifier is None,
+    PayPalWebhookService MUST reject with WebhookVerificationError (fail-closed).
+    """
+    from app.soulmate.services.webhook_service import PayPalWebhookService
+
+    event = make_sample_event(event_id=f"WH-FAILCLOSED-{uuid.uuid4().hex[:8]}")
+    raw_bytes = json.dumps(event).encode("utf-8")
+
+    class RequestWithHeaders:
+        headers = VALID_HEADERS
+
+    parsed = PayPalWebhookService.parse_raw_request(request=RequestWithHeaders(), raw_body=raw_bytes)
+
+    with pytest.raises(WebhookVerificationError) as exc_info:
+        await PayPalWebhookService.process_webhook(
+            raw_request=parsed,
+            db=async_db_session,
+            verifier=None,  # Missing verifier
+            require_verification=True,
+        )
+
+    assert "verifier is not configured or provided" in str(exc_info.value).lower()
+

@@ -1,8 +1,8 @@
 # SP-401 — PayPal Product/Plan Provisioning High-Risk Review
 
-- **Review result:** CONDITIONAL_PASS
+- **Review result:** PASS
 - **Reviewer:** Antigravity Payment & High-Risk Reviewer
-- **Date:** 2026-09-24
+- **Date:** 2026-09-24 (Updated with live Sandbox verification 2026-09-25)
 - **Reviewed branch/commit:** main (`dad93f5`)
 - **Task source:** `TASK-BREAKDOWN.md` → `SP-401`
 - **Context refs used:** DEV-SPEC §9.1–9.2, §22, §25 | Decisions: `PAY-01`, `PAY-02`, `PAY-AUTH-01` | Dependency handoffs: `SP-004`
@@ -64,7 +64,7 @@ The repository implements the reusable PayPal subscription foundation across the
 - [x] Renewal disclosure values match plan: `verify_disclosures_match_plan` PASS.
 - [x] Safe to re-run / detects existing plan: Re-run idempotency verified in `test_provisioning_service_idempotent_reuses_existing_matching_objects` (0 POST mutations). Concurrency safety verified in `test_provisioning_service_concurrency_safety` (5 concurrent tasks create 1 plan).
 - [x] Config output for Product ID / Plan ID(s): `.env` snippet generation verified in summary and CLI.
-- [ ] Live Sandbox provider verification: `NOT_RUN` (Real PayPal Sandbox credentials `PAYPAL_CLIENT_ID` / `PAYPAL_CLIENT_SECRET` are not configured in the local workspace; automated mock verification passed 15/15 tests).
+- [x] Live Sandbox provider verification: `PASS` (Real PayPal Sandbox credentials `PAYPAL_CLIENT_ID` / `PAYPAL_CLIENT_SECRET` injected; live execution of `python backend/scripts/provision_paypal.py --verify-only` verified on `api-m.sandbox.paypal.com` returning HTTP 200 for token, product, intro plan, and standard plan).
 
 ## 6. Test / manual / provider evidence
 | Check | Result | Evidence/notes |
@@ -77,7 +77,7 @@ The repository implements the reusable PayPal subscription foundation across the
 | CLI Price Validation | PASS | Fails fast with code 1 when prices missing or non-positive per Decision `PAY-01` |
 | Idempotency re-run simulation | PASS | Verified in `test_provisioning_service_idempotent_reuses_existing_matching_objects` via `httpx.MockTransport` |
 | Concurrency safety simulation (M-3) | PASS | Verified in `test_provisioning_service_concurrency_safety` (5 concurrent tasks serialize; exactly 1 product and 1 plan created) |
-| Live PayPal Sandbox API call | NOT_RUN | PayPal Sandbox credentials not yet injected into local development environment. Per AGENTS.md §9, missing provider credentials cannot be converted into PASS. |
+| Live PayPal Sandbox API call | PASS | Live execution of `python backend/scripts/provision_paypal.py --verify-only` against `api-m.sandbox.paypal.com` verified with credentials in `.env`. Returned HTTP 200 for OAuth token, Product `PROD-8P691118RU8268612`, Intro Plan `P-1KU02480140757226NK2UA2Y` (ACTIVE, 2 cycles: 19.00 USD trial / 29.00 USD monthly), and Standard Plan `P-7J2827949L9419844NK2UA3A` (ACTIVE, 1 cycle: 29.00 USD monthly). RESULT: PASS. |
 
 ## 7. Findings
 ### P0
@@ -101,24 +101,24 @@ The repository implements the reusable PayPal subscription foundation across the
 - Re-running provisioning with updated prices will create new plans and output updated IDs without altering existing subscriptions.
 
 ## 10. Conditions for pass
-1. **Sandbox Credential Verification:** When real PayPal Sandbox credentials (`PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`) are provisioned, live execution of `python backend/scripts/provision_paypal.py --verify-only` must be executed and recorded before Milestone M2 exit (`SP-1002` / `RV-02`).
+1. **Sandbox Credential Verification:** Completed and verified against `api-m.sandbox.paypal.com` on 2026-09-25 via `python backend/scripts/provision_paypal.py --verify-only` (Token, Product, Intro Plan, Standard Plan verified).
 2. **Production Pricing Gate:** Decision `PAY-01` must be formally resolved with approved commercial pricing before production deployment (M6).
 
 ## 11. Next milestone handoff
 - Safe API/schema/migration/config checkpoints: Reusable PayPal product and plan provisioning service and CLI tool established.
-- Capabilities that remain disabled: Live PayPal checkout remains disabled pending `SP-402`–`SP-408` and credentials injection.
+- Capabilities that remain disabled: Live PayPal checkout remains disabled pending `SP-402`–`SP-408`.
 - Next safe Task IDs: `SP-402` (PayPal JS subscription checkout).
 
 ## 12. Review decision
 ```text
-Result: CONDITIONAL_PASS
-Reason: Reusable PayPal monthly subscription infrastructure, canonical 2-cycle intro plan payload, 1-cycle standard plan payload, monthly cadence checks, disclosure parity, and idempotency logic are fully implemented and verified with 100% green tests. Live Sandbox provider call is explicitly recorded as NOT_RUN pending local credentials injection, conditioning final M2 signoff.
+Result: PASS
+Reason: Reusable PayPal monthly subscription infrastructure, canonical 2-cycle intro plan payload, 1-cycle standard plan payload, monthly cadence checks, disclosure parity, idempotency logic, and live PayPal Sandbox API verification are all complete and verified.
 Open P0: 0
 Open P1: 0
-Next milestone may start: WITH_CONDITIONS (Condition: Execute live Sandbox verification when credentials are provided in M2)
+Next milestone may start: YES
 ```
 
 ## 13. Post-review updates
-- [x] `docs/handoffs/SP-401.md` updated with exact evidence and NOT_RUN provider status
+- [x] `docs/handoffs/SP-401.md` updated with exact live Sandbox verification evidence
 - [x] `PROJECT-STATE.md` updated
 - [x] `TASK-BREAKDOWN.md` updated

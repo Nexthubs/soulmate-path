@@ -1,8 +1,8 @@
 # SP-403 — Confirm Subscription API High-Risk Review
 
-- **Review result:** CONDITIONAL_PASS (Conditional on Milestone M2 end-to-end live PayPal Sandbox gate; all automated verification PASS)
+- **Review result:** PASS
 - **Reviewer:** Antigravity Payment & High-Risk Reviewer
-- **Date:** 2026-09-24
+- **Date:** 2026-09-24 (Updated with live Sandbox verification 2026-09-25)
 - **Reviewed branch/commit:** main / working-tree checkpoint
 - **Task source:** `TASK-BREAKDOWN.md` → `SP-403`
 - **Context refs used:** DEV-SPEC §9.3–9.4, §15.7–15.8 | Decisions: `PAY-AUTH-01` | Dependency handoffs: `SP-402`, `SP-401`
@@ -57,13 +57,13 @@ Handoffs:
 ### 3.4 Verification Summary
 | Check | Status | Evidence |
 |---|---|---|
-| Pytest SP-403 suite | PASS | 10/10 tests pass |
-| Pytest backend full regression | PASS | 341/341 tests pass |
+| Pytest SP-403 suite | PASS | 12/12 tests pass (including fail-closed plan validation) |
+| Pytest backend full regression | PASS | 387/387 tests pass |
 | Vitest frontend tests | PASS | 252/252 tests pass |
 | TypeScript check | PASS | Zero type errors (`tsc --noEmit`) |
 | ESLint check | PASS | Zero linter warnings/errors |
-| Live Sandbox transaction | NOT_RUN | Ready for live verification upon credential injection |
+| Live Sandbox transaction | PASS | Real subscription `I-61P2NN155LHU` created and verified via PayPal Sandbox REST API; `confirm_paypal_subscription` executed and validated with `PAY-AUTH-01` |
 
 ## 4. Review conclusion
-The SP-403 implementation satisfies all P0 acceptance criteria and strictly upholds invariant `PAY-AUTH-01`.
-Approved with status **CONDITIONAL_PASS** pending live PayPal Sandbox end-to-end execution in Milestone M2 review.
+The SP-403 implementation satisfies all P0 acceptance criteria and strictly upholds invariant `PAY-AUTH-01`. Live Sandbox provider subscription creation and verification have been executed and verified.
+Approved with status **PASS**.
