@@ -37,12 +37,42 @@ async def async_db():
 class MockPayPalClient(PayPalClient):
     """Mock PayPalClient that returns configurable subscription payloads without live network calls."""
 
-    def __init__(self, subscription_responses: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self,
+        subscription_responses: Optional[Dict[str, Any]] = None,
+        transactions_responses: Optional[Dict[str, Any]] = None,
+    ):
         super().__init__(client_id="mock_id", client_secret="mock_secret")
         self.subscription_responses = subscription_responses or {}
+        self.transactions_responses = transactions_responses or {}
 
     async def get_subscription(self, subscription_id: str) -> Optional[Dict[str, Any]]:
         return self.subscription_responses.get(subscription_id)
+
+    async def list_subscription_transactions(
+        self,
+        subscription_id: str,
+        start_time: Optional[str] = None,
+        end_time: Optional[str] = None,
+    ) -> list[Dict[str, Any]]:
+        if subscription_id in self.transactions_responses:
+            return self.transactions_responses[subscription_id]
+        sub = self.subscription_responses.get(subscription_id)
+        if sub:
+            last_p = sub.get("billing_info", {}).get("last_payment")
+            if last_p and (last_p.get("id") or last_p.get("time")):
+                tx_id = last_p.get("id") or f"TX-DEFAULT-{subscription_id}"
+                return [
+                    {
+                        "id": tx_id,
+                        "status": "COMPLETED",
+                        "amount_with_breakdown": {
+                            "gross_amount": last_p.get("amount", {"currency_code": "USD", "value": "19.00"})
+                        },
+                        "time": last_p.get("time"),
+                    }
+                ]
+        return []
 
 
 async def create_test_session_and_sub(
@@ -736,3 +766,148 @@ async def test_reconciliation_binds_to_unique_unpaid_session_when_prior_session_
     )
     assert reconciled is not None
     assert reconciled.session_id == sess_unpaid.id
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_backfills_missed_renewal_payments_when_first_payment_already_set(async_db: AsyncSession):
+    """
+    H-2 Verification (SP-407/408, DEV-SPEC §9.4–9.7):
+    When a subscription already has first_payment_at set (initial payment was processed),
+    and a renewal payment webhook was lost, calling reconcile_subscription queries PayPal
+    transactions and idempotently backfills the missing renewal payment into subscription_payments ledger.
+    """
+    sub_id = f"I-RENEWAL-{uuid.uuid4().hex[:8].upper()}"
+    first_pay_time = datetime(2026, 8, 25, 12, 0, 0, tzinfo=timezone.utc)
+    sess, sub = await create_test_session_and_sub(
+        async_db,
+        sub_id,
+        status="ACTIVE",
+        first_payment_at=first_pay_time,
+    )
+
+    # Initial payment ledger entry already exists
+    initial_payment = SubscriptionPayment(
+        subscription_id=sub.id,
+        provider_payment_id=f"TX-INITIAL-{sub_id}",
+        cycle_no=1,
+        amount=Decimal("19.00"),
+        currency="USD",
+        status="COMPLETED",
+        paid_at=first_pay_time,
+    )
+    async_db.add(initial_payment)
+    await async_db.commit()
+
+    # Renewal transaction occurs in PayPal (cycle 2)
+    renewal_tx_id = f"TX-RENEWAL-{uuid.uuid4().hex[:8].upper()}"
+    renewal_time_str = "2026-09-25T12:00:00Z"
+    renewal_time_dt = datetime(2026, 9, 25, 12, 0, 0, tzinfo=timezone.utc)
+
+    mock_sub_payload = {
+        "id": sub_id,
+        "status": "ACTIVE",
+        "plan_id": "P-SOULMATE-STANDARD",
+        "billing_info": {
+            "last_payment": {
+                "amount": {"currency_code": "USD", "value": "29.00"},
+                "time": renewal_time_str,
+            },
+            "next_billing_time": "2026-10-25T12:00:00Z",
+        },
+    }
+    mock_txs = [
+        {
+            "id": f"TX-INITIAL-{sub_id}",
+            "status": "COMPLETED",
+            "amount_with_breakdown": {
+                "gross_amount": {"currency_code": "USD", "value": "19.00"}
+            },
+            "time": "2026-08-25T12:00:00Z",
+        },
+        {
+            "id": renewal_tx_id,
+            "status": "COMPLETED",
+            "amount_with_breakdown": {
+                "gross_amount": {"currency_code": "USD", "value": "29.00"}
+            },
+            "time": renewal_time_str,
+        },
+    ]
+
+    client = MockPayPalClient(
+        subscription_responses={sub_id: mock_sub_payload},
+        transactions_responses={sub_id: mock_txs},
+    )
+
+    # Execute reconciliation
+    reconciled = await SubscriptionService.reconcile_subscription(
+        db=async_db,
+        provider_subscription_id=sub_id,
+        paypal_client=client,
+    )
+    await async_db.commit()
+
+    assert reconciled is not None
+    # first_payment_at remains unchanged (immutable)
+    assert reconciled.first_payment_at == first_pay_time
+
+    # Ledger now has BOTH payments (initial + renewal)
+    pay_stmt = select(SubscriptionPayment).where(SubscriptionPayment.subscription_id == sub.id).order_by(SubscriptionPayment.created_at)
+    payments = (await async_db.execute(pay_stmt)).scalars().all()
+    assert len(payments) == 2
+    assert payments[0].provider_payment_id == f"TX-INITIAL-{sub_id}"
+    assert payments[1].provider_payment_id == renewal_tx_id
+    assert payments[1].amount == Decimal("29.00")
+    assert payments[1].cycle_no == 2
+    assert payments[1].status == "COMPLETED"
+    assert payments[1].paid_at == renewal_time_dt
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_skips_ledger_write_without_fictitious_id_when_no_transaction_id(async_db: AsyncSession):
+    """
+    H-2 Verification:
+    When PayPal reports last_payment without a transaction ID and no transactions are returned,
+    reconciliation NEVER creates a fictitious ID (like PAYPAL-LASTPAY-...). It safely logs a warning and skips ledger write.
+    """
+    sub_id = f"I-NO-TX-ID-{uuid.uuid4().hex[:8].upper()}"
+    sess, sub = await create_test_session_and_sub(
+        async_db,
+        sub_id,
+        status="ACTIVE",
+    )
+
+    # Payload with last_payment having NO id
+    mock_sub_payload = {
+        "id": sub_id,
+        "status": "ACTIVE",
+        "plan_id": "P-SOULMATE-INTRO",
+        "billing_info": {
+            "last_payment": {
+                "amount": {"currency_code": "USD", "value": "19.00"},
+                "time": "2026-09-25T12:00:00Z",
+                # Note: No 'id' field!
+            },
+            "next_billing_time": "2026-10-25T12:00:00Z",
+        },
+    }
+
+    # Explicitly empty transactions list
+    client = MockPayPalClient(
+        subscription_responses={sub_id: mock_sub_payload},
+        transactions_responses={sub_id: []},
+    )
+
+    reconciled = await SubscriptionService.reconcile_subscription(
+        db=async_db,
+        provider_subscription_id=sub_id,
+        paypal_client=client,
+    )
+    await async_db.commit()
+
+    assert reconciled is not None
+    # No payment was inserted with fake ID
+    pay_stmt = select(SubscriptionPayment).where(SubscriptionPayment.subscription_id == sub.id)
+    payments = (await async_db.execute(pay_stmt)).scalars().all()
+    assert len(payments) == 0
+

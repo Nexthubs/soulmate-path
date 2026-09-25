@@ -337,6 +337,8 @@ class SubscriptionStatusResponse(BaseModel):
     next_billing_at: Optional[datetime] = Field(default=None, description="Next billing UTC timestamp")
     paid_through_at: Optional[datetime] = Field(default=None, description="Paid-through expiration UTC timestamp")
     cancelled_at: Optional[datetime] = Field(default=None, description="Cancellation UTC timestamp")
+    failed_payments_count: int = Field(default=0, description="Count of failed renewal/payment attempts")
+    billing_issue_detected_at: Optional[datetime] = Field(default=None, description="Timestamp when billing issue/payment failure occurred")
 
     model_config = ConfigDict(from_attributes=True, extra="ignore")
 

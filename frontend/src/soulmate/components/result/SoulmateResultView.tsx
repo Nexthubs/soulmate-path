@@ -215,17 +215,28 @@ export function SoulmateResultView({
         </div>
       )}
 
-      {/* Top Bar with Brand & User Email */}
+      {/* Top Bar with Brand & User Email & Settings */}
       <header className="w-full flex items-center justify-between pb-6 px-2">
         <span className="font-serif italic font-bold text-[26px] tracking-tight text-[#2c1e4a]">
           Hint
         </span>
-        <span
-          data-testid="user-email-header"
-          className="font-sans text-[13px] text-neutral-500 font-medium truncate max-w-[200px]"
-        >
-          {userEmail}
-        </span>
+        <div className="flex items-center gap-3">
+          <span
+            data-testid="user-email-header"
+            className="font-sans text-[13px] text-neutral-500 font-medium truncate max-w-[160px]"
+          >
+            {userEmail}
+          </span>
+          <a
+            href="/soulmate/settings"
+            data-testid="settings-nav-link"
+            className="text-neutral-400 hover:text-neutral-700 transition-colors p-1 text-sm font-semibold"
+            title="Subscription Settings"
+            aria-label="Subscription Settings"
+          >
+            ⚙
+          </a>
+        </div>
       </header>
 
       {/* Heading Section (Figma 102:1216) */}

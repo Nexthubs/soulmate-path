@@ -22,6 +22,14 @@ import {
   formatDate,
 } from "../src/soulmate/components/settings";
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: vi.fn(),
+    back: vi.fn(),
+  }),
+  useSearchParams: () => new URLSearchParams(),
+}));
+
 describe("SP-409: Subscription Cancellation & Settings Action", () => {
   const originalFetch = global.fetch;
 
@@ -136,4 +144,39 @@ describe("SP-409: Subscription Cancellation & Settings Action", () => {
       expect(formatDate(undefined)).toBe("N/A");
     });
   });
+
+  describe("3. H-3 Route Registration & Navigation Integration", () => {
+    it("registers /soulmate/settings in SOULMATE_ROUTES and ALLOWED_BACK_ROUTES", async () => {
+      const { SOULMATE_ROUTES, ALLOWED_BACK_ROUTES } = await import("../src/soulmate/domain");
+      expect(SOULMATE_ROUTES.SETTINGS).toBe("/soulmate/settings");
+      expect(ALLOWED_BACK_ROUTES).toContain("/soulmate/settings");
+    });
+
+    it("renders settings navigation link in SoulmateResultView", async () => {
+      const { SoulmateResultView } = await import("../src/soulmate/components/result");
+      const html = renderToStaticMarkup(
+        <SoulmateResultView userEmail="subscriber@example.com" />
+      );
+
+      expect(html).toContain('href="/soulmate/settings"');
+      expect(html).toContain('data-testid="settings-nav-link"');
+      expect(html).toContain("subscriber@example.com");
+    });
+
+    it("renders SoulmateSettingsPage structure mounting SubscriptionSettingsAction and back link", async () => {
+      const html = renderToStaticMarkup(
+        <SubscriptionSettingsAction
+          status="ACTIVE"
+          isPaid={true}
+          subscriptionId="I-PAGE-TEST-123"
+          nextBillingAt="2026-11-01T12:00:00Z"
+        />
+      );
+
+      expect(html).toContain("I-PAGE-TEST-123");
+      expect(html).toContain("Active");
+      expect(html).toContain("Nov 1, 2026");
+    });
+  });
 });
+

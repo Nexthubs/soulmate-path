@@ -276,6 +276,93 @@ class SubscriptionService:
             )
 
     @classmethod
+    async def _reconcile_subscription_payments(
+        cls,
+        sub: Subscription,
+        remote_data: Dict[str, Any],
+        client: PayPalClient,
+        db: AsyncSession,
+    ) -> None:
+        """
+        Reconcile payment transactions from PayPal into the durable ledger (DEV-SPEC §9.4–9.7, H-2).
+        1. Calls PayPal /v1/billing/subscriptions/{id}/transactions to get all completed transactions.
+        2. Records each completed transaction with its authentic transaction ID (idempotent via PaymentLedgerService).
+        3. If transactions endpoint returns no transactions, falls back to billing_info.last_payment IF it has a real id.
+        4. NEVER generates fictitious payment IDs (e.g. PAYPAL-LASTPAY-...).
+        """
+        transactions: List[Dict[str, Any]] = []
+        try:
+            transactions = await client.list_subscription_transactions(sub.provider_subscription_id)
+        except Exception as e:
+            logger.warning("Failed to list PayPal transactions for subscription %s: %s", sub.provider_subscription_id, e)
+
+        recorded_count = 0
+        if transactions:
+            for tx in transactions:
+                tx_status = str(tx.get("status", "")).upper()
+                if tx_status != "COMPLETED":
+                    continue
+                tx_id = tx.get("id")
+                if not tx_id or not str(tx_id).strip():
+                    continue
+
+                tx_id = str(tx_id).strip()
+                gross = tx.get("amount_with_breakdown", {}).get("gross_amount", {})
+                amount_str = gross.get("value") or tx.get("amount", {}).get("value")
+                try:
+                    amount = Decimal(str(amount_str)) if amount_str else (sub.intro_price or Decimal("19.00"))
+                except Exception:
+                    amount = sub.intro_price or Decimal("19.00")
+
+                currency = gross.get("currency_code") or tx.get("amount", {}).get("currency_code") or sub.currency or "USD"
+                paid_at = parse_iso_datetime(tx.get("time")) or utc_now()
+
+                await PaymentLedgerService.record_payment(
+                    db=db,
+                    create_data=PaymentRecordCreate(
+                        subscription_id=sub.id,
+                        provider_payment_id=tx_id,
+                        amount=amount,
+                        currency=currency,
+                        status="COMPLETED",
+                        paid_at=paid_at,
+                        raw_json=tx,
+                    ),
+                )
+                recorded_count += 1
+
+        if recorded_count == 0:
+            last_payment_info = remote_data.get("billing_info", {}).get("last_payment", {}) if remote_data else {}
+            pay_id = last_payment_info.get("id")
+            if pay_id and str(pay_id).strip():
+                pay_id = str(pay_id).strip()
+                amount_val = last_payment_info.get("amount", {}).get("value")
+                try:
+                    amount = Decimal(str(amount_val)) if amount_val else (sub.intro_price or Decimal("19.00"))
+                except Exception:
+                    amount = sub.intro_price or Decimal("19.00")
+                currency = last_payment_info.get("amount", {}).get("currency_code") or sub.currency or "USD"
+                paid_at = parse_iso_datetime(last_payment_info.get("time")) or utc_now()
+
+                await PaymentLedgerService.record_payment(
+                    db=db,
+                    create_data=PaymentRecordCreate(
+                        subscription_id=sub.id,
+                        provider_payment_id=pay_id,
+                        amount=amount,
+                        currency=currency,
+                        status="COMPLETED",
+                        paid_at=paid_at,
+                        raw_json=remote_data,
+                    ),
+                )
+            elif last_payment_info:
+                logger.warning(
+                    "Reconciliation: PayPal subscription %s reported last_payment without transaction ID and no transactions returned; skipping ledger write to avoid fictitious ID.",
+                    sub.provider_subscription_id,
+                )
+
+    @classmethod
     async def reconcile_subscription(
         cls,
         db: AsyncSession,
@@ -375,26 +462,20 @@ class SubscriptionService:
                             },
                         )
 
-                    # Ensure payment ledger entry exists
-                    amount_val = last_payment.get("amount", {}).get("value")
-                    try:
-                        amount = Decimal(str(amount_val)) if amount_val else (sub.intro_price or Decimal("19.00"))
-                    except Exception:
-                        amount = sub.intro_price or Decimal("19.00")
-                    currency = last_payment.get("amount", {}).get("currency_code") or sub.currency or "USD"
-                    pay_id = last_payment.get("id") or f"PAYPAL-LASTPAY-{sub.provider_subscription_id}"
-                    await PaymentLedgerService.record_payment(
-                        db=db,
-                        create_data=PaymentRecordCreate(
-                            subscription_id=sub.id,
-                            provider_payment_id=pay_id,
-                            amount=amount,
-                            currency=currency,
-                            status="COMPLETED",
-                            paid_at=last_paid_at,
-                            raw_json=remote_data,
-                        ),
-                    )
+            # 4. Decoupled Payment Ledger Reconciliation (H-2, DEV-SPEC §9.4–9.7):
+            # Backfill any missing payments (initial or recurring renewals) via transactions API
+            if last_paid_at is not None or remote_status in ("ACTIVE", "CANCELLED", "SUSPENDED", "EXPIRED"):
+                await cls._reconcile_subscription_payments(
+                    sub=sub,
+                    remote_data=remote_data,
+                    client=client,
+                    db=db,
+                )
+
+            # Reset billing issues if active
+            if remote_status == "ACTIVE":
+                sub.failed_payments_count = 0
+                sub.billing_issue_detected_at = None
 
             await db.flush()
             return sub
@@ -498,25 +579,13 @@ class SubscriptionService:
                     session.current_step = "result"
                     await cls._ensure_artifacts_initialized(session=session, paid_at=last_paid_at, db=db)
 
-                amount_val = last_payment.get("amount", {}).get("value")
-                try:
-                    amount = Decimal(str(amount_val)) if amount_val else (sub.intro_price or Decimal("19.00"))
-                except Exception:
-                    amount = sub.intro_price or Decimal("19.00")
-                currency = last_payment.get("amount", {}).get("currency_code") or sub.currency or "USD"
-                pay_id = last_payment.get("id") or f"PAYPAL-LASTPAY-{sub.provider_subscription_id}"
-                await PaymentLedgerService.record_payment(
-                    db=db,
-                    create_data=PaymentRecordCreate(
-                        subscription_id=sub.id,
-                        provider_payment_id=pay_id,
-                        amount=amount,
-                        currency=currency,
-                        status="COMPLETED",
-                        paid_at=last_paid_at,
-                        raw_json=remote_data,
-                    ),
-                )
+            # Reconcile payments using authentic transactions
+            await cls._reconcile_subscription_payments(
+                sub=sub,
+                remote_data=remote_data,
+                client=client,
+                db=db,
+            )
             return sub
 
         return None
@@ -614,6 +683,8 @@ class SubscriptionService:
             next_billing_at=sub.next_billing_at,
             paid_through_at=sub.paid_through_at,
             cancelled_at=sub.cancelled_at,
+            failed_payments_count=sub.failed_payments_count or 0,
+            billing_issue_detected_at=sub.billing_issue_detected_at,
         )
 
     @classmethod
@@ -692,11 +763,18 @@ class SubscriptionService:
         if not sub.paid_through_at:
             if sub.next_billing_at:
                 sub.paid_through_at = sub.next_billing_at
-            elif sub.first_payment_at:
-                # Default to 30 days cycle from first payment if next billing time is unknown
-                sub.paid_through_at = sub.first_payment_at + timedelta(days=30)
+            else:
+                # H-4: Do NOT artificially default to 30 days (month lengths vary).
+                # Leave unset or existing to be resolved accurately via provider/reconciliation.
+                logger.warning(
+                    "Subscription %s cancellation: PayPal did not provide next_billing_time and no paid_through_at exists locally; leaving paid_through_at unset for reconciliation.",
+                    sub.provider_subscription_id,
+                )
 
-        # 2. Call PayPal cancel API (DEV-SPEC §9.8: POST /v1/billing/subscriptions/{id}/cancel, Acceptance #1)
+        # 2. Persist state before calling external PayPal API to ensure DB writeability (H-4)
+        await db.flush()
+
+        # 3. Call PayPal cancel API (DEV-SPEC §9.8: POST /v1/billing/subscriptions/{id}/cancel, Acceptance #1)
         success = await client.cancel_subscription(
             subscription_id=sub.provider_subscription_id,
             reason=reason or "Customer request",

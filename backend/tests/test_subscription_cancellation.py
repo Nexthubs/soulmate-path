@@ -519,3 +519,47 @@ async def test_cancel_nonexistent_subscription_raises_404(async_db: AsyncSession
         data = res.json()
         assert data["error_code"] == "NOT_FOUND"
 
+
+@pytest.mark.asyncio
+async def test_cancel_subscription_without_next_billing_time_avoids_fictitious_30_days(async_db: AsyncSession):
+    """
+    H-4 Verification (SP-409, DEV-SPEC §9.4):
+    When PayPal does NOT return next_billing_time and local subscription has no next_billing_at or paid_through_at,
+    cancel_subscription must NOT hardcode + timedelta(days=30). It leaves paid_through_at unset without inventing a duration.
+    """
+    sub_id = f"I-NO-NEXTBILL-{uuid.uuid4().hex[:8].upper()}"
+    first_paid = datetime.now(timezone.utc) - timedelta(days=15)
+    sess, sub = await create_test_session_with_active_sub(
+        async_db,
+        sub_id,
+        first_payment_at=first_paid,
+        next_billing_at=None,
+        paid_through_at=None,
+    )
+    # Ensure next_billing_at and paid_through_at are None
+    sub.next_billing_at = None
+    sub.paid_through_at = None
+    await async_db.commit()
+
+    # Remote payload with NO next_billing_time
+    mock_payload = {
+        "id": sub_id,
+        "status": "ACTIVE",
+        "billing_info": {},  # No next_billing_time
+    }
+    client = MockCancelPayPalClient(subscription_data={sub_id: mock_payload}, cancel_success=True)
+
+    resp = await SubscriptionService.cancel_subscription(
+        db=async_db,
+        session=sess,
+        reason="No next billing test",
+        paypal_client=client,
+    )
+
+    assert resp.status == "CANCELLED"
+    assert resp.paid_through_at is None  # Accurately None, NOT hardcoded +30 days!
+    await async_db.refresh(sub)
+    assert sub.paid_through_at is None
+    assert len(client.cancelled_calls) == 1
+
+

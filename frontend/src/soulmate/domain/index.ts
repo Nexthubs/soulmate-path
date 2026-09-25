@@ -14,6 +14,7 @@ export const SOULMATE_ROUTES = {
   RESULT: "/soulmate/result",
   SKETCH: "/soulmate/sketch",
   REPORT: "/soulmate/report",
+  SETTINGS: "/soulmate/settings",
 } as const;
 
 export const ALLOWED_BACK_ROUTES = [
@@ -25,6 +26,7 @@ export const ALLOWED_BACK_ROUTES = [
   SOULMATE_ROUTES.RESULT,
   SOULMATE_ROUTES.SKETCH,
   SOULMATE_ROUTES.REPORT,
+  SOULMATE_ROUTES.SETTINGS,
   "/login",
 ] as const;
 

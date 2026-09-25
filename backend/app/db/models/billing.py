@@ -88,6 +88,16 @@ class Subscription(Base, TimestampMixin):
         DateTime(timezone=True),
         nullable=True,
     )
+    failed_payments_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+        server_default="0",
+    )
+    billing_issue_detected_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
     payments: Mapped[List["SubscriptionPayment"]] = relationship(
         "SubscriptionPayment",

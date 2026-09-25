@@ -392,6 +392,37 @@ class PayPalClient:
         )
         return False
 
+    async def list_subscription_transactions(
+        self,
+        subscription_id: str,
+        start_time: Optional[str] = None,
+        end_time: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        List transactions for a subscription (DEV-SPEC §9.4, SP-407, H-2).
+        Endpoint: GET /v1/billing/subscriptions/{id}/transactions
+        """
+        params: Dict[str, str] = {}
+        if start_time:
+            params["start_time"] = start_time
+        if end_time:
+            params["end_time"] = end_time
+        try:
+            resp = await self._request("GET", f"/v1/billing/subscriptions/{subscription_id}/transactions", params=params)
+            if resp.status_code == 200:
+                data = resp.json()
+                return data.get("transactions", []) if isinstance(data, dict) else []
+            logger.warning(
+                "PayPal API returned %s fetching transactions for subscription %s: %s",
+                resp.status_code,
+                subscription_id,
+                resp.text,
+            )
+            return []
+        except Exception as e:
+            logger.warning("Failed to fetch PayPal transactions for subscription %s: %s", subscription_id, e)
+            return []
+
     # --------------------------------------------------------------------------
     # Webhooks API (DEV-SPEC §9.5–9.6, SP-405)
     # --------------------------------------------------------------------------

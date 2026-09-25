@@ -362,8 +362,15 @@ def test_foreign_key_and_query_indexes_exist(db_session):
 
 
 def test_alembic_current_revision_is_head(db_session):
-    """Verify that the database migration state is at 0002_add_indexes head."""
+    """Verify that the database migration state is at 0003_add_failed_payments head."""
     result = db_session.execute(text("SELECT version_num FROM alembic_version")).scalar()
-    assert result == "0002_add_indexes"
+    assert result == "0003_add_failed_payments"
+
+    # Verify 0003 added columns on subscriptions table
+    inspector = inspect(db_session.bind)
+    sub_cols = {col["name"] for col in inspector.get_columns("subscriptions")}
+    assert "failed_payments_count" in sub_cols
+    assert "billing_issue_detected_at" in sub_cols
+
 
 

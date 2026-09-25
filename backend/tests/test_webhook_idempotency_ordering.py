@@ -613,3 +613,225 @@ async def test_reconciliation_preserves_local_terminal_cancelled_state(async_db_
 
     assert reconciled is not None
     assert reconciled.provider_status == "CANCELLED"
+
+
+@pytest.mark.asyncio
+async def test_failed_webhook_dispatch_retried_on_redelivery(async_db_session: AsyncSession, monkeypatch):
+    """
+    H-1 Verification (SP-404/406, DEV-SPEC §9.6):
+    When business processing fails on first delivery:
+    1. Error is captured, transaction is rolled back, exception is raised.
+    2. When PayPal retries the same event ID, it must NOT be ignored as a duplicate.
+    3. The retry must execute business dispatch, succeed, clear processing_error, and set processed_at.
+    4. Subsequent deliveries after success must then be safely deduplicated.
+    """
+    provider_sub_id = f"I-RETRY-{uuid.uuid4().hex[:8]}"
+    session, sub = await create_test_session_and_sub(
+        db=async_db_session,
+        provider_sub_id=provider_sub_id,
+        status="APPROVAL_PENDING",
+    )
+
+    event_id = f"WH-FAIL-THEN-RETRY-{uuid.uuid4().hex[:8]}"
+    event_data = {
+        "id": event_id,
+        "create_time": "2026-09-25T12:00:00Z",
+        "event_type": "PAYMENT.SALE.COMPLETED",
+        "resource": {
+            "id": f"SALE-{uuid.uuid4().hex[:8]}",
+            "billing_agreement_id": provider_sub_id,
+            "amount": {"total": "19.00", "currency": "USD"},
+            "state": "completed",
+        },
+    }
+
+    original_handler = PayPalWebhookService._handle_payment_sale_completed
+    attempt_count = 0
+
+    async def flaky_handler(*args, **kwargs):
+        nonlocal attempt_count
+        attempt_count += 1
+        if attempt_count == 1:
+            raise RuntimeError("Simulated transient database error on delivery 1")
+        return await original_handler(*args, **kwargs)
+
+    monkeypatch.setattr(PayPalWebhookService, "_handle_payment_sale_completed", flaky_handler)
+
+    # Delivery 1: should raise RuntimeError
+    raw_req_1 = make_raw_request(event_data)
+    with pytest.raises(RuntimeError, match="Simulated transient database error"):
+        await PayPalWebhookService.process_webhook(
+            raw_request=raw_req_1,
+            db=async_db_session,
+            verifier=MockSuccessVerifier(),
+        )
+
+    # Assert Delivery 1 recorded error in DB but did NOT activate entitlement
+    event_stmt = select(PayPalWebhookEvent).where(PayPalWebhookEvent.paypal_event_id == event_id)
+    recorded_event = (await async_db_session.execute(event_stmt)).scalars().first()
+    assert recorded_event is not None
+    assert recorded_event.processing_error is not None
+    assert "Simulated transient database error" in recorded_event.processing_error
+    assert recorded_event.processed_at is None
+
+    await async_db_session.refresh(sub)
+    assert sub.first_payment_at is None
+
+    # Delivery 2 (PayPal Retry with same event ID):
+    # Must NOT return duplicate! Must retry dispatch and succeed.
+    raw_req_2 = make_raw_request(event_data)
+    resp_2 = await PayPalWebhookService.process_webhook(
+        raw_request=raw_req_2,
+        db=async_db_session,
+        verifier=MockSuccessVerifier(),
+    )
+    assert resp_2.status == "success"
+    assert resp_2.duplicate is False
+
+    # Assert Delivery 2 updated recorded event and executed business logic
+    await async_db_session.refresh(recorded_event)
+    assert recorded_event.processing_error is None
+    assert recorded_event.processed_at is not None
+
+    await async_db_session.refresh(sub)
+    assert sub.first_payment_at is not None
+
+    # Delivery 3 (Duplicate after success):
+    # Now it must be safely deduplicated
+    raw_req_3 = make_raw_request(event_data)
+    resp_3 = await PayPalWebhookService.process_webhook(
+        raw_request=raw_req_3,
+        db=async_db_session,
+        verifier=MockSuccessVerifier(),
+    )
+    assert resp_3.status == "duplicate"
+    assert resp_3.duplicate is True
+
+
+@pytest.mark.asyncio
+async def test_payment_failed_increments_count_and_recovery_resets_issue(async_db_session: AsyncSession):
+    """
+    H-5 Verification (SP-408, DEV-SPEC §9.4, §9.7, §15.8):
+    1. BILLING.SUBSCRIPTION.PAYMENT.FAILED increments failed_payments_count and records billing_issue_detected_at.
+    2. Subsequent PAYMENT.SALE.COMPLETED resets failed_payments_count = 0 and billing_issue_detected_at = None.
+    """
+    provider_sub_id = f"I-FAIL-COUNT-{uuid.uuid4().hex[:8]}"
+    session, sub = await create_test_session_and_sub(
+        db=async_db_session,
+        provider_sub_id=provider_sub_id,
+        status="ACTIVE",
+    )
+    assert sub.failed_payments_count == 0
+    assert sub.billing_issue_detected_at is None
+
+    # 1. First failure
+    event_1 = {
+        "id": f"WH-FAIL-1-{uuid.uuid4().hex[:8]}",
+        "create_time": "2026-09-25T10:00:00Z",
+        "event_type": "BILLING.SUBSCRIPTION.PAYMENT.FAILED",
+        "resource": {
+            "id": f"FAIL-TX-1-{uuid.uuid4().hex[:8]}",
+            "billing_agreement_id": provider_sub_id,
+            "amount": {"total": "29.00", "currency": "USD"},
+        },
+    }
+    raw_req_1 = make_raw_request(event_1)
+    await PayPalWebhookService.process_webhook(
+        raw_request=raw_req_1,
+        db=async_db_session,
+        verifier=MockSuccessVerifier(),
+    )
+
+    await async_db_session.refresh(sub)
+    assert sub.failed_payments_count == 1
+    assert sub.billing_issue_detected_at is not None
+
+    # 2. Second failure
+    event_2 = {
+        "id": f"WH-FAIL-2-{uuid.uuid4().hex[:8]}",
+        "create_time": "2026-09-25T11:00:00Z",
+        "event_type": "BILLING.SUBSCRIPTION.PAYMENT.FAILED",
+        "resource": {
+            "id": f"FAIL-TX-2-{uuid.uuid4().hex[:8]}",
+            "billing_agreement_id": provider_sub_id,
+            "amount": {"total": "29.00", "currency": "USD"},
+        },
+    }
+    raw_req_2 = make_raw_request(event_2)
+    await PayPalWebhookService.process_webhook(
+        raw_request=raw_req_2,
+        db=async_db_session,
+        verifier=MockSuccessVerifier(),
+    )
+
+    await async_db_session.refresh(sub)
+    assert sub.failed_payments_count == 2
+
+    # 3. Successful recovery payment
+    event_success = {
+        "id": f"WH-RECOVER-{uuid.uuid4().hex[:8]}",
+        "create_time": "2026-09-25T12:00:00Z",
+        "event_type": "PAYMENT.SALE.COMPLETED",
+        "resource": {
+            "id": f"SALE-RECOVER-{uuid.uuid4().hex[:8]}",
+            "billing_agreement_id": provider_sub_id,
+            "amount": {"total": "29.00", "currency": "USD"},
+            "state": "completed",
+        },
+    }
+    raw_req_success = make_raw_request(event_success)
+    await PayPalWebhookService.process_webhook(
+        raw_request=raw_req_success,
+        db=async_db_session,
+        verifier=MockSuccessVerifier(),
+    )
+
+    await async_db_session.refresh(sub)
+    assert sub.failed_payments_count == 0
+    assert sub.billing_issue_detected_at is None
+
+
+@pytest.mark.asyncio
+async def test_billing_subscription_updated_synchronizes_state_and_resets_failures(async_db_session: AsyncSession):
+    """
+    H-5 Verification:
+    BILLING.SUBSCRIPTION.UPDATED synchronizes remote status, next_billing_time,
+    and if ACTIVE, resets failed_payments_count to 0.
+    """
+    provider_sub_id = f"I-UPDATE-EVT-{uuid.uuid4().hex[:8]}"
+    session, sub = await create_test_session_and_sub(
+        db=async_db_session,
+        provider_sub_id=provider_sub_id,
+        status="SUSPENDED",
+    )
+    sub.failed_payments_count = 3
+    sub.billing_issue_detected_at = datetime(2026, 9, 25, 9, 0, 0, tzinfo=timezone.utc)
+    await async_db_session.commit()
+
+    update_event = {
+        "id": f"WH-UPDATE-{uuid.uuid4().hex[:8]}",
+        "create_time": "2026-09-25T13:00:00Z",
+        "event_type": "BILLING.SUBSCRIPTION.UPDATED",
+        "resource": {
+            "id": provider_sub_id,
+            "status": "ACTIVE",
+            "billing_info": {
+                "next_billing_time": "2026-10-25T13:00:00Z",
+            },
+        },
+    }
+    raw_req = make_raw_request(update_event)
+    resp = await PayPalWebhookService.process_webhook(
+        raw_request=raw_req,
+        db=async_db_session,
+        verifier=MockSuccessVerifier(),
+    )
+    assert resp.status == "received"
+
+    await async_db_session.refresh(sub)
+    assert sub.provider_status == "ACTIVE"
+    assert sub.suspended_at is None
+    assert sub.failed_payments_count == 0
+    assert sub.billing_issue_detected_at is None
+    assert sub.next_billing_at == datetime(2026, 10, 25, 13, 0, 0, tzinfo=timezone.utc)
+
