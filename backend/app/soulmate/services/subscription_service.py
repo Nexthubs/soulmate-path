@@ -291,7 +291,18 @@ class SubscriptionService:
         """
         transactions: List[Dict[str, Any]] = []
         try:
-            transactions = await client.list_subscription_transactions(sub.provider_subscription_id)
+            # Determine transaction range for PayPal transactions endpoint (DEV-SPEC §9.4, PayPal API required params)
+            start_dt = sub.created_at or (utc_now() - timedelta(days=90))
+            if start_dt.tzinfo is None:
+                start_dt = start_dt.replace(tzinfo=timezone.utc)
+            start_iso = (start_dt - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            end_iso = (utc_now() + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+            transactions = await client.list_subscription_transactions(
+                sub.provider_subscription_id,
+                start_time=start_iso,
+                end_time=end_iso,
+            )
         except Exception as e:
             logger.warning("Failed to list PayPal transactions for subscription %s: %s", sub.provider_subscription_id, e)
 
@@ -777,8 +788,9 @@ class SubscriptionService:
                     sub.provider_subscription_id,
                 )
 
-        # 2. Persist state before calling external PayPal API to ensure DB writeability (H-4)
-        await db.flush()
+        # 2. Persist and commit paid_through_at before calling external PayPal API (DEV-SPEC §15.9 step 3, H-3)
+        # Guarantees paid_through_at is safely committed to the database even if external call times out or fails.
+        await db.commit()
 
         # 3. Call PayPal cancel API (DEV-SPEC §9.8: POST /v1/billing/subscriptions/{id}/cancel, Acceptance #1)
         success = await client.cancel_subscription(

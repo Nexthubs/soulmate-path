@@ -4,12 +4,14 @@ Provides authenticated, asynchronous interaction with PayPal v1 catalog products
 """
 
 import base64
+from datetime import datetime, timedelta, timezone
 import logging
 import time
 from typing import Any, Dict, List, Optional
 import httpx
 
 from app.core.config import settings
+from app.db.base import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -401,27 +403,39 @@ class PayPalClient:
         """
         List transactions for a subscription (DEV-SPEC §9.4, SP-407, H-2).
         Endpoint: GET /v1/billing/subscriptions/{id}/transactions
+        PayPal API requires start_time and end_time query parameters (ISO-8601).
         """
-        params: Dict[str, str] = {}
-        if start_time:
-            params["start_time"] = start_time
-        if end_time:
-            params["end_time"] = end_time
+        now = utc_now()
+        if not end_time:
+            end_time = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+        if not start_time:
+            start_time = (now - timedelta(days=90)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        params = {
+            "start_time": start_time,
+            "end_time": end_time,
+        }
+        resp = await self._request("GET", f"/v1/billing/subscriptions/{subscription_id}/transactions", params=params)
+        if resp.status_code == 200:
+            data = resp.json()
+            return data.get("transactions", []) if isinstance(data, dict) else []
+
         try:
-            resp = await self._request("GET", f"/v1/billing/subscriptions/{subscription_id}/transactions", params=params)
-            if resp.status_code == 200:
-                data = resp.json()
-                return data.get("transactions", []) if isinstance(data, dict) else []
-            logger.warning(
-                "PayPal API returned %s fetching transactions for subscription %s: %s",
-                resp.status_code,
-                subscription_id,
-                resp.text,
-            )
-            return []
-        except Exception as e:
-            logger.warning("Failed to fetch PayPal transactions for subscription %s: %s", subscription_id, e)
-            return []
+            err_data = resp.json()
+        except Exception:
+            err_data = {"raw": resp.text}
+
+        logger.warning(
+            "PayPal API returned %s fetching transactions for subscription %s: %s",
+            resp.status_code,
+            subscription_id,
+            resp.text,
+        )
+        raise PayPalAPIError(
+            f"Failed to fetch transactions for PayPal subscription {subscription_id} (HTTP {resp.status_code})",
+            status_code=resp.status_code,
+            details=err_data,
+        )
 
     # --------------------------------------------------------------------------
     # Webhooks API (DEV-SPEC §9.5–9.6, SP-405)

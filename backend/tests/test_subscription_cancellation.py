@@ -19,6 +19,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.errors import ValidationError
 from app.db.models.artifact import SoulmateArtifact
 from app.db.models.billing import Subscription
 from app.db.models.session import SoulmateSession
@@ -561,5 +562,58 @@ async def test_cancel_subscription_without_next_billing_time_avoids_fictitious_3
     await async_db.refresh(sub)
     assert sub.paid_through_at is None
     assert len(client.cancelled_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_cancel_subscription_commits_paid_through_at_before_calling_paypal(async_db: AsyncSession):
+    """
+    High Finding Remediation (DEV-SPEC §15.9 step 3, H-3):
+    paid_through_at is committed to the database BEFORE the external PayPal cancel API is called.
+    If PayPal cancel fails or times out, paid_through_at is not lost.
+    """
+    sub_id = f"I-TEST-PERSIST-BEFORE-CANCEL-{uuid.uuid4().hex[:8]}"
+    now = datetime.now(timezone.utc)
+    future_billing = now + timedelta(days=22)
+    future_billing_iso = future_billing.isoformat().replace("+00:00", "Z")
+
+    sess, sub = await create_test_session_with_active_sub(
+        async_db,
+        provider_sub_id=sub_id,
+        first_payment_at=now - timedelta(days=8),
+        next_billing_at=future_billing,
+    )
+
+    # Mock client where PayPal cancel fails (simulating network timeout or provider rejection)
+    mock_client = MockCancelPayPalClient(
+        subscription_data={
+            sub_id: {
+                "id": sub_id,
+                "status": "ACTIVE",
+                "billing_info": {
+                    "next_billing_time": future_billing_iso,
+                },
+            }
+        },
+        cancel_success=False,
+    )
+
+    with pytest.raises(ValidationError, match="Failed to cancel subscription with PayPal"):
+        await SubscriptionService.cancel_subscription(
+            db=async_db,
+            session=sess,
+            reason="User cancelled",
+            paypal_client=mock_client,
+        )
+
+    # In a fresh separate session, verify that paid_through_at was committed to disk
+    async with AsyncSessionLocal() as fresh_db:
+        stmt = select(Subscription).where(Subscription.id == sub.id)
+        db_sub = (await fresh_db.execute(stmt)).scalars().first()
+        assert db_sub is not None
+        assert db_sub.paid_through_at is not None
+        assert abs((db_sub.paid_through_at - future_billing).total_seconds()) < 5
+        # Status remains ACTIVE since PayPal cancel failed
+        assert db_sub.provider_status == "ACTIVE"
+
 
 

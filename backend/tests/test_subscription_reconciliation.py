@@ -24,7 +24,7 @@ from app.db.models.session import SoulmateSession
 from app.db.session import AsyncSessionLocal
 from app.main import app
 from app.soulmate.security import generate_session_token
-from app.soulmate.services.paypal_client import PayPalClient
+from app.soulmate.services.paypal_client import PayPalAPIError, PayPalClient
 from app.soulmate.services.subscription_service import SubscriptionService
 
 
@@ -45,6 +45,7 @@ class MockPayPalClient(PayPalClient):
         super().__init__(client_id="mock_id", client_secret="mock_secret")
         self.subscription_responses = subscription_responses or {}
         self.transactions_responses = transactions_responses or {}
+        self.list_transactions_calls: list[dict[str, Any]] = []
 
     async def get_subscription(self, subscription_id: str) -> Optional[Dict[str, Any]]:
         return self.subscription_responses.get(subscription_id)
@@ -55,6 +56,11 @@ class MockPayPalClient(PayPalClient):
         start_time: Optional[str] = None,
         end_time: Optional[str] = None,
     ) -> list[Dict[str, Any]]:
+        self.list_transactions_calls.append({
+            "subscription_id": subscription_id,
+            "start_time": start_time,
+            "end_time": end_time,
+        })
         if subscription_id in self.transactions_responses:
             return self.transactions_responses[subscription_id]
         sub = self.subscription_responses.get(subscription_id)
@@ -963,5 +969,120 @@ async def test_reconciliation_rejects_foreign_custom_id_without_falling_back_to_
     # Assert no subscription was created/bound to victim's session
     stmt = select(Subscription).where(Subscription.session_id == sess.id)
     assert (await async_db.execute(stmt)).scalars().first() is None
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_supplies_required_start_and_end_time_to_transactions_api(
+    async_db: AsyncSession, monkeypatch
+):
+    """
+    High Finding Remediation:
+    PayPal GET /v1/billing/subscriptions/{id}/transactions requires start_time and end_time.
+    Verify that _reconcile_subscription_payments computes and passes ISO-8601 start_time and end_time.
+    """
+    plan_id = "P-SOULMATE-INTRO-VALID"
+    monkeypatch.setattr(settings, "paypal_soulmate_intro_plan_id", plan_id)
+
+    sub_id = f"I-TIME-WINDOW-{uuid.uuid4().hex[:8].upper()}"
+    sess, sub = await create_test_session_and_sub(
+        async_db,
+        provider_sub_id=sub_id,
+        first_payment_at=datetime.now(timezone.utc) - timedelta(days=5),
+    )
+
+    mock_payload = {
+        "id": sub_id,
+        "status": "ACTIVE",
+        "plan_id": plan_id,
+        "custom_id": sess.public_id,
+        "billing_info": {
+            "next_billing_time": "2026-10-25T15:00:00Z",
+            "last_payment": {
+                "amount": {"currency_code": "USD", "value": "19.00"},
+                "time": "2026-09-20T12:00:00Z",
+            },
+        },
+    }
+    client = MockPayPalClient(
+        subscription_responses={sub_id: mock_payload},
+        transactions_responses={sub_id: []},
+    )
+
+    await SubscriptionService.reconcile_subscription(
+        db=async_db,
+        provider_subscription_id=sub_id,
+        paypal_client=client,
+    )
+
+    # Verify transactions API was invoked with required start_time and end_time
+    assert len(client.list_transactions_calls) == 1
+    call = client.list_transactions_calls[0]
+    assert call["subscription_id"] == sub_id
+    assert call["start_time"] is not None
+    assert call["start_time"].endswith("Z")
+    assert call["end_time"] is not None
+    assert call["end_time"].endswith("Z")
+
+
+@pytest.mark.asyncio
+async def test_paypal_client_list_subscription_transactions_raises_api_error_on_non_200(monkeypatch):
+    """
+    High Finding Remediation:
+    PayPalClient.list_subscription_transactions must raise PayPalAPIError when PayPal returns non-200,
+    rather than silently returning an empty list.
+    """
+    client = PayPalClient(client_id="test_id", client_secret="test_secret")
+
+    class MockResponse:
+        status_code = 400
+        text = '{"name":"INVALID_REQUEST","message":"start_time is required"}'
+        def json(self):
+            return {"name": "INVALID_REQUEST", "message": "start_time is required"}
+
+    async def mock_request(*args, **kwargs):
+        return MockResponse()
+
+    monkeypatch.setattr(client, "_request", mock_request)
+
+    with pytest.raises(PayPalAPIError) as exc_info:
+        await client.list_subscription_transactions(
+            subscription_id="I-ERR-123",
+            start_time="2026-09-01T00:00:00Z",
+            end_time="2026-09-25T00:00:00Z",
+        )
+
+    assert exc_info.value.status_code == 400
+    assert "Failed to fetch transactions" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_paypal_client_list_subscription_transactions_defaults_required_params_when_omitted(monkeypatch):
+    """
+    High Finding Remediation:
+    When start_time or end_time are omitted, PayPalClient defaults them to valid ISO-8601 strings
+    so that outgoing requests always fulfill PayPal's schema requirement.
+    """
+    client = PayPalClient(client_id="test_id", client_secret="test_secret")
+    captured_params = {}
+
+    class MockResponse:
+        status_code = 200
+        def json(self):
+            return {"transactions": []}
+
+    async def mock_request(method, path, **kwargs):
+        nonlocal captured_params
+        captured_params = kwargs.get("params", {})
+        return MockResponse()
+
+    monkeypatch.setattr(client, "_request", mock_request)
+
+    result = await client.list_subscription_transactions("I-DEFAULT-PARAMS-123")
+    assert result == []
+    assert "start_time" in captured_params
+    assert "end_time" in captured_params
+    assert captured_params["start_time"].endswith("Z")
+    assert captured_params["end_time"].endswith("Z")
+
 
 
