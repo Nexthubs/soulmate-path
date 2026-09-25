@@ -6,9 +6,9 @@
 ## 1. Current milestone
 
 ```text
-Current milestone: M1 — Quiz Funnel Ready
-Status: PASS (docs/reviews/M1-QUIZ-FUNNEL-REVIEW.md)
-Latest accepted review: docs/reviews/M1-QUIZ-FUNNEL-REVIEW.md (PASS)
+Current milestone: M2 — Sandbox Revenue Ready
+Status: PASS (docs/reviews/M2-PAYPAL-SANDBOX-REVIEW.md)
+Latest accepted review: docs/reviews/M2-PAYPAL-SANDBOX-REVIEW.md (PASS)
 ```
 
 Repository architecture & boundary (`SP-001`) completed and evidenced in `docs/handoffs/SP-001.md`.
@@ -46,13 +46,14 @@ Payment ledger (`SP-407`) completed and evidenced in `docs/handoffs/SP-407.md`.
 Subscription reconciliation/state mapping (`SP-408`) completed and evidenced in `docs/handoffs/SP-408.md`.
 Cancellation and Settings action (`SP-409`) completed and evidenced in `docs/handoffs/SP-409.md`.
 Payment-processing frontend state (`SP-410`) completed and evidenced in `docs/handoffs/SP-410.md`.
+*(Note: WAVE 4 is now 100% complete)*
 
 ## 2. Milestone status
 
 | Milestone | Status | Review artifact |
 |---|---|---|
 | M1 Quiz Funnel Ready | PASS | `docs/reviews/M1-QUIZ-FUNNEL-REVIEW.md` |
-| M2 Sandbox Revenue Ready | IN_PROGRESS | `docs/reviews/M2-PAYPAL-SANDBOX-REVIEW.md` |
+| M2 Sandbox Revenue Ready | PASS | `docs/reviews/M2-PAYPAL-SANDBOX-REVIEW.md` |
 | M3 Entitlement / Result Ready | NOT_STARTED | `docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md` |
 | M4 Sketch Ready | NOT_STARTED | `docs/reviews/M4-SKETCH-REVIEW.md` |
 | M5 Report Scaffold Ready | NOT_STARTED | `docs/reviews/M5-REPORT-SCAFFOLD-REVIEW.md` |
@@ -60,7 +61,7 @@ Payment-processing frontend state (`SP-410`) completed and evidenced in `docs/ha
 
 ## 3. Active / blocked work
 
-Active tasks: M2 Milestone Review (`docs/reviews/M2-PAYPAL-SANDBOX-REVIEW.md`) / SP-501 (Artifact entitlement rows on first payment). Wave 4 (`SP-401`..`SP-410`) completed.
+Active tasks: Wave 5 start — `SP-501` (Artifact entitlement rows on first payment). Wave 4 (`SP-401`..`SP-410`) and Milestone M2 completed with review PASS.
 
 
 
@@ -84,7 +85,7 @@ Details and current handling → `DECISIONS.md`.
 
 ```text
 Quiz config: soulmate-quiz-v1 (canonical JSON & seeded in DB soulmate_quiz_versions)
-DB migration checkpoint: 0002_add_indexes (Alembic schema with 9 tables, foreign key/query indexes, and high-risk invariants)
+DB migration checkpoint: 0003_add_failed_payments (Alembic schema with 9 tables, indexes, and failed payments tracking)
 Config checkpoint: DEV-SPEC §22 groups verified, centralized Decimal pricing, RFC 1123 domain syntax check, multi-layer frontend gate
 API checkpoint: DEV-SPEC v1.2 baseline; error taxonomy, correlation middleware, and structured logging established (SP-005)
 Payment provider: PayPal monthly subscription with intro first month + regular monthly renewal
@@ -101,8 +102,8 @@ Report production provider: disabled / decision pending
 ## 6. Next safe tasks
 
 ```text
-1. M2 Milestone Review (docs/reviews/M2-PAYPAL-SANDBOX-REVIEW.md).
-2. SP-501 (Artifact entitlement rows on first payment).
+1. SP-501 (Artifact entitlement rows on first payment).
+2. SP-502 (AI generation worker queue & dispatch).
 ```
 
 ## 7. Update rule
