@@ -54,14 +54,29 @@ class SketchStorageError(Exception):
     Raised when sketch payload validation or object-storage upload fails.
 
     `message`/`details` are safe for durable error records; `internal_message`
-    (SDK/exception internals) is for server logs only.
+    (SDK/exception internals) is for server logs only. `permanent=True` classifies
+    the failure as never-retryable (e.g. storage unconfigured).
     """
 
-    def __init__(self, message: str, details: Optional[dict] = None, internal_message: Optional[str] = None):
+    def __init__(
+        self,
+        message: str,
+        details: Optional[dict] = None,
+        internal_message: Optional[str] = None,
+        permanent: bool = False,
+    ):
         super().__init__(message)
         self.message = message
         self.details = details or {}
         self.internal_message = internal_message
+        self.permanent = permanent
+
+
+class SketchStorageUnavailableError(SketchStorageError):
+    """Storage is not configured / unusable — retrying can never succeed."""
+
+    def __init__(self, message: str, details: Optional[dict] = None, internal_message: Optional[str] = None):
+        super().__init__(message, details=details, internal_message=internal_message, permanent=True)
 
 
 def sketch_storage_key(artifact_id: UUID, image_format: str) -> str:

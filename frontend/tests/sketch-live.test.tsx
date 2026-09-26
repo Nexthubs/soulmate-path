@@ -161,3 +161,24 @@ describe("SP-607: bounded polling while GENERATING (SP-505 scheduler reuse)", ()
     expect(computeResultPollDelayMs({ ...BASE, elapsedMs: 10 * 60 * 1000 })).toBeNull();
   });
 });
+
+
+describe("SP-607 R1: §10.3 Retry/Support split on the failed state", () => {
+  it("shows the working Retry CTA for a user-retryable failure", () => {
+    const html = renderToStaticMarkup(
+      <SketchViewer state="failed" retryAvailable={true} onRetry={() => {}} />
+    );
+    expect(html).toContain('data-testid="sketch-retry-btn"');
+    expect(html).toContain("Retry Generation");
+    expect(html).not.toContain('data-testid="sketch-support-note"');
+  });
+
+  it("hides Retry and shows the support path when retries are exhausted", () => {
+    const html = renderToStaticMarkup(
+      <SketchViewer state="failed" retryAvailable={false} onRetry={() => {}} />
+    );
+    expect(html).not.toContain('data-testid="sketch-retry-btn"');
+    expect(html).toContain('data-testid="sketch-support-note"');
+    expect(html).toContain("contact support");
+  });
+});

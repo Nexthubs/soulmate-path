@@ -27,7 +27,7 @@ from app.db.session import AsyncSessionLocal
 from app.main import app
 from app.soulmate.security import generate_session_token
 from app.soulmate.services.sketch_generation_service import SketchGenerationService
-from test_sketch_generation import seed_generation_session
+from test_sketch_generation import load_sketch_artifact, seed_generation_session
 
 SKETCH_URL = "/api/soulmate/artifacts/sketch"
 
@@ -293,3 +293,85 @@ async def test_end_to_end_generate_then_fetch_displays_persisted_asset(async_db,
     assert data["sketch"]["status"] == "COMPLETED"
     assert data["storage_key"] is not None
     assert data["image_url"] == f"https://cdn.example.com/assets/{data['storage_key']}"
+
+
+# ---------------------------------------------------------------------------
+# R1 fix: §10.3 Retry/Support split surfaced as retry_available
+# ---------------------------------------------------------------------------
+
+
+async def _seed_failed_sketch(db: AsyncSession, job_status: str, attempt: int):
+    sess = await seed_generation_session(db)
+    artifact = await load_sketch_artifact(db, sess.id)
+    artifact.generation_status = "FAILED"
+    artifact.last_error_code = "PROVIDER_UNAVAILABLE"
+    await db.commit()
+    from app.soulmate.services.sketch_generation_service import sketch_idempotency_key
+
+    job = AIGenerationJob(
+        artifact_id=artifact.id,
+        job_type="SOULMATE_SKETCH",
+        idempotency_key=sketch_idempotency_key(sess.email_normalized, "v1"),
+        status=job_status,
+        attempt=attempt,
+    )
+    db.add(job)
+    await db.commit()
+    return sess
+
+
+@pytest.mark.asyncio
+async def test_failed_retryable_job_reports_retry_available(async_db, monkeypatch):
+    monkeypatch.setattr(settings, "job_retry_base_backoff_seconds", 0.0)
+    sess = await _seed_failed_sketch(async_db, "FAILED_RETRYABLE", 3)
+    token = generate_session_token(sess.public_id)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        client.cookies.set("soulmate_sid", token)
+        resp = await client.get(SKETCH_URL)
+    data = resp.json()
+    assert data["sketch"]["status"] == "FAILED"
+    assert data["retry_available"] is True
+
+
+@pytest.mark.asyncio
+async def test_failed_permanent_job_reports_support_only(async_db):
+    sess = await _seed_failed_sketch(async_db, "FAILED_PERMANENT", 3)
+    token = generate_session_token(sess.public_id)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        client.cookies.set("soulmate_sid", token)
+        resp = await client.get(SKETCH_URL)
+    data = resp.json()
+    assert data["sketch"]["status"] == "FAILED"
+    assert data["retry_available"] is False
+
+
+@pytest.mark.asyncio
+async def test_retry_available_none_for_non_failed_states(async_db):
+    sess = await seed_generation_session(async_db)
+    token = generate_session_token(sess.public_id)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        client.cookies.set("soulmate_sid", token)
+        resp = await client.get(SKETCH_URL)
+    data = resp.json()
+    assert data["sketch"]["status"] in ("READY", "LOCKED")
+    assert data["retry_available"] is None
+
+
+@pytest.mark.asyncio
+async def test_user_retry_endpoint_roundtrip(async_db, monkeypatch):
+    """POST generate on a FAILED_RETRYABLE terminal job requeues it (§10.3 Retry)."""
+    monkeypatch.setattr(settings, "job_retry_base_backoff_seconds", 0.0)
+    sess = await _seed_failed_sketch(async_db, "FAILED_RETRYABLE", 3)
+    token = generate_session_token(sess.public_id)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        client.cookies.set("soulmate_sid", token)
+        gen = await client.post("/api/soulmate/artifacts/sketch/generate")
+    assert gen.status_code == 200
+    data = gen.json()
+    assert data["job_status"] == "QUEUED"
+    assert data["sketch"]["generation"] == "QUEUED"
+    assert data["sketch"]["status"] == "GENERATING"

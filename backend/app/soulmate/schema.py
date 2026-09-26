@@ -421,6 +421,9 @@ class SketchAssetResponse(BaseModel):
     Session-scoped sketch status plus, when COMPLETED, the display URL of the
     persisted durable asset (ASSET-01: the object storage key is the source of
     truth; the URL is a derived, short-lived or CDN-stable display grant).
+    `retry_available` is True only when FAILED with a transient-exhausted
+    (FAILED_RETRYABLE) terminal job still under the hard attempt cap — the §10.3
+    Retry/Support split.
     """
     server_time: datetime = Field(..., description="Server clock UTC instant used for this derivation")
     sketch: ArtifactStatusView = Field(..., description="Sketch countdown/status view (session-scoped)")
@@ -431,6 +434,10 @@ class SketchAssetResponse(BaseModel):
     storage_key: Optional[str] = Field(
         default=None,
         description="Project-owned object storage key of the durable asset (§11.7); present only when COMPLETED",
+    )
+    retry_available: Optional[bool] = Field(
+        default=None,
+        description="When FAILED: True if the terminal job is user-retryable (FAILED_RETRYABLE under the hard attempt cap), False if support-only; None otherwise",
     )
 
     model_config = ConfigDict(from_attributes=True, extra="ignore")

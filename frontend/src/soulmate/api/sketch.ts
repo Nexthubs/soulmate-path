@@ -16,6 +16,8 @@ export interface SketchStatusResponse {
   image_url?: string | null;
   /** Project-owned object storage key (§11.7); present only when COMPLETED. */
   storage_key?: string | null;
+  /** When FAILED: whether the §10.3 Retry action can work (transient-exhausted job under cap). */
+  retry_available?: boolean | null;
 }
 
 /** POST /artifacts/sketch/generate additionally reports the durable job state (§11.6). */

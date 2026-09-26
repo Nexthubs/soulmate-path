@@ -40,8 +40,15 @@ function SketchPageContent() {
 
   // The viewer renders four states; a LOCKED page is about to redirect to Result
   // (§10.3/TIME-01), and an unloaded page shows the neutral loading card.
+  // ASSET-01 defense-in-depth: the live page never substitutes a sample image for
+  // the user's portrait — a COMPLETED status without a display URL degrades to the
+  // support state instead of rendering a placeholder portrait.
+  const liveImageUrl = sketch.data?.image_url ?? undefined;
+  const liveRetryable = sketch.data?.retry_available !== false;
+  const effectiveViewState =
+    !isFixture && viewState === "completed" && !liveImageUrl ? "failed" : viewState;
   const viewerState: SketchViewState =
-    viewState === null || viewState === "locked" ? "loading" : viewState;
+    effectiveViewState === null || effectiveViewState === "locked" ? "loading" : effectiveViewState;
 
   // §10.3: LOCKED users route to the Result page (countdown lives there, TIME-01).
   useEffect(() => {
@@ -63,7 +70,7 @@ function SketchPageContent() {
 
   const durableUrl = isFixture
     ? searchParams.get("url") || defaultUrl
-    : sketch.data?.image_url || defaultUrl;
+    : liveImageUrl;
   const backUrl = sanitizeInternalRoute(searchParams.get("backUrl"));
   const showToolbar = isFixture;
 
@@ -157,8 +164,14 @@ function SketchPageContent() {
         backUrl={backUrl}
         showFixtureToolbar={showToolbar}
         isTriggering={sketch.isTriggering}
+        retryAvailable={isFixture ? true : liveRetryable}
         onCheckNow={isLive ? () => void sketch.triggerGeneration() : undefined}
         onRetry={isLive ? () => void sketch.triggerGeneration() : undefined}
+        errorMessage={
+          isLive && effectiveViewState === "failed" && !liveRetryable
+            ? "Your sketch could not be generated automatically."
+            : undefined
+        }
         partnerGender={gender === "male" ? "Prince Charming" : "Dream Girl"}
       />
     </>

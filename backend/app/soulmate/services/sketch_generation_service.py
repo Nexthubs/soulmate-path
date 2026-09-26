@@ -1,5 +1,5 @@
 """
-Sketch generation queue / worker (DEV-SPEC §11.3–11.7, §19; Decisions: ASSET-01, SP-603/SP-604).
+Sketch generation queue / worker (DEV-SPEC §11.3–11.7, §19; Decisions: ASSET-01, SP-603/604/606).
 
 DB-backed durable queue on `ai_generation_jobs` (SP-501 schema, §11.6 states) —
 the repo has no external broker (docker-compose: postgres only), so the smallest
@@ -7,42 +7,46 @@ repo-consistent mechanism is a PostgreSQL job table claimed with
 `FOR UPDATE SKIP LOCKED`.
 
 Enqueue (`enqueue_sketch_generation`):
-- gates: PAY-AUTH-01 entitlement, TIME-01 server-side unlock (on_demand §11.4);
+- gates: PAY-AUTH-01 entitlement, TIME-01 server-side unlock gated on the ASSET's
+  persisted `unlock_at` (on_demand §11.4), triggerable by any entitled session of
+  the identity (write path is identity-level, SP-606);
 - idempotent per identity: unique `idempotency_key` = `sketch:<email_hash>:<artifact_version>`
   (§11.6) plus a transaction-scoped advisory lock, so concurrent enqueue attempts
   converge on one logical generation;
-- never re-enqueues a COMPLETED artifact (no regeneration on revisit/refresh).
+- never re-enqueues a COMPLETED artifact (no regeneration on revisit/refresh);
+- §10.3 bounded user retry: a FAILED artifact whose terminal job is
+  FAILED_RETRYABLE and whose consumed attempts are under the hard cap
+  (2 × JOB_RETRY_MAX_ATTEMPTS) is requeued in place by an explicit user retry;
+  FAILED_PERMANENT jobs never requeue here (support path).
 
-Worker (`process_next_queued_job`, two-phase for SP-604 retry/idempotency):
-- phase A (txn): claim one QUEUED job (SKIP LOCKED) -> PROCESSING + locked_at,
-  load the artifact (FOR UPDATE) and short-circuit COMPLETED artifacts without a
-  provider call, build the rendered prompt (SP-601) and validate profile inputs
-  (invalid/missing inputs fail permanently here, §11.6);
-- phase B (no txn held): provider call (SP-602 interface) + result sink;
-- phase C (txn): guarded finalization — the job row must still be PROCESSING and
-  the artifact must not have completed via another path (a retry never creates a
-  second owned sketch after a success); §11.3 metadata persisted on success.
-- retry policy (§11.6, max attempts 3): retryable failures requeue with
-  exponential backoff (`run_after`) until the attempt budget is exhausted, then
-  terminate as FAILED_RETRYABLE; permanent/safety/input failures terminate
+Worker (`process_next_queued_job`, two-phase):
+- phase A (txn): claim one QUEUED job (SKIP LOCKED) -> PROCESSING, consuming one
+  attempt (`job.attempt` is the CLAIM FENCE TOKEN); completion guard (a COMPLETED
+  artifact short-circuits without a provider call); prompt build (SP-601) and
+  profile validation (invalid/missing inputs fail permanently);
+- phase B (no txn held): provider call only (SP-602 interface);
+- phase C (txn, fenced): finalizes only when the job is STILL PROCESSING and
+  `job.attempt` equals the claim token — a stale worker whose claim was reclaimed
+  (or superseded by a later claim) can never commit. The durable upload runs
+  INSIDE this fenced section, so only the surviving attempt ever writes the
+  §11.7 key and the object can never be overwritten by a discarded late worker.
+  A non-empty storage key is mandatory: without one the job fails
+  (STORAGE_NOT_CONFIGURED, permanent) instead of completing — ASSET-01 §11.7.
+- retry policy (§11.6): retryable failures requeue with exponential backoff until
+  the attempt budget is exhausted, then terminate as FAILED_RETRYABLE; permanent
+  failures (invalid input, policy rejection, storage unavailable) terminate
   immediately as FAILED_PERMANENT and are never requeued;
 - stale-claim reclamation (`reclaim_stale_processing_jobs`): PROCESSING jobs
   whose `locked_at` outlived the claim threshold (worker death mid-call) are
-  requeued with the same attempt accounting and budget — crash loops are bounded.
+  requeued with the same attempt accounting — crash loops are bounded.
 
 Structured logging follows §19.1 (job_id, artifact_id, provider_request_id);
-provider raw errors never reach API responses (§19.3) — clients see only the
-derived §10.3 status.
-
-Storage seam (`SketchResultSink`): the worker yields provider bytes to an
-app-owned sink; SP-605 provides the durable object-storage implementation. The
-shipped default logs and drops bytes (dev only) — production persistence is
-incomplete until SP-605 lands.
+provider raw errors never reach API responses (§19.3).
 
 The provider call is at-least-once (OpenAI image generation has no provider-side
 idempotency key): worker death after a provider success but before phase C can
-re-run the provider on retry. The OWNED asset can never duplicate (SP-501 DB
-uniqueness + phase A/C guards above); provider spend duplication is the residual
+re-run the provider on retry. The OWNED asset can never duplicate or mismatch
+(fence + single-fenced-upload above); provider spend duplication is the residual
 risk this design accepts and alerts on.
 """
 
@@ -73,6 +77,10 @@ from app.soulmate.domain.artifact_status import normalize_generation
 from app.soulmate.domain.profile import ProfileValidationError, SoulmateProfileV1
 from app.soulmate.domain.sketch_models import SketchGenerationResult, SketchProviderError
 from app.soulmate.domain.sketch_prompt import RenderedSketchPrompt, build_rendered_sketch_prompt
+from app.soulmate.services.object_storage_sink import (
+    SketchStorageError,
+    SketchStorageUnavailableError,
+)
 from app.soulmate.services.payment_consistency import payment_lock
 from app.soulmate.services.subscription_service import SubscriptionService
 
@@ -89,6 +97,7 @@ JOB_FAILED_PERMANENT = "FAILED_PERMANENT"
 
 RECLAIM_ERROR_CODE = "CLAIM_STALE"
 INTERNAL_ERROR_CODE = "INTERNAL_ERROR"
+STORAGE_NOT_CONFIGURED_CODE = "STORAGE_NOT_CONFIGURED"
 
 
 def sketch_idempotency_key(email_normalized: str, artifact_version: str) -> str:
@@ -103,36 +112,47 @@ def retry_backoff_seconds(attempt: int) -> float:
     return base * (2 ** max(0, attempt - 1))
 
 
+def hard_attempt_cap() -> int:
+    """
+    Total consumed attempts (auto + user retries) after which a FAILED_RETRYABLE
+    job can no longer be requeued by user action (§10.3 bounded retry policy).
+    """
+    return 2 * max(1, settings.job_retry_max_attempts)
+
+
 @runtime_checkable
 class SketchResultSink(Protocol):
     """
     App-owned seam between the worker and durable storage (ASSET-01, §11.7).
 
-    Implementations (SP-605) persist `result.image_bytes` to project-owned object
-    storage and return the stable storage key. Provider temporary URLs must never
-    become the durable source of truth.
+    Implementations persist `result.image_bytes` to project-owned object storage
+    and return the stable storage key. Provider temporary URLs must never become
+    the durable source of truth. A generation may only complete when this returns
+    a non-empty key; a sink without durable storage must raise.
     """
 
-    async def persist(self, *, artifact_id: UUID, result: SketchGenerationResult) -> Optional[str]: ...
+    async def persist(self, *, artifact_id: UUID, result: SketchGenerationResult) -> str: ...
 
 
 class LoggingSketchResultSink:
     """
-    Dev/default sink: records the generation and drops the bytes.
+    Dev sink for deployments without OBJECT_STORAGE_* configuration.
 
-    Artifact rows completed through this sink carry generation metadata but no
-    storage_key; SP-605 replaces this sink with durable object storage.
+    ASSET-01 forbids completing a generation without durable persistence, so this
+    sink does NOT drop bytes and fake success — it fails the attempt permanently
+    with STORAGE_NOT_CONFIGURED (visible in the job/artifact error fields and
+    §19.2 alerts) instead of producing a COMPLETED artifact with no image.
     """
 
-    async def persist(self, *, artifact_id: UUID, result: SketchGenerationResult) -> Optional[str]:
-        logger.warning(
-            "Sketch result for artifact %s generated (model=%s, bytes=%s) but durable object "
-            "storage is not configured yet (SP-605); bytes are not persisted.",
+    async def persist(self, *, artifact_id: UUID, result: SketchGenerationResult) -> str:
+        logger.error(
+            "OBJECT_STORAGE_* is not configured; refusing to complete sketch generation "
+            "for artifact %s without durable persistence (ASSET-01, §11.7).",
             artifact_id,
-            result.model,
-            len(result.image_bytes),
         )
-        return None
+        raise SketchStorageUnavailableError(
+            "Object storage is not configured; the sketch cannot be durably persisted."
+        )
 
 
 @dataclass
@@ -155,10 +175,13 @@ class _ClaimedWork:
     job_id: UUID
     artifact_id: UUID
     rendered: RenderedSketchPrompt
+    # Fencing token: the attempt count consumed by THIS claim (§11.6). Phase C
+    # finalizes only when the job's attempt still equals this value.
+    claim_attempt: int
 
 
 class SketchGenerationService:
-    """Idempotent enqueue + two-phase claim/process for sketch generation."""
+    """Idempotent enqueue + two-phase fenced claim/process for sketch generation."""
 
     # ------------------------------------------------------------------
     # Enqueue (API-triggered, §11.4 on_demand)
@@ -180,9 +203,10 @@ class SketchGenerationService:
         from the email in SP-301 but never set on anonymous sessions):
         - identity asset COMPLETED → returned as-is, never regenerated;
         - any existing job for the identity → converged on, never a second job;
+          a FAILED_RETRYABLE terminal job under the hard attempt cap is requeued
+          in place by an explicit user retry (§10.3 bounded retry);
         - no job yet → exactly one is created, TIME-01-gated by the ASSET's
-          persisted `unlock_at`, triggerable by ANY entitled session of the
-          identity (the asset belongs to its owning session).
+          persisted `unlock_at`.
 
         Cross-session reads stay session-scoped (Decision RECOVERY-01): outcomes
         resolved against another session's artifact carry `cross_session=True` and
@@ -226,10 +250,40 @@ class SketchGenerationService:
                 artifact=artifact, job=None, created=False, cross_session=not own
             )
 
-        # §11.5: at most one job per identity — converge on the existing record
-        # (QUEUED, PROCESSING, or terminal retry record alike).
+        # §11.5: at most one job per identity — converge on the existing record.
         existing_job = await cls._get_job_by_key(db, key)
         if existing_job is not None:
+            # §10.3 bounded user retry: only a transient-exhausted terminal job
+            # (FAILED_RETRYABLE) under the hard attempt cap may be requeued in
+            # place. FAILED_PERMANENT and over-cap jobs stay terminal (support).
+            if (
+                existing_job.status == JOB_FAILED_RETRYABLE
+                and generation.value == "FAILED"
+                and (existing_job.attempt or 0) < hard_attempt_cap()
+            ):
+                existing_job.status = JOB_QUEUED
+                existing_job.run_after = None
+                existing_job.locked_at = None
+                existing_job.error_json = {
+                    **(existing_job.error_json or {}),
+                    "user_retry": True,
+                    "requeued_at": utc_now().isoformat(),
+                }
+                artifact.generation_status = "QUEUED"
+                await db.commit()
+                await db.refresh(artifact)
+                logger.info(
+                    "User retry requeued sketch job %s (attempt %s/%s)",
+                    existing_job.id,
+                    existing_job.attempt,
+                    hard_attempt_cap(),
+                )
+                return SketchEnqueueOutcome(
+                    artifact=artifact,
+                    job=existing_job if own else None,  # job state is only for the owning session
+                    created=False,
+                    cross_session=not own,
+                )
             return SketchEnqueueOutcome(
                 artifact=artifact,
                 job=existing_job if own else None,  # job state is only for the owning session
@@ -275,7 +329,7 @@ class SketchGenerationService:
         )
 
     # ------------------------------------------------------------------
-    # Worker (§11.6, SP-604 retry/idempotency)
+    # Worker (§11.6, SP-604 retry/idempotency, fenced per review R1)
     # ------------------------------------------------------------------
 
     @classmethod
@@ -289,11 +343,13 @@ class SketchGenerationService:
         """
         Claim and process one QUEUED sketch job; returns the final job status.
 
-        Two-phase (SP-04 hardening): phase A claims and prepares inside one
-        transaction (crash-safe — an uncommitted claim rolls back to QUEUED),
-        the provider call runs WITHOUT holding a transaction, and phase C
-        finalizes under fresh row locks with completion guards so a retry can
-        never produce a second owned sketch after a success.
+        Two-phase with a claim fence: phase A claims and prepares inside one
+        transaction (the consumed `job.attempt` is the fence token), the provider
+        call runs WITHOUT holding a transaction, and phase C finalizes only when
+        the fence still matches — a stale worker whose claim was reclaimed or
+        superseded can never commit, and only the surviving attempt performs the
+        durable upload (inside phase C), so the §11.7 object can never be
+        overwritten by a discarded late worker.
 
         `job_id` (optional) scopes the claim to one specific job — used by tests
         and targeted reprocessing; production workers omit it.
@@ -308,14 +364,14 @@ class SketchGenerationService:
             return prepared
         work = prepared
 
-        # Phase B: provider call + sink, intentionally outside any DB transaction.
+        # Phase B: provider call only — no storage writes before the fence.
         try:
             result = await provider.generate_image(work.rendered.rendered_text)
-            storage_key = await sink.persist(artifact_id=work.artifact_id, result=result)
         except SketchProviderError as exc:
             return await cls._finalize_failure(
                 job_id=work.job_id,
                 artifact_id=work.artifact_id,
+                claim_attempt=work.claim_attempt,
                 retryable=exc.retryable,
                 message=exc.message,
                 error_code=exc.error_code.value,
@@ -329,6 +385,7 @@ class SketchGenerationService:
             return await cls._finalize_failure(
                 job_id=work.job_id,
                 artifact_id=work.artifact_id,
+                claim_attempt=work.claim_attempt,
                 retryable=True,
                 message=str(exc)[:300] or type(exc).__name__,
                 error_code=INTERNAL_ERROR_CODE,
@@ -337,9 +394,10 @@ class SketchGenerationService:
         return await cls._finalize_success(
             job_id=work.job_id,
             artifact_id=work.artifact_id,
+            claim_attempt=work.claim_attempt,
             rendered=work.rendered,
             result=result,
-            storage_key=storage_key,
+            sink=sink,
         )
 
     @classmethod
@@ -354,13 +412,14 @@ class SketchGenerationService:
 
         Returns None when nothing was claimable, a terminal status string when the
         job finalized inside this transaction (completion guard, input failure),
-        or the prepared work for the provider call.
+        or the prepared work (with the claim fence token) for the provider call.
         """
         async with db_session_factory() as db:
             try:
                 job = await cls._claim_next_queued(db, now, job_id)
                 if job is None:
                     return None
+                claim_attempt = job.attempt or 0
 
                 artifact = await cls._lock_artifact(db, job.artifact_id)
                 if artifact is None:
@@ -372,9 +431,9 @@ class SketchGenerationService:
                     )
 
                 # Completion guard: never call the provider for an owned, completed
-                # sketch (duplicate-job / requeue-after-success protection).
+                # sketch (duplicate-job / requeue-after-success protection). The
+                # claim already consumed the attempt — no further increment.
                 if normalize_generation(artifact.generation_status).value == "COMPLETED":
-                    job.attempt = (job.attempt or 0) + 1
                     job.status = JOB_COMPLETED
                     job.locked_at = None
                     job.error_json = {"message": "Artifact already completed; provider call skipped."}
@@ -415,7 +474,12 @@ class SketchGenerationService:
                     )
 
                 await db.commit()
-                return _ClaimedWork(job_id=job.id, artifact_id=artifact.id, rendered=rendered)
+                return _ClaimedWork(
+                    job_id=job.id,
+                    artifact_id=artifact.id,
+                    rendered=rendered,
+                    claim_attempt=claim_attempt,
+                )
             except Exception:
                 await db.rollback()
                 raise
@@ -426,11 +490,16 @@ class SketchGenerationService:
         *,
         job_id: UUID,
         artifact_id: UUID,
+        claim_attempt: int,
         rendered: RenderedSketchPrompt,
         result: SketchGenerationResult,
-        storage_key: Optional[str],
+        sink: SketchResultSink,
     ) -> str:
-        """Phase C success path: guarded §11.3 persistence under fresh row locks."""
+        """
+        Phase C success path (fenced): persist the durable asset INSIDE the fence,
+        then commit §11.3 metadata + COMPLETED. A generation without a non-empty
+        storage key can never complete (ASSET-01, §11.7).
+        """
         async with AsyncSessionLocal() as db:
             async with db.begin():
                 job = await cls._lock_job(db, job_id)
@@ -438,21 +507,57 @@ class SketchGenerationService:
                 if job is None or artifact is None:
                     logger.error("Sketch finalization lost its job/artifact rows (%s/%s)", job_id, artifact_id)
                     return JOB_FAILED_PERMANENT
-                if job.status != JOB_PROCESSING:
-                    # The claim was reclaimed or resolved elsewhere while the
-                    # provider call ran; discard this result (at-least-once).
+
+                # Fence: a reclaimed/superseded claim may not commit anything —
+                # and since the upload happens below, it can never overwrite the
+                # surviving attempt's object either.
+                if job.status != JOB_PROCESSING or (job.attempt or 0) != claim_attempt:
                     logger.warning(
-                        "Sketch job %s no longer PROCESSING (%s); discarding provider result",
-                        job_id, job.status,
+                        "Sketch job %s fence mismatch (status=%s attempt=%s claim=%s); "
+                        "discarding provider result",
+                        job_id, job.status, job.attempt, claim_attempt,
                     )
                     return job.status
 
                 # Second completion guard under the row lock.
                 if normalize_generation(artifact.generation_status).value == "COMPLETED":
-                    job.attempt = (job.attempt or 0) + 1
                     job.status = JOB_COMPLETED
                     job.locked_at = None
                     return JOB_COMPLETED
+
+                # Durable persistence happens here — after the fence, before any
+                # success state is written. Failures fall through to the same-txn
+                # failure path; a COMPLETED artifact without a storage key is
+                # structurally impossible.
+                try:
+                    storage_key = await sink.persist(artifact_id=artifact.id, result=result)
+                    if not storage_key or not str(storage_key).strip():
+                        raise SketchStorageUnavailableError(
+                            "Sink returned an empty storage key; refusing to complete (ASSET-01)."
+                        )
+                except SketchStorageUnavailableError as exc:
+                    logger.error("Sketch job %s: %s", job_id, exc)
+                    return await cls._write_failure_locked(
+                        db, job, artifact,
+                        claim_attempt=claim_attempt,
+                        retryable=False,
+                        message=exc.message,
+                        error_code=STORAGE_NOT_CONFIGURED_CODE,
+                        provider_request_id=result.provider_request_id,
+                    )
+                except SketchStorageError as exc:
+                    # Upload/validation failure: same bounded budget as provider
+                    # errors (fresh object write overwrites nothing referenced).
+                    logger.warning("Sketch job %s storage error: %s", job_id, exc.message)
+                    return await cls._write_failure_locked(
+                        db, job, artifact,
+                        claim_attempt=claim_attempt,
+                        retryable=True,
+                        message=exc.message,
+                        error_code="STORAGE_ERROR",
+                        provider_request_id=result.provider_request_id,
+                        details=exc.details,
+                    )
 
                 # §11.3: persist provider/model/prompt_version/inputs/request id/time with the asset.
                 artifact.provider = result.provider
@@ -465,17 +570,17 @@ class SketchGenerationService:
                 artifact.generation_status = "COMPLETED"
                 artifact.completed_at = utc_now()
 
-                job.attempt = (job.attempt or 0) + 1
                 job.status = JOB_COMPLETED
                 job.locked_at = None
                 job.error_json = None
 
             logger.info(
-                "Sketch generation completed for artifact %s (job %s, model=%s, request_id=%s)",
+                "Sketch generation completed for artifact %s (job %s, model=%s, request_id=%s, key=%s)",
                 artifact_id,
                 job_id,
                 result.model,
                 result.provider_request_id,
+                storage_key,
             )
             return JOB_COMPLETED
 
@@ -485,6 +590,7 @@ class SketchGenerationService:
         *,
         job_id: UUID,
         artifact_id: Optional[UUID],
+        claim_attempt: int,
         retryable: bool,
         message: str,
         error_code: str,
@@ -492,7 +598,7 @@ class SketchGenerationService:
         provider_request_id: Optional[str] = None,
         details: Optional[dict] = None,
     ) -> str:
-        """Phase C failure path: bounded requeue with backoff, or terminal failure."""
+        """Phase C failure path (fenced): bounded requeue with backoff, or terminal."""
         async with AsyncSessionLocal() as db:
             async with db.begin():
                 job = await cls._lock_job(db, job_id)
@@ -501,60 +607,93 @@ class SketchGenerationService:
                     return JOB_FAILED_PERMANENT
                 artifact = await cls._lock_artifact(db, artifact_id) if artifact_id else None
 
-                if job.status != JOB_PROCESSING:
+                # Fence: only the attempt that owns the current claim may report.
+                if job.status != JOB_PROCESSING or (job.attempt or 0) != claim_attempt:
                     logger.warning(
-                        "Sketch job %s no longer PROCESSING (%s); failure result discarded",
-                        job_id, job.status,
+                        "Sketch job %s fence mismatch on failure report (status=%s attempt=%s claim=%s); "
+                        "failure result discarded",
+                        job_id, job.status, job.attempt, claim_attempt,
                     )
                     return job.status
 
-                attempt = (job.attempt or 0) + 1
-                job.attempt = attempt
-                job.locked_at = None
-                job.error_json = {
-                    "message": message,
-                    "error_code": error_code,
-                    "retryable": retryable,
-                    "provider_code": provider_code,
-                    "provider_request_id": provider_request_id,
-                    "attempt": attempt,
-                    **({"details": details} if details else {}),
-                }
-
-                max_attempts = max(1, settings.job_retry_max_attempts)
-                if retryable and attempt < max_attempts:
-                    # Bounded transient retry: back to QUEUED with exponential
-                    # backoff; the artifact stays PROCESSING (§10.3 GENERATING).
-                    job.status = JOB_QUEUED
-                    job.run_after = utc_now() + timedelta(seconds=retry_backoff_seconds(attempt))
-                    if artifact is not None:
-                        artifact.attempt_count = (artifact.attempt_count or 0) + 1
-                    logger.warning(
-                        "Sketch job %s attempt %s/%s failed retryably (error_code=%s); "
-                        "requeued with backoff until %s",
-                        job_id, attempt, max_attempts, error_code, job.run_after,
-                    )
-                    return JOB_QUEUED
-
-                status = JOB_FAILED_RETRYABLE if retryable else JOB_FAILED_PERMANENT
-                job.status = status
-                if artifact is not None:
-                    artifact.attempt_count = (artifact.attempt_count or 0) + 1
-                    artifact.generation_status = "FAILED"
-                    artifact.last_error_code = error_code
-                    artifact.last_error_message = message
-                logger.warning(
-                    "Sketch job %s reached terminal %s after %s attempt(s) (error_code=%s, provider_code=%s)",
-                    job_id, status, attempt, error_code, provider_code,
+                return await cls._write_failure_locked(
+                    db, job, artifact,
+                    claim_attempt=claim_attempt,
+                    retryable=retryable,
+                    message=message,
+                    error_code=error_code,
+                    provider_code=provider_code,
+                    provider_request_id=provider_request_id,
+                    details=details,
                 )
-                return status
+
+    @classmethod
+    async def _write_failure_locked(
+        cls,
+        db: AsyncSession,
+        job: AIGenerationJob,
+        artifact: Optional[SoulmateArtifact],
+        *,
+        claim_attempt: int,
+        retryable: bool,
+        message: str,
+        error_code: str,
+        provider_code: Optional[str] = None,
+        provider_request_id: Optional[str] = None,
+        details: Optional[dict] = None,
+    ) -> str:
+        """
+        Failure decision written inside the caller's already-locked transaction:
+        bounded requeue with exponential backoff while the attempt budget lasts,
+        terminal (FAILED_RETRYABLE / FAILED_PERMANENT) once exhausted. The caller's
+        `db.begin()` commits.
+        """
+        job.locked_at = None
+        job.error_json = {
+            "message": message,
+            "error_code": error_code,
+            "retryable": retryable,
+            "provider_code": provider_code,
+            "provider_request_id": provider_request_id,
+            "attempt": claim_attempt,
+            **({"details": details} if details else {}),
+        }
+
+        max_attempts = max(1, settings.job_retry_max_attempts)
+        if retryable and claim_attempt < max_attempts:
+            # Bounded transient retry: back to QUEUED with exponential backoff;
+            # the artifact stays PROCESSING (§10.3 GENERATING).
+            job.status = JOB_QUEUED
+            job.run_after = utc_now() + timedelta(seconds=retry_backoff_seconds(claim_attempt))
+            if artifact is not None:
+                artifact.attempt_count = (artifact.attempt_count or 0) + 1
+            logger.warning(
+                "Sketch job %s attempt %s/%s failed retryably (error_code=%s); "
+                "requeued with backoff until %s",
+                job.id, claim_attempt, max_attempts, error_code, job.run_after,
+            )
+            return JOB_QUEUED
+
+        status = JOB_FAILED_RETRYABLE if retryable else JOB_FAILED_PERMANENT
+        job.status = status
+        if artifact is not None:
+            artifact.attempt_count = (artifact.attempt_count or 0) + 1
+            artifact.generation_status = "FAILED"
+            artifact.last_error_code = error_code
+            artifact.last_error_message = message
+        logger.warning(
+            "Sketch job %s reached terminal %s after %s attempt(s) (error_code=%s, provider_code=%s)",
+            job.id, status, claim_attempt, error_code, provider_code,
+        )
+        return status
 
     @classmethod
     async def reclaim_stale_processing_jobs(cls, now: Optional[datetime] = None) -> int:
         """
         Requeue PROCESSING jobs whose claim outlived the staleness threshold
         (worker death mid-call). Attempts are consumed the same way as ordinary
-        failures so crash loops respect the §11.6 budget.
+        failures so crash loops respect the §11.6 budget, and the fence token
+        change guarantees any late worker from the stale claim is discarded.
         """
         effective_now = now or utc_now()
         stale_before = effective_now - timedelta(seconds=settings.job_claim_stale_seconds)
@@ -637,6 +776,9 @@ class SketchGenerationService:
         job = (await db.execute(stmt)).scalars().first()
         if job is None:
             return None
+        # Consuming the attempt at claim time doubles as the phase-C fence token:
+        # any reclaim or later claim changes it, invalidating stale workers.
+        job.attempt = (job.attempt or 0) + 1
         job.status = JOB_PROCESSING
         job.locked_at = utc_now()
         await db.flush()
@@ -667,7 +809,6 @@ class SketchGenerationService:
         details: Optional[dict] = None,
     ) -> str:
         """Terminal failure inside the phase-A transaction (input/row problems)."""
-        job.attempt = (job.attempt or 0) + 1
         job.status = JOB_FAILED_RETRYABLE if retryable else JOB_FAILED_PERMANENT
         job.locked_at = None
         job.error_json = {
@@ -676,7 +817,7 @@ class SketchGenerationService:
             "retryable": retryable,
             "provider_code": provider_code,
             "provider_request_id": provider_request_id,
-            "attempt": job.attempt,
+            "attempt": job.attempt or 0,
             **({"details": details} if details else {}),
         }
         if artifact is not None:
@@ -716,15 +857,6 @@ class SketchGenerationService:
                 SoulmateArtifact.session_id == session.id,
                 SoulmateArtifact.email_normalized == email,
             ),
-        )
-        return (await db.execute(stmt)).scalars().first()
-
-    @classmethod
-    async def _get_sketch_artifact(cls, db: AsyncSession, session_id) -> Optional[SoulmateArtifact]:
-        """Session-scoped lookup (reads remain session-isolated per RECOVERY-01)."""
-        stmt = select(SoulmateArtifact).where(
-            SoulmateArtifact.session_id == session_id,
-            SoulmateArtifact.artifact_type == "SKETCH",
         )
         return (await db.execute(stmt)).scalars().first()
 

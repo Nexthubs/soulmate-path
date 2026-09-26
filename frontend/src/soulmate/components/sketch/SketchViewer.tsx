@@ -26,6 +26,7 @@ export function SketchViewer({
   onRetry,
   onCheckNow,
   isTriggering = false,
+  retryAvailable = true,
   showFixtureToolbar = false,
   partnerGender,
   errorMessage,
@@ -276,14 +277,25 @@ export function SketchViewer({
             </div>
 
             <div className="w-full flex flex-col gap-2 pt-2">
-              <button
-                type="button"
-                onClick={handleRetry}
-                data-testid="sketch-retry-btn"
-                className="w-full h-[48px] rounded-xl bg-red-600 hover:bg-red-700 text-white font-sans font-semibold text-[15px] shadow-md transition-colors cursor-pointer"
-              >
-                Retry Generation
-              </button>
+              {retryAvailable && (
+                <button
+                  type="button"
+                  onClick={handleRetry}
+                  data-testid="sketch-retry-btn"
+                  className="w-full h-[48px] rounded-xl bg-red-600 hover:bg-red-700 text-white font-sans font-semibold text-[15px] shadow-md transition-colors cursor-pointer"
+                >
+                  Retry Generation
+                </button>
+              )}
+              {!retryAvailable && (
+                <p
+                  data-testid="sketch-support-note"
+                  className="text-xs text-neutral-500 leading-relaxed"
+                >
+                  Automatic retries have been exhausted for now. Please contact
+                  support to restore your sketch — you will not be charged again.
+                </p>
+              )}
               <button
                 type="button"
                 onClick={handleBack}

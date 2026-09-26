@@ -219,38 +219,73 @@ async def test_completed_artifact_short_circuits_without_provider_call(async_db)
 
 
 @pytest.mark.asyncio
-async def test_finalize_discards_result_when_claim_was_reclaimed(async_db):
-    """A result arriving after its claim was reclaimed must not overwrite state."""
+async def test_fenced_finalize_discards_stale_worker_result(async_db):
+    """R1 fix: a stale worker whose claim was reclaimed can neither commit state
+    nor upload — only the surviving attempt touches the §11.7 key, so the object
+    can never be overwritten by a discarded late worker."""
+    from app.db.base import utc_now
+    from app.soulmate.services.sketch_generation_service import SketchGenerationService as Svc
+
     sess = await seed_generation_session(async_db)
     outcome = await SketchGenerationService.enqueue_sketch_generation(async_db, sess)
 
-    # Simulate: the claim was stale-reclaimed while a zombie worker still finished.
-    job = await async_db.get(AIGenerationJob, outcome.job.id)
-    job.status = JOB_QUEUED
-    job.run_after = datetime.now(timezone.utc) + timedelta(seconds=30)
-    await async_db.commit()
+    # Worker A claims (consumes attempt 1 = its fence token).
+    work = await Svc._claim_and_prepare(
+        db_session_factory=AsyncSessionLocal, now=utc_now(), job_id=outcome.job.id
+    )
+    assert not isinstance(work, str) and work is not None
+    assert work.claim_attempt == 1
 
-    status = await SketchGenerationService._finalize_success(
+    # A's claim goes stale (worker death) and is reclaimed; worker B re-claims.
+    job = await async_db.get(AIGenerationJob, outcome.job.id)
+    job.locked_at = datetime.now(timezone.utc) - timedelta(seconds=settings.job_claim_stale_seconds + 60)
+    await async_db.commit()
+    assert await SketchGenerationService.reclaim_stale_processing_jobs() == 1
+
+    uploaded: list = []
+
+    class TracingSink:
+        async def persist(self, *, artifact_id, result: SketchGenerationResult):
+            uploaded.append(artifact_id)
+            return f"soulmate/sketches/{artifact_id}/original.webp"
+
+    zombie_result = SketchGenerationResult(
+        provider="openai",
+        model="gpt-image-2",
+        image_bytes=b"zombie-bytes",
+        image_format="webp",
+        size="1024x1536",
+        quality="medium",
+        provider_request_id="req_zombie",
+        duration_ms=10,
+    )
+    status = await Svc._finalize_success(
         job_id=outcome.job.id,
         artifact_id=outcome.artifact.id,
-        rendered=None,
-        result=SketchGenerationResult(
-            provider="openai",
-            model="gpt-image-2",
-            image_bytes=b"zombie-bytes",
-            image_format="webp",
-            size="1024x1536",
-            quality="medium",
-            provider_request_id="req_zombie",
-            duration_ms=10,
-        ),
-        storage_key="soulmate/sketches/zombie/original.webp",
+        claim_attempt=work.claim_attempt,
+        rendered=work.rendered,
+        result=zombie_result,
+        sink=TracingSink(),
     )
+    assert status == JOB_QUEUED  # discarded at the fence (B already re-claimed? not yet -> QUEUED)
+    assert uploaded == []        # stale worker never wrote the object
 
-    assert status == JOB_QUEUED  # discarded, no state change
+    # The surviving claim (worker B) completes normally and uploads exactly once.
+    from test_object_storage import ValidWebpProvider
+
+    status_b = await SketchGenerationService.process_next_queued_job(
+        provider=ValidWebpProvider(), sink=TracingSink(), job_id=outcome.job.id
+    )
+    assert status_b == JOB_COMPLETED
+    assert len(uploaded) == 1
+
     artifact = await load_sketch_artifact(async_db, sess.id)
-    assert artifact.generation_status == "QUEUED"
-    assert artifact.provider_request_id is None  # zombie result never persisted
+    await async_db.refresh(artifact)
+    assert artifact.generation_status == "COMPLETED"
+    assert artifact.provider_request_id == "req_sp605_live"  # B's metadata, matching B's object
+    job_after = await async_db.get(AIGenerationJob, outcome.job.id)
+    await async_db.refresh(job_after)
+    assert job_after.status == JOB_COMPLETED
 
 
 # ---------------------------------------------------------------------------
@@ -372,3 +407,139 @@ async def test_twenty_concurrent_triggers_produce_one_generation(async_db):
         )
     ).scalars().all()
     assert len(jobs_after) == 1
+
+
+# ---------------------------------------------------------------------------
+# R1 fix: bounded user retry of a terminal job (§10.3 Retry/Support)
+# ---------------------------------------------------------------------------
+
+
+async def _seed_failed_job(async_db, *, status: str, attempt: int):
+    from app.db.models.artifact import SoulmateArtifact as _A
+    from datetime import datetime as _dt, timezone as _tz
+
+    sess = await seed_generation_session(async_db)
+    artifact = await load_sketch_artifact(async_db, sess.id)
+    artifact.generation_status = "FAILED"
+    artifact.last_error_code = "PROVIDER_UNAVAILABLE"
+    await async_db.commit()
+    job = AIGenerationJob(
+        artifact_id=artifact.id,
+        job_type="SOULMATE_SKETCH",
+        idempotency_key=sketch_idempotency_key(sess.email_normalized, "v1"),
+        status=status,
+        attempt=attempt,
+        error_json={"retryable": status == "FAILED_RETRYABLE", "error_code": "429"},
+    )
+    async_db.add(job)
+    await async_db.commit()
+    await async_db.refresh(job)
+    return sess, artifact, job
+
+
+@pytest.mark.asyncio
+async def test_user_retry_requeues_transient_exhausted_job_in_place(async_db):
+    """A FAILED_RETRYABLE terminal job under the hard cap is requeued by an
+    explicit user retry — same job record, artifact back to QUEUED (§10.3)."""
+    sess, artifact, job = await _seed_failed_job(async_db, status="FAILED_RETRYABLE", attempt=3)
+
+    outcome = await SketchGenerationService.enqueue_sketch_generation(async_db, sess)
+
+    assert outcome.created is False
+    assert outcome.cross_session is False
+    assert outcome.job is not None and outcome.job.id == job.id
+    await async_db.refresh(job)
+    await async_db.refresh(artifact)
+    assert job.status == JOB_QUEUED
+    assert job.run_after is None
+    assert job.error_json.get("user_retry") is True
+    assert artifact.generation_status == "QUEUED"  # §10.3 GENERATING again
+
+    # The worker can then claim it; a further transient failure terminates it
+    # again (each user retry buys exactly one provider attempt).
+    provider = FakeProvider(error=_retryable_error())
+    status = await SketchGenerationService.process_next_queued_job(
+        provider=provider, sink=RecordingSink(), job_id=job.id
+    )
+    assert status == JOB_FAILED_RETRYABLE  # attempt now 4 >= max(3) -> terminal
+
+
+@pytest.mark.asyncio
+async def test_user_retry_refused_at_hard_attempt_cap(async_db):
+    sess, artifact, job = await _seed_failed_job(
+        async_db, status="FAILED_RETRYABLE", attempt=settings.job_retry_max_attempts * 2
+    )
+    outcome = await SketchGenerationService.enqueue_sketch_generation(async_db, sess)
+    await async_db.refresh(job)
+    assert job.status == "FAILED_RETRYABLE"  # untouched: support-only from here
+    assert outcome.job is not None
+
+
+@pytest.mark.asyncio
+async def test_user_retry_never_touches_permanent_failures(async_db):
+    sess, artifact, job = await _seed_failed_job(async_db, status="FAILED_PERMANENT", attempt=3)
+    outcome = await SketchGenerationService.enqueue_sketch_generation(async_db, sess)
+    await async_db.refresh(job)
+    await async_db.refresh(artifact)
+    assert job.status == "FAILED_PERMANENT"
+    assert artifact.generation_status == "FAILED"
+    assert outcome.job is not None  # converged, not requeued
+
+
+# ---------------------------------------------------------------------------
+# R1 fix: no COMPLETED without a durable storage key (ASSET-01, §11.7)
+# ---------------------------------------------------------------------------
+
+
+class _KeylessSink:
+    """Dev sink that drops bytes and returns no key — must fail, never complete."""
+
+    async def persist(self, *, artifact_id, result: SketchGenerationResult):
+        return None
+
+
+class _UploadFailingSink:
+    async def persist(self, *, artifact_id, result: SketchGenerationResult):
+        from app.soulmate.services.object_storage_sink import SketchStorageError
+
+        raise SketchStorageError("R2 put_object failed (HTTP 503)")
+
+
+@pytest.mark.asyncio
+async def test_generation_without_storage_key_never_completes(async_db):
+    """A keyless sink fails the attempt permanently (STORAGE_NOT_CONFIGURED)."""
+    sess = await seed_generation_session(async_db)
+    outcome = await SketchGenerationService.enqueue_sketch_generation(async_db, sess)
+
+    status = await SketchGenerationService.process_next_queued_job(
+        provider=FakeProvider(), sink=_KeylessSink(), job_id=outcome.job.id
+    )
+    assert status == JOB_FAILED_PERMANENT
+
+    async with AsyncSessionLocal() as verify_db:
+        artifact = await verify_db.get(SoulmateArtifact, outcome.artifact.id)
+        job = await verify_db.get(AIGenerationJob, outcome.job.id)
+    assert artifact.generation_status == "FAILED"
+    assert artifact.last_error_code == "STORAGE_NOT_CONFIGURED"
+    assert artifact.storage_key is None
+    assert job.status == JOB_FAILED_PERMANENT
+    assert job.error_json["retryable"] is False
+
+
+@pytest.mark.asyncio
+async def test_upload_failure_inside_fence_is_bounded_retryable(async_db):
+    sess = await seed_generation_session(async_db)
+    outcome = await SketchGenerationService.enqueue_sketch_generation(async_db, sess)
+
+    status = await SketchGenerationService.process_next_queued_job(
+        provider=FakeProvider(), sink=_UploadFailingSink(), job_id=outcome.job.id
+    )
+    assert status == JOB_QUEUED  # bounded retry with backoff
+
+    async with AsyncSessionLocal() as verify_db:
+        artifact = await verify_db.get(SoulmateArtifact, outcome.artifact.id)
+        job = await verify_db.get(AIGenerationJob, outcome.job.id)
+    assert artifact.generation_status == "PROCESSING"  # still generating (§10.3)
+    assert artifact.last_error_code is None            # not terminal yet
+    assert job.status == JOB_QUEUED
+    assert job.error_json["error_code"] == "STORAGE_ERROR"

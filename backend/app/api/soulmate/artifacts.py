@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ForbiddenOwnershipError, NotFoundError
-from app.db.models.artifact import SoulmateArtifact
+from app.db.models.artifact import AIGenerationJob, SoulmateArtifact
 from app.db.models.session import SoulmateSession
 from app.db.session import get_db
 from app.soulmate.schema import SketchAssetResponse, SketchGenerationResponse
@@ -25,7 +25,11 @@ from app.soulmate.security import (
 )
 from app.soulmate.services.object_storage_sink import build_sketch_image_url
 from app.soulmate.services.session_service import SessionService
-from app.soulmate.services.sketch_generation_service import SketchGenerationService
+from app.soulmate.services.sketch_generation_service import (
+    JOB_FAILED_RETRYABLE,
+    SketchGenerationService,
+    hard_attempt_cap,
+)
 from app.soulmate.services.status_service import ArtifactStatusService
 
 router = APIRouter()
@@ -109,6 +113,7 @@ async def get_sketch_asset_endpoint(
 
     image_url: Optional[str] = None
     storage_key: Optional[str] = None
+    retry_available: Optional[bool] = None
     if statuses.sketch.status == "COMPLETED":
         stmt = select(SoulmateArtifact.storage_key, SoulmateArtifact.generation_status).where(
             SoulmateArtifact.session_id == session.id,
@@ -118,10 +123,32 @@ async def get_sketch_asset_endpoint(
         if row is not None and row.generation_status == "COMPLETED":
             storage_key = row.storage_key
             image_url = build_sketch_image_url(storage_key)
+    elif statuses.sketch.status == "FAILED":
+        # §10.3 Retry/Support split: a FAILED artifact is user-retryable only while
+        # its terminal job is FAILED_RETRYABLE and under the hard attempt cap.
+        stmt = select(SoulmateArtifact.id).where(
+            SoulmateArtifact.session_id == session.id,
+            SoulmateArtifact.artifact_type == "SKETCH",
+        )
+        artifact_row = (await db.execute(stmt)).first()
+        if artifact_row is not None:
+            job_stmt = (
+                select(AIGenerationJob.status, AIGenerationJob.attempt)
+                .where(AIGenerationJob.artifact_id == artifact_row.id)
+                .order_by(AIGenerationJob.created_at.desc())
+                .limit(1)
+            )
+            job_row = (await db.execute(job_stmt)).first()
+            if job_row is not None:
+                retry_available = (
+                    job_row.status == JOB_FAILED_RETRYABLE
+                    and (job_row.attempt or 0) < hard_attempt_cap()
+                )
 
     return SketchAssetResponse(
         server_time=statuses.server_time,
         sketch=statuses.sketch,
         image_url=image_url,
         storage_key=storage_key,
+        retry_available=retry_available,
     )

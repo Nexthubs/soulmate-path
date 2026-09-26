@@ -36,6 +36,13 @@ export interface SketchViewerProps {
   onRetry?: () => void;
 
   /**
+   * Whether the failed state offers a working Retry action (§10.3 Retry/Support):
+   * true only for transient-exhausted (FAILED_RETRYABLE) jobs under the retry
+   * cap. When false the Retry CTA is hidden and the support path is shown.
+   */
+  retryAvailable?: boolean;
+
+  /**
    * Callback fired when user clicks "Generate My Sketch" on the ready state
    * (UNLOCKED + NOT_STARTED, §10.3). The caller invokes the idempotent
    * generation trigger; the viewer only renders state.
