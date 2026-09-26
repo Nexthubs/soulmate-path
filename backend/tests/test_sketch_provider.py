@@ -103,7 +103,15 @@ async def test_custom_compatible_endpoint_base_url_is_used():
 
 
 @pytest.mark.asyncio
-async def test_request_uses_config_defaults_and_spec_target_model():
+async def test_request_uses_config_defaults_and_spec_target_model(monkeypatch):
+    # Hermetic: pin the §22 defaults explicitly (a real .env may exist in the repo
+    # root when pytest runs); the test's intent is "the adapter consumes config".
+    monkeypatch.setattr(settings, "openai_base_url", OPENAI_DEFAULT_BASE_URL)
+    monkeypatch.setattr(settings, "soulmate_image_model", "gpt-image-2")
+    monkeypatch.setattr(settings, "soulmate_image_size", "1024x1536")
+    monkeypatch.setattr(settings, "soulmate_image_quality", "medium")
+    monkeypatch.setattr(settings, "soulmate_image_format", "webp")
+
     captured: dict = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -119,7 +127,7 @@ async def test_request_uses_config_defaults_and_spec_target_model():
     result = await provider.generate_image("A pencil portrait of {nothing}.")
     await provider.close()
 
-    assert captured["url"] == GEN_URL
+    assert captured["url"] == images_generations_url(settings.openai_base_url)
     # Settings defaults (§22): model defaults to the spec target gpt-image-2.
     assert provider.model == settings.soulmate_image_model == "gpt-image-2"
     assert provider.size == settings.soulmate_image_size == "1024x1536"
@@ -281,7 +289,9 @@ async def test_content_policy_violation_is_permanent_with_provider_detail():
 
 
 @pytest.mark.asyncio
-async def test_missing_api_key_fails_fast_without_http_call():
+async def test_missing_api_key_fails_fast_without_http_call(monkeypatch):
+    monkeypatch.setattr(settings, "openai_api_key", None)
+
     def handler(request: httpx.Request) -> httpx.Response:
         raise AssertionError("provider must not be called without an API key")
 
@@ -333,7 +343,7 @@ async def test_url_fallback_downloads_bytes_immediately():
     """ASSET-01: temporary provider URLs are fetched to bytes, kept for tracing only."""
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if str(request.url).startswith(GEN_URL):
+        if str(request.url).endswith("/images/generations"):
             return httpx.Response(
                 200,
                 json={"created": 1, "data": [{"url": "https://tmp.openai.test/img.webp"}]},
@@ -392,7 +402,7 @@ async def test_undecodable_b64_is_permanent():
 @pytest.mark.asyncio
 async def test_url_download_failure_is_retryable():
     def handler(request: httpx.Request) -> httpx.Response:
-        if str(request.url).startswith(GEN_URL):
+        if str(request.url).endswith("/images/generations"):
             return httpx.Response(200, json={"created": 1, "data": [{"url": "https://tmp.openai.test/img.webp"}]})
         return httpx.Response(503, text="slow down")
 

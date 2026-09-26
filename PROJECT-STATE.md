@@ -56,6 +56,7 @@ Result polling/refetch strategy (`SP-505`) completed and evidenced in `docs/hand
 Versioned Sketch prompt template (`SP-601`) completed and evidenced in `docs/handoffs/SP-601.md`.
 OpenAI image provider adapter (`SP-602`) completed and evidenced in `docs/handoffs/SP-602.md` (live-provider acceptance deferred to M4 gate — no credentials in dev).
 Generation queue / worker (`SP-603`) completed and evidenced in `docs/handoffs/SP-603.md` (DB-backed queue on ai_generation_jobs, in-process workers, POST /artifacts/sketch/generate).
+Retry / idempotency (`SP-604`) completed and evidenced in `docs/handoffs/SP-604.md` (two-phase claims, bounded exponential backoff, stale-claim reclamation, 20-concurrent trigger test passed).
 
 ## 2. Milestone status
 
@@ -70,7 +71,7 @@ Generation queue / worker (`SP-603`) completed and evidenced in `docs/handoffs/S
 
 ## 3. Active / blocked work
 
-Active tasks: M4 — Sketch Ready is the next milestone (Wave 6; SP-601..603 DONE, `SP-604` onward). M2 restored to PASS and M3 CONDITIONAL_PASS on 2026-09-26 after RV-01/RV-02 remediation + live sandbox acceptance (first payment, replay dedupe, suspend/activate ordering, refund by sale_id, cancel/paid-through, browser navigation).
+Active tasks: M4 — Sketch Ready is the next milestone (Wave 6; SP-601..604 DONE, `SP-605` onward). M2 restored to PASS and M3 CONDITIONAL_PASS on 2026-09-26 after RV-01/RV-02 remediation + live sandbox acceptance (first payment, replay dedupe, suspend/activate ordering, refund by sale_id, cancel/paid-through, browser navigation).
 
 Blocking decision IDs:
 
@@ -110,6 +111,6 @@ Report production provider: disabled / decision pending
 ## 6. Next safe tasks
 
 ```text
-1. SP-604 (Retry / idempotency — bounded attempts/backoff + duplicate-spend guard + 20-concurrent test).
-2. SP-605 (Durable object storage — implements SketchResultSink; ASSET-01).
+1. SP-605 (Durable object storage — implements SketchResultSink; ASSET-01).
+2. SP-606 (One-email-one-sketch constraint).
 ```

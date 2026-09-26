@@ -156,6 +156,11 @@ class Settings(BaseSettings):
     job_worker_concurrency: int = 4
     job_worker_enabled: bool = True
     job_worker_poll_seconds: float = 2.0
+    # §11.6 retry policy (SP-604): bounded attempts with exponential backoff.
+    job_retry_max_attempts: int = 3
+    job_retry_base_backoff_seconds: float = 5.0
+    # PROCESSING claims older than this are considered lost (worker death) and reclaimed.
+    job_claim_stale_seconds: float = 600.0
 
     @property
     def is_production(self) -> bool:

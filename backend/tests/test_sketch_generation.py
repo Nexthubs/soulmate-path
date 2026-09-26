@@ -354,6 +354,7 @@ async def test_worker_completes_generation_and_persists_metadata(async_db):
 
 @pytest.mark.asyncio
 async def test_worker_records_retryable_failure_observably(async_db):
+    """SP-604: a transient failure requeues the job with backoff (budget not exhausted)."""
     sess = await seed_generation_session(async_db)
     outcome = await SketchGenerationService.enqueue_sketch_generation(async_db, sess)
 
@@ -369,16 +370,16 @@ async def test_worker_records_retryable_failure_observably(async_db):
         provider=provider, sink=RecordingSink(), job_id=outcome.job.id
     )
 
-    assert status == JOB_FAILED_RETRYABLE
+    assert status == JOB_QUEUED  # requeued, not terminal
     async with AsyncSessionLocal() as verify_db:
         artifact = await verify_db.get(SoulmateArtifact, outcome.artifact.id)
         job = await verify_db.get(AIGenerationJob, outcome.job.id)
 
-    assert artifact.generation_status == "FAILED"
-    assert artifact.last_error_code == "PROVIDER_UNAVAILABLE"
-    assert artifact.attempt_count == 1
-    assert job.status == JOB_FAILED_RETRYABLE
+    # Artifact stays PROCESSING so the frontend keeps showing GENERATING (§10.3).
+    assert artifact.generation_status == "PROCESSING"
+    assert job.status == JOB_QUEUED
     assert job.attempt == 1
+    assert job.run_after is not None
     assert job.error_json["retryable"] is True
     assert job.error_json["provider_code"] == "429"
 
