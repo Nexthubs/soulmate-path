@@ -1,8 +1,8 @@
 /**
- * Domain types and props for Sketch Viewer (DEV-SPEC §2, §11; DECISIONS ASSET-01, DOMAIN-01).
+ * Domain types and props for Sketch Viewer (DEV-SPEC §2, §10.3, §11; DECISIONS ASSET-01, DOMAIN-01).
  */
 
-export type SketchViewState = "loading" | "completed" | "failed";
+export type SketchViewState = "ready" | "loading" | "completed" | "failed";
 
 export interface SketchViewerProps {
   /**
@@ -34,6 +34,18 @@ export interface SketchViewerProps {
    * Callback fired when user clicks Retry on failed state.
    */
   onRetry?: () => void;
+
+  /**
+   * Callback fired when user clicks "Generate My Sketch" on the ready state
+   * (UNLOCKED + NOT_STARTED, §10.3). The caller invokes the idempotent
+   * generation trigger; the viewer only renders state.
+   */
+  onCheckNow?: () => void;
+
+  /**
+   * While a triggered generation request is in flight (disables the ready CTA).
+   */
+  isTriggering?: boolean;
 
   /**
    * Whether to show the fixture preview switcher for QA/dev.

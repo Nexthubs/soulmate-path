@@ -81,6 +81,36 @@ def build_public_object_url(storage_key: str) -> Optional[str]:
     return f"{prefix}/{storage_key.lstrip('/')}"
 
 
+# Presigned read URLs are short-lived display grants, not durable storage (ASSET-01):
+# the object in project-owned storage remains the source of truth.
+PRESIGNED_URL_EXPIRY_SECONDS = 3600
+
+
+def build_sketch_image_url(storage_key: Optional[str]) -> Optional[str]:
+    """
+    Resolves a display URL for a stored sketch object:
+    1. stable public URL when OBJECT_STORAGE_PUBLIC_URL_PREFIX is configured;
+    2. otherwise a presigned GET URL against the configured S3-compatible storage
+       (works for private buckets such as Cloudflare R2 without public access);
+    3. None when no storage key or no usable storage configuration exists.
+    """
+    if not storage_key:
+        return None
+    public_url = build_public_object_url(storage_key)
+    if public_url:
+        return public_url
+    if not (settings.object_storage_bucket and settings.object_storage_access_key and settings.object_storage_secret_key):
+        return None
+    sink = ObjectStorageSink()
+    try:
+        return sink.presigned_read_url(storage_key)
+    except Exception as exc:  # presigning is local; failure means misconfiguration
+        logger.warning(
+            "Failed to presign display URL for sketch object '%s': %s", storage_key, type(exc).__name__
+        )
+        return None
+
+
 def _sniff_image_format(payload: bytes) -> Optional[str]:
     """Magic-byte sniffing for the formats this pipeline may produce."""
     if len(payload) >= 12 and payload[0:4] == b"RIFF" and payload[8:12] == b"WEBP":
@@ -159,6 +189,14 @@ class ObjectStorageSink:
                 config=BotoConfig(retries={"max_attempts": 3, "mode": "standard"}),
             )
         return self._s3_client
+
+    def presigned_read_url(self, storage_key: str, expires_in: int = PRESIGNED_URL_EXPIRY_SECONDS) -> str:
+        """Short-lived display grant for a stored object (local computation, no network)."""
+        return self._get_client().generate_presigned_url(
+            "get_object",
+            Params={"Bucket": self.bucket, "Key": storage_key},
+            ExpiresIn=expires_in,
+        )
 
     async def persist(self, *, artifact_id: UUID, result: SketchGenerationResult) -> str:
         """Validates and uploads the payload; returns the stable §11.7 storage key."""

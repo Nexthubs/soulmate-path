@@ -413,3 +413,24 @@ class SketchGenerationResponse(BaseModel):
     )
 
     model_config = ConfigDict(from_attributes=True, extra="ignore")
+
+
+class SketchAssetResponse(BaseModel):
+    """
+    Response for GET /artifacts/sketch (DEV-SPEC §15.10, SP-607).
+    Session-scoped sketch status plus, when COMPLETED, the display URL of the
+    persisted durable asset (ASSET-01: the object storage key is the source of
+    truth; the URL is a derived, short-lived or CDN-stable display grant).
+    """
+    server_time: datetime = Field(..., description="Server clock UTC instant used for this derivation")
+    sketch: ArtifactStatusView = Field(..., description="Sketch countdown/status view (session-scoped)")
+    image_url: Optional[str] = Field(
+        default=None,
+        description="Display URL for the persisted sketch (public CDN URL or presigned read URL); present only when COMPLETED with a storage key",
+    )
+    storage_key: Optional[str] = Field(
+        default=None,
+        description="Project-owned object storage key of the durable asset (§11.7); present only when COMPLETED",
+    )
+
+    model_config = ConfigDict(from_attributes=True, extra="ignore")

@@ -1056,7 +1056,7 @@ If existing account semantics make user-ID uniqueness safer than email uniquenes
 
 **Priority:** P1  
 **Depends:** SP-107, SP-503, SP-605, SP-606  
-**Status:** TODO
+**Status:** DONE (2026-09-26, `docs/handoffs/SP-607.md`; Wave 6 100% complete)  
 **Context refs:** DEV-SPEC §2, §10–11 | Decisions: ASSET-01, TIME-01 | Dependency handoffs: SP-107, SP-503, SP-605, SP-606
 
 

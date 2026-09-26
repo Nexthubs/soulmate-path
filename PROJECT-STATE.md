@@ -6,8 +6,8 @@
 ## 1. Current milestone
 
 ```text
-Current milestone: M3 — Entitlement / Result Ready
-Status: CONDITIONAL_PASS (docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md; conditions: RECOVERY-01 before PAY-02 change, first REVERSED occurrence)
+Current milestone: M4 — Sketch Ready (Wave 6 implementation 100% complete; M4 review pending)
+Status: READY_FOR_REVIEW (all SP-601..607 DONE; live provider call is the remaining M4 gate item)
 Latest accepted review: docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md (M3 CONDITIONAL_PASS; M2 PASS restored post-RV-remediation)
 ```
 
@@ -59,6 +59,8 @@ Generation queue / worker (`SP-603`) completed and evidenced in `docs/handoffs/S
 Retry / idempotency (`SP-604`) completed and evidenced in `docs/handoffs/SP-604.md` (two-phase claims, bounded exponential backoff, stale-claim reclamation, 20-concurrent trigger test passed).
 Durable object storage (`SP-605`) completed and evidenced in `docs/handoffs/SP-605.md` (S3-compatible ObjectStorageSink via boto3; §11.7 keys; MIME/size validation; live upload deferred to M4 gate).
 One-email-one-sketch constraint (`SP-606`) completed and evidenced in `docs/handoffs/SP-606.md` (identity-level generation convergence on email_normalized; DB constraint proven; cross-session read isolation preserved per RECOVERY-01).
+Live Sketch page states (`SP-607`) completed and evidenced in `docs/handoffs/SP-607.md` (GET /artifacts/sketch asset URL — R2 public prefix verified live; frontend live state machine, bounded polling, locked→Result routing).
+*(Note: WAVE 6 is 100% complete — SP-601..607 DONE, 2026-09-26.)*
 
 ## 2. Milestone status
 
@@ -67,13 +69,13 @@ One-email-one-sketch constraint (`SP-606`) completed and evidenced in `docs/hand
 | M1 Quiz Funnel Ready | PASS | `docs/reviews/M1-QUIZ-FUNNEL-REVIEW.md` |
 | M2 Sandbox Revenue Ready | PASS (restored post-RV-remediation) | `docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md` §6 |
 | M3 Entitlement / Result Ready | CONDITIONAL_PASS | `docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md` |
-| M4 Sketch Ready | NOT_STARTED | `docs/reviews/M4-SKETCH-REVIEW.md` |
+| M4 Sketch Ready | READY_FOR_REVIEW (Wave 6 implementation 100% done, 2026-09-26) | `docs/reviews/M4-SKETCH-REVIEW.md` (pending) |
 | M5 Report Scaffold Ready | NOT_STARTED | `docs/reviews/M5-REPORT-SCAFFOLD-REVIEW.md` |
 | M6 Production Ready | NOT_STARTED | `docs/reviews/M6-PRODUCTION-READINESS-REVIEW.md` |
 
 ## 3. Active / blocked work
 
-Active tasks: M4 — Sketch Ready is the next milestone (Wave 6; SP-601..606 DONE, `SP-607` = Wave 6 finish). M2 restored to PASS and M3 CONDITIONAL_PASS on 2026-09-26 after RV-01/RV-02 remediation + live sandbox acceptance (first payment, replay dedupe, suspend/activate ordering, refund by sale_id, cancel/paid-through, browser navigation).
+Active tasks: M4 review is next (Wave 6 SP-601..607 all DONE). One remaining live item for the M4 gate: a real paid-flow generation (PayPal sandbox → 12h → provider call via the configured OpenAI-compatible endpoint → R2 object → Sketch page). M2 restored to PASS and M3 CONDITIONAL_PASS on 2026-09-26 after RV-01/RV-02 remediation + live sandbox acceptance.
 
 Blocking decision IDs:
 
@@ -113,6 +115,6 @@ Report production provider: disabled / decision pending
 ## 6. Next safe tasks
 
 ```text
-1. SP-607 (Live Sketch page states — Wave 6 finish; locked/ready/generating/completed/failed states, needs storage public URL or serving endpoint).
-2. Then: M4 milestone review (live provider + storage verification still NOT_RUN — needs configured credentials).
+1. M4 milestone review (docs/reviews/M4-SKETCH-REVIEW.md; prefer an independent reviewer).
+2. During review or immediately after: one live paid-flow generation run as M4 gate evidence.
 ```

@@ -2,10 +2,16 @@ import ipaddress
 import re
 import urllib.parse
 from decimal import Decimal
+from pathlib import Path
 from typing import Any, List, Optional
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+
+# .env lives at the repository root (SP-004 layout). Anchor it absolutely so the
+# service loads the same configuration regardless of the process working directory
+# (uvicorn may be started from the repo root or from backend/).
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 
 _DOMAIN_LABEL_REGEX = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
 
@@ -45,7 +51,7 @@ class ConfigurationError(ValueError):
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(_REPO_ROOT / ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,

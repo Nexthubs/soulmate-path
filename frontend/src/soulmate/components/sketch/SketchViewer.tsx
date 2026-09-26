@@ -1,18 +1,21 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { SOULMATE_ROUTES, sanitizeInternalRoute } from "@/soulmate/domain";
 import { SketchViewerProps, SketchViewState } from "./types";
 
 /**
- * Sketch Viewer Component (Figma Node 102:461; DEV-SPEC §2, §11; DECISIONS ASSET-01, DOMAIN-01).
+ * Sketch Viewer Component (Figma Node 102:461; DEV-SPEC §2, §10.3, §11; DECISIONS ASSET-01, DOMAIN-01).
  * Supports:
+ * - ready state (UNLOCKED + NOT_STARTED, §10.3): "Generate My Sketch" CTA;
  * - loading state with animated progress and aria-busy;
  * - completed state displaying portrait from durable URL prop;
  * - failed state with error message and retry CTA;
  * - configurable back destination using route config without hardcoded domain strings.
+ * The `state` prop drives the display whenever it changes (live mode); the fixture
+ * toolbar still allows manual switching for QA previews.
  */
 export function SketchViewer({
   state: initialState = "completed",
@@ -21,6 +24,8 @@ export function SketchViewer({
   backUrl = SOULMATE_ROUTES.RESULT,
   onBack,
   onRetry,
+  onCheckNow,
+  isTriggering = false,
   showFixtureToolbar = false,
   partnerGender,
   errorMessage,
@@ -28,6 +33,11 @@ export function SketchViewer({
 }: SketchViewerProps) {
   const router = useRouter();
   const [currentState, setCurrentState] = useState<SketchViewState>(initialState);
+
+  // Live mode: the authoritative server state (prop) always wins when it changes.
+  useEffect(() => {
+    setCurrentState(initialState);
+  }, [initialState]);
 
   const handleBack = () => {
     if (onBack) {
@@ -47,6 +57,16 @@ export function SketchViewer({
     }
   };
 
+  const handleCheckNow = () => {
+    if (onCheckNow) {
+      onCheckNow();
+    } else {
+      // Fixture default: pretend to generate.
+      setCurrentState("loading");
+      setTimeout(() => setCurrentState("completed"), 1500);
+    }
+  };
+
   return (
     <div
       data-testid="sketch-viewer"
@@ -61,7 +81,7 @@ export function SketchViewer({
         >
           <div className="font-semibold text-neutral-300">State Fixture:</div>
           <div className="flex gap-1">
-            {(["loading", "completed", "failed"] as SketchViewState[]).map((s) => (
+            {(["ready", "loading", "completed", "failed"] as SketchViewState[]).map((s) => (
               <button
                 key={s}
                 type="button"
@@ -108,6 +128,45 @@ export function SketchViewer({
 
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col items-center justify-center my-auto w-full py-4">
+        {/* 0. READY STATE (UNLOCKED + NOT_STARTED, §10.3) */}
+        {currentState === "ready" && (
+          <div
+            data-testid="sketch-ready-state"
+            className="w-full max-w-[310px] rounded-[28px] bg-white/80 p-8 shadow-xl border border-purple-100 flex flex-col items-center text-center space-y-6"
+          >
+            <div className="w-24 h-24 rounded-full bg-[#faf5ff] border-2 border-[#e9d5ff] flex items-center justify-center text-[#7c3aed]">
+              <svg className="w-12 h-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="1.5"
+                  d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                />
+              </svg>
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="font-sans font-bold text-[18px] text-neutral-900">
+                Your Sketch Is Ready to Create
+              </h3>
+              <p className="text-xs text-neutral-500 leading-relaxed max-w-[240px]">
+                Stella&apos;s artist is standing by. Tap below and your soulmate
+                pencil portrait will be hand-crafted just for you.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleCheckNow}
+              disabled={isTriggering}
+              data-testid="sketch-check-now-cta"
+              className="w-full h-[48px] rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 disabled:opacity-60 text-white font-sans font-semibold text-[14px] shadow-md flex items-center justify-center gap-2 transition-colors cursor-pointer"
+            >
+              {isTriggering ? "Starting..." : "Generate My Sketch"}
+            </button>
+          </div>
+        )}
+
         {/* 1. LOADING STATE */}
         {currentState === "loading" && (
           <div

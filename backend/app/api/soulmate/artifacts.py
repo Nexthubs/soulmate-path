@@ -9,18 +9,21 @@ lifecycle. Auth and ownership follow the Result aggregate pattern (SP-503).
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, Request
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ForbiddenOwnershipError, NotFoundError
+from app.db.models.artifact import SoulmateArtifact
 from app.db.models.session import SoulmateSession
 from app.db.session import get_db
-from app.soulmate.schema import SketchGenerationResponse
+from app.soulmate.schema import SketchAssetResponse, SketchGenerationResponse
 from app.soulmate.security import (
     extract_session_token,
     get_authenticated_session_public_id,
     verify_session_ownership,
     verify_session_token,
 )
+from app.soulmate.services.object_storage_sink import build_sketch_image_url
 from app.soulmate.services.session_service import SessionService
 from app.soulmate.services.sketch_generation_service import SketchGenerationService
 from app.soulmate.services.status_service import ArtifactStatusService
@@ -81,4 +84,44 @@ async def generate_sketch_endpoint(
         server_time=statuses.server_time,
         sketch=statuses.sketch,
         job_status=outcome.job.status if outcome.job is not None else None,
+    )
+
+
+@router.get(
+    "/sketch",
+    response_model=SketchAssetResponse,
+    summary="Sketch asset status + persisted display URL (DEV-SPEC §15.10, SP-607)",
+)
+async def get_sketch_asset_endpoint(
+    request: Request,
+    session_id: Optional[str] = Query(default=None, description="Optional public session ID"),
+    db: AsyncSession = Depends(get_db),
+) -> SketchAssetResponse:
+    """
+    Authoritative session-scoped sketch state for the Sketch page (§10.3) plus,
+    when COMPLETED, the display URL of the persisted durable asset. Reads never
+    cross sessions (Decision RECOVERY-01); the display URL is derived from the
+    project-owned storage key (ASSET-01) and never from a provider temporary URL.
+    """
+    session = await _resolve_authorized_session(request, session_id, db)
+
+    statuses = await ArtifactStatusService.get_artifact_statuses(db, session.id)
+
+    image_url: Optional[str] = None
+    storage_key: Optional[str] = None
+    if statuses.sketch.status == "COMPLETED":
+        stmt = select(SoulmateArtifact.storage_key, SoulmateArtifact.generation_status).where(
+            SoulmateArtifact.session_id == session.id,
+            SoulmateArtifact.artifact_type == "SKETCH",
+        )
+        row = (await db.execute(stmt)).first()
+        if row is not None and row.generation_status == "COMPLETED":
+            storage_key = row.storage_key
+            image_url = build_sketch_image_url(storage_key)
+
+    return SketchAssetResponse(
+        server_time=statuses.server_time,
+        sketch=statuses.sketch,
+        image_url=image_url,
+        storage_key=storage_key,
     )
