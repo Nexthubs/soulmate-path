@@ -5,6 +5,7 @@ from app.soulmate.services.identity_service import IdentityService
 from app.soulmate.services.interstitial_service import InterstitialService
 from app.soulmate.services.ledger_service import PaymentLedgerService
 from app.soulmate.services.offer_service import OfferService
+from app.soulmate.services.openai_image_provider import OpenAIImageProvider
 from app.soulmate.services.paypal_client import PayPalAPIError, PayPalAuthError, PayPalClient
 from app.soulmate.services.paypal_provisioning import PayPalProvisioningService
 from app.soulmate.services.profile_service import ProfileService
@@ -33,6 +34,7 @@ __all__ = [
     "PayPalWebhookVerifier",
     "PaymentLedgerService",
     "get_webhook_verifier",
+    "OpenAIImageProvider",
 ]
 
 

@@ -940,7 +940,7 @@ Single API supplies Result page with subscription + sketch + report status and s
 
 **Priority:** P1  
 **Depends:** SP-205  
-**Status:** TODO
+**Status:** DONE (2026-09-26, `docs/handoffs/SP-601.md`)  
 **Context refs:** DEV-SPEC §11.2–11.3, §12 | Decisions: PROMPT-01 | Dependency handoffs: SP-205
 
 
@@ -965,7 +965,7 @@ Implement the PRD-provided prompt as a versioned template with explicit inputs.
 
 **Priority:** P1  
 **Depends:** SP-004, SP-601  
-**Status:** TODO
+**Status:** DONE (2026-09-26, `docs/handoffs/SP-602.md`)  
 **Context refs:** DEV-SPEC §11–12, §22, §25 | Decisions: PROMPT-01, ASSET-01 | Dependency handoffs: SP-004, SP-601
 
 

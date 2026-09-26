@@ -53,6 +53,8 @@ Result aggregate API (`SP-503`) completed; RV remediation accepted 2026-09-26 (`
 Frontend countdown using server time (`SP-504`) completed and evidenced in `docs/handoffs/SP-504.md`.
 Result polling/refetch strategy (`SP-505`) completed and evidenced in `docs/handoffs/SP-505.md`.
 *(Note: WAVE 5 is 100% complete — SP-501..505 DONE; M3 CONDITIONAL_PASS 2026-09-26.)*
+Versioned Sketch prompt template (`SP-601`) completed and evidenced in `docs/handoffs/SP-601.md`.
+OpenAI image provider adapter (`SP-602`) completed and evidenced in `docs/handoffs/SP-602.md` (live-provider acceptance deferred to M4 gate — no credentials in dev).
 
 ## 2. Milestone status
 
@@ -67,7 +69,7 @@ Result polling/refetch strategy (`SP-505`) completed and evidenced in `docs/hand
 
 ## 3. Active / blocked work
 
-Active tasks: M4 — Sketch Ready is the next milestone (Wave 6, `SP-601` onward). M2 restored to PASS and M3 CONDITIONAL_PASS on 2026-09-26 after RV-01/RV-02 remediation + live sandbox acceptance (first payment, replay dedupe, suspend/activate ordering, refund by sale_id, cancel/paid-through, browser navigation).
+Active tasks: M4 — Sketch Ready is the next milestone (Wave 6; SP-601/602 DONE, `SP-603` onward). M2 restored to PASS and M3 CONDITIONAL_PASS on 2026-09-26 after RV-01/RV-02 remediation + live sandbox acceptance (first payment, replay dedupe, suspend/activate ordering, refund by sale_id, cancel/paid-through, browser navigation).
 
 Blocking decision IDs:
 
@@ -107,6 +109,6 @@ Report production provider: disabled / decision pending
 ## 6. Next safe tasks
 
 ```text
-1. SP-601 (Versioned Sketch prompt template — Wave 6 start).
-2. SP-602 (OpenAI image provider adapter).
+1. SP-603 (Generation queue / worker — consumes SP-601 prompt + SP-602 provider).
+2. SP-604 (Retry / idempotency; 20-concurrent-trigger convergence test).
 ```

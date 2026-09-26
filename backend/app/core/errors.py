@@ -20,6 +20,9 @@ class OpenAIErrorCode(str, Enum):
     GATEWAY_TIMEOUT = "504"
     INVALID_REQUEST = "400"
     UNAUTHORIZED = "401"
+    FORBIDDEN = "403"
+    RESOURCE_NOT_FOUND = "404"
+    UNPROCESSABLE_REQUEST = "422"
 
 
 class PayPalErrorCode(str, Enum):

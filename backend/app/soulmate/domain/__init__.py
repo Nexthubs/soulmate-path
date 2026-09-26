@@ -77,6 +77,31 @@ from app.soulmate.domain.ledger_models import (
     PaymentLedgerSummary,
     PaymentRecordCreate,
 )
+from app.soulmate.domain.sketch_prompt import (
+    ALLOWED_SKETCH_PROMPT_VARIABLES,
+    PROMPT_VARIABLE_TO_QUESTION,
+    SKETCH_INPUT_OPTION_LABELS,
+    SKETCH_PROMPT_NAME,
+    RenderedSketchPrompt,
+    SketchPromptError,
+    SketchPromptInputs,
+    SketchPromptInputError,
+    SketchPromptTemplate,
+    SketchPromptTemplateError,
+    build_rendered_sketch_prompt,
+    build_sketch_prompt_inputs,
+    load_sketch_prompt_template,
+    map_sketch_option_to_readable,
+    render_sketch_prompt,
+    validate_sketch_input_mapping_coverage,
+)
+from app.soulmate.domain.sketch_models import (
+    SketchGenerationResult,
+    SketchImageProvider,
+    SketchProviderError,
+    is_retryable_provider_status,
+    provider_code_for_status,
+)
 
 
 # Canonical immutable quiz version
@@ -165,5 +190,26 @@ __all__ = [
     "PaymentLedgerSummary",
     "LedgerSearchQuery",
     "LedgerSearchResult",
+    "SKETCH_PROMPT_NAME",
+    "ALLOWED_SKETCH_PROMPT_VARIABLES",
+    "PROMPT_VARIABLE_TO_QUESTION",
+    "SKETCH_INPUT_OPTION_LABELS",
+    "SketchPromptError",
+    "SketchPromptTemplateError",
+    "SketchPromptInputError",
+    "SketchPromptTemplate",
+    "SketchPromptInputs",
+    "RenderedSketchPrompt",
+    "build_sketch_prompt_inputs",
+    "build_rendered_sketch_prompt",
+    "load_sketch_prompt_template",
+    "render_sketch_prompt",
+    "map_sketch_option_to_readable",
+    "validate_sketch_input_mapping_coverage",
+    "SketchImageProvider",
+    "SketchGenerationResult",
+    "SketchProviderError",
+    "is_retryable_provider_status",
+    "provider_code_for_status",
 ]
 
