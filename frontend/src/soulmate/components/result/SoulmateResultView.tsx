@@ -16,6 +16,12 @@ export interface SoulmateResultViewProps {
   initialData?: ResultAggregateData;
 
   /**
+   * Client-to-server clock offset in milliseconds (SP-504, TIME-01). Forwarded to the cards
+   * for countdown calibration; undefined falls back to `initialData.server_time`.
+   */
+  clockOffsetMs?: number | null;
+
+  /**
    * User email to display in top bar.
    */
   userEmail?: string;
@@ -29,6 +35,12 @@ export interface SoulmateResultViewProps {
    * Action handler override.
    */
   onAction?: (type: ArtifactType) => void;
+
+  /**
+   * Fired when a calibrated countdown reaches zero while the server still reports LOCKED.
+   * The parent must refetch the aggregate; the server decides the unlock (SP-504, TIME-01).
+   */
+  onCountdownZero?: (type: ArtifactType) => void;
 
   /**
    * Optional accelerated checkout offer price (e.g. from server offer config).
@@ -69,9 +81,11 @@ export const DEFAULT_RESULT_FIXTURE: ResultAggregateData = {
  */
 export function SoulmateResultView({
   initialData = DEFAULT_RESULT_FIXTURE,
+  clockOffsetMs,
   userEmail = "user@example.com",
   showFixtureToolbar = false,
   onAction,
+  onCountdownZero,
   acceleratedPrice,
   className = "",
 }: SoulmateResultViewProps) {
@@ -256,8 +270,10 @@ export function SoulmateResultView({
           type="sketch"
           state={data.sketch}
           serverTime={data.server_time}
+          clockOffsetMs={clockOffsetMs}
           onAction={handleAction}
           onRetry={handleRetry}
+          onCountdownZero={onCountdownZero}
         />
 
         {/* Report Status Card (Figma 102:1332) */}
@@ -265,8 +281,10 @@ export function SoulmateResultView({
           type="report"
           state={data.report}
           serverTime={data.server_time}
+          clockOffsetMs={clockOffsetMs}
           onAction={handleAction}
           onRetry={handleRetry}
+          onCountdownZero={onCountdownZero}
         />
 
         {/* Accelerated Early-Access Teaser Banner (Figma 102:1201; PAY-01 Compliance Gate) */}

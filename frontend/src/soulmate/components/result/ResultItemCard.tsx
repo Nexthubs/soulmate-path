@@ -1,12 +1,14 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import {
   ArtifactItemState,
   ArtifactType,
   CombinedUIState,
-  calculateRemainingSeconds,
+  calculateServerClockOffsetMs,
+  evaluateCountdownZeroNotification,
+  getCalibratedRemainingSeconds,
   deriveCombinedUIState,
   formatCountdown,
 } from "./types";
@@ -28,6 +30,12 @@ export interface ResultItemCardProps {
   serverTime?: string;
 
   /**
+   * Client-to-server clock offset in milliseconds captured at the last fetch (SP-504, TIME-01).
+   * When provided it takes precedence over `serverTime` for countdown calibration.
+   */
+  clockOffsetMs?: number | null;
+
+  /**
    * Custom title override.
    */
   titleOverride?: string;
@@ -41,6 +49,13 @@ export interface ResultItemCardProps {
    * Callback fired when user clicks "Retry" on failed state.
    */
   onRetry?: (type: ArtifactType) => void;
+
+  /**
+   * Callback fired once per `unlock_at` when the calibrated countdown reaches zero while the
+   * server still reports LOCKED. The parent must refetch server state; the server response —
+   * never the local zero — decides whether content unlocks (SP-504, TIME-01).
+   */
+  onCountdownZero?: (type: ArtifactType) => void;
 
   /**
    * Additional container CSS classes.
@@ -71,24 +86,32 @@ export function ResultItemCard({
   type,
   state,
   serverTime = new Date().toISOString(),
+  clockOffsetMs,
   titleOverride,
   onAction,
   onRetry,
+  onCountdownZero,
   className = "",
 }: ResultItemCardProps) {
   const uiState: CombinedUIState = deriveCombinedUIState(state);
   const cardTitle = titleOverride || DEFAULT_TITLES[type];
   const subBadge = SUB_BADGES[type];
 
-  // Countdown seconds calculation (TIME-01: Display-only, calibrated against serverTime)
-  const initialSeconds = calculateRemainingSeconds(state.unlock_at, serverTime);
+  // Countdown calibration (TIME-01, SP-504): anchored to server time via the clock offset
+  // captured at the last fetch; a wrong client clock cannot change the countdown.
+  const effectiveOffsetMs: number =
+    typeof clockOffsetMs === "number" && Number.isFinite(clockOffsetMs)
+      ? clockOffsetMs
+      : calculateServerClockOffsetMs(serverTime);
+  const initialSeconds = getCalibratedRemainingSeconds(state.unlock_at, effectiveOffsetMs);
   const [remainingSeconds, setRemainingSeconds] = useState(initialSeconds);
 
+  // Every refetch brings a fresh server_time: recalibrate from absolute timestamps (SP-504).
   useEffect(() => {
-    setRemainingSeconds(calculateRemainingSeconds(state.unlock_at, serverTime));
-  }, [state.unlock_at, serverTime]);
+    setRemainingSeconds(getCalibratedRemainingSeconds(state.unlock_at, effectiveOffsetMs));
+  }, [state.unlock_at, effectiveOffsetMs]);
 
-  // Local tick for smooth countdown display
+  // Local tick for smooth countdown display only — pure interpolation between server calibrations.
   useEffect(() => {
     if (uiState !== "countdown" || remainingSeconds <= 0) return;
 
@@ -98,6 +121,23 @@ export function ResultItemCard({
 
     return () => clearInterval(timer);
   }, [uiState, remainingSeconds]);
+
+  // Reaching zero while still LOCKED triggers a server refetch — never a local unlock (SP-504).
+  const zeroNotifiedUnlockRef = useRef<string | null>(null);
+  const zeroDecision = evaluateCountdownZeroNotification(
+    uiState,
+    remainingSeconds,
+    state.unlock_at,
+    zeroNotifiedUnlockRef.current
+  );
+  useEffect(() => {
+    if (zeroDecision.nextLastNotifiedUnlock !== zeroNotifiedUnlockRef.current) {
+      zeroNotifiedUnlockRef.current = zeroDecision.nextLastNotifiedUnlock;
+    }
+    if (zeroDecision.notify) {
+      onCountdownZero?.(type);
+    }
+  }, [zeroDecision.notify, zeroDecision.nextLastNotifiedUnlock, onCountdownZero, type]);
 
   return (
     <div
