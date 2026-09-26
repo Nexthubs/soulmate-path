@@ -11,6 +11,7 @@ from app.api.soulmate.subscription import (
     router as subscription_router,
 )
 from app.api.soulmate.ledger import router as ledger_router
+from app.api.soulmate.result import router as result_router
 from app.api.soulmate.webhooks import router as webhooks_router
 from app.soulmate.schema import (
     PayPalConfirmResponse,
@@ -41,6 +42,9 @@ api_router.include_router(webhooks_router, prefix="/webhooks", tags=["Webhooks"]
 
 # Mount payment ledger endpoints (DEV-SPEC §9.4–9.7, §14, SP-407)
 api_router.include_router(ledger_router, prefix="/ledger", tags=["Payment Ledger"])
+
+# Mount Result aggregate endpoint (DEV-SPEC §10.4, SP-503)
+api_router.include_router(result_router, prefix="/result", tags=["Result"])
 
 # Also mount aliases per DEV-SPEC §15 router table
 api_router.add_api_route(

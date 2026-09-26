@@ -4,6 +4,8 @@ from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional, Union
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.soulmate.domain.artifact_status import ArtifactStatusView
+
 
 class SessionCreateRequest(BaseModel):
     """Optional request payload for session initialization."""
@@ -370,3 +372,28 @@ class SubscriptionCancelResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True, extra="ignore")
 
+
+
+class ResultSubscriptionView(BaseModel):
+    """Subscription view inside the Result aggregate (DEV-SPEC §10.4, SP-503)."""
+    provider: str = Field(..., description="Payment provider, e.g. 'paypal'")
+    provider_status: str = Field(..., description="Provider subscription status (e.g. ACTIVE/CANCELLED/SUSPENDED/EXPIRED)")
+    first_payment_at: Optional[datetime] = Field(default=None, description="Authoritative first payment UTC timestamp (PAY-AUTH-01)")
+    next_billing_at: Optional[datetime] = Field(default=None, description="Next billing UTC timestamp if renewal is scheduled")
+
+    model_config = ConfigDict(from_attributes=True, extra="ignore")
+
+
+class ResultAggregateResponse(BaseModel):
+    """
+    Single aggregate response for the Result page (DEV-SPEC §10.4, SP-503).
+    Supplies server time, subscription state, and sketch/report statuses so the
+    client does not need to merge multiple authority calls (SP-106, SP-504, SP-505).
+    `status` on each artifact is the combined §10.3 state (SP-502 derivation).
+    """
+    server_time: datetime = Field(..., description="Server clock UTC instant used for this derivation")
+    subscription: Optional[ResultSubscriptionView] = Field(default=None, description="Subscription view for the entitled session")
+    sketch: ArtifactStatusView = Field(..., description="Sketch countdown/status view")
+    report: ArtifactStatusView = Field(..., description="Report countdown/status view")
+
+    model_config = ConfigDict(from_attributes=True, extra="ignore")

@@ -465,13 +465,21 @@ class PayPalWebhookService:
                         "subscription_success_at": paid_at.isoformat(),
                     },
                 )
-                await cls._ensure_artifacts_initialized(session=session, paid_at=paid_at, db=db)
             else:
                 logger.info(
                     "Session %s already entitled at %s (invariant TIME-01 preserved)",
                     session.public_id,
                     session.subscription_success_at.isoformat(),
                 )
+            # SP-501: create/ensure artifact placeholders on every confirmed payment, not only the
+            # first activation, so an entitled session with missing rows self-heals. Idempotent;
+            # renewals never shift existing unlock_at (TIME-01). Unlock base is the authoritative
+            # first payment time, not the renewal's paid_at.
+            await cls._ensure_artifacts_initialized(
+                session=session,
+                paid_at=sub.first_payment_at or paid_at,
+                db=db,
+            )
 
     @classmethod
     async def _handle_subscription_activated(

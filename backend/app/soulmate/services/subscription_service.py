@@ -12,6 +12,7 @@ import re
 from typing import Any, Dict, Optional, Set
 import uuid
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -229,12 +230,20 @@ class SubscriptionService:
         db: AsyncSession,
     ) -> None:
         """
-        Initialize durable artifact rows for SKETCH (+12h) and REPORT (+24h) per Spec §10, TIME-01.
-        Idempotent: skips if row already exists, enforces uq_soulmate_one_sketch_per_email.
+        Create/ensure durable artifact rows for SKETCH (+12h) and REPORT (+24h) per Spec §10, TIME-01.
+        Idempotent under repeated delivery; unlock timestamps of existing rows are never modified.
+        Concurrent first-payment delivery (webhook + reconcile) is tolerated: uniqueness is enforced
+        at DB level (uq_soulmate_artifacts_session_type_version, uq_soulmate_one_sketch_per_email)
+        and a lost insert race rolls back to a savepoint instead of failing the whole webhook/reconcile
+        transaction (SP-501).
         """
         sketch_unlock = paid_at + timedelta(hours=settings.soulmate_sketch_unlock_hours)
         report_unlock = paid_at + timedelta(hours=settings.soulmate_report_unlock_hours)
         email = session.email_normalized or session.email or ""
+
+        # autoflush is disabled; flush pending outer-transaction changes so each savepoint
+        # below contains only its own artifact INSERT.
+        await db.flush()
 
         # 1. Sketch Artifact (enforces uq_soulmate_one_sketch_per_email)
         sketch_cond = (SoulmateArtifact.session_id == session.id)
@@ -245,34 +254,57 @@ class SubscriptionService:
             SoulmateArtifact.artifact_type == "SKETCH",
         )
         if not (await db.execute(stmt_sketch)).scalars().first():
-            db.add(
-                SoulmateArtifact(
-                    session_id=session.id,
-                    email_normalized=email,
-                    artifact_type="SKETCH",
-                    artifact_version="v1",
-                    unlock_at=sketch_unlock,
-                    generation_status="NOT_STARTED",
-                )
-            )
+            try:
+                async with db.begin_nested():
+                    db.add(
+                        SoulmateArtifact(
+                            session_id=session.id,
+                            email_normalized=email,
+                            artifact_type="SKETCH",
+                            artifact_version="v1",
+                            unlock_at=sketch_unlock,
+                            generation_status="NOT_STARTED",
+                        )
+                    )
+                    await db.flush()
+            except IntegrityError:
+                # Concurrent writer inserted the row first — create/ensure semantics tolerate it.
+                if not (await db.execute(stmt_sketch)).scalars().first():
+                    raise
 
-        # 2. Report Artifact
+        # 2. Report Artifact (same create/ensure semantics)
         stmt_report = select(SoulmateArtifact).where(
             SoulmateArtifact.session_id == session.id,
             SoulmateArtifact.artifact_type == "REPORT",
             SoulmateArtifact.artifact_version == "v1",
         )
         if not (await db.execute(stmt_report)).scalars().first():
-            db.add(
-                SoulmateArtifact(
-                    session_id=session.id,
-                    email_normalized=email,
-                    artifact_type="REPORT",
-                    artifact_version="v1",
-                    unlock_at=report_unlock,
-                    generation_status="NOT_STARTED",
-                )
-            )
+            try:
+                async with db.begin_nested():
+                    db.add(
+                        SoulmateArtifact(
+                            session_id=session.id,
+                            email_normalized=email,
+                            artifact_type="REPORT",
+                            artifact_version="v1",
+                            unlock_at=report_unlock,
+                            generation_status="NOT_STARTED",
+                        )
+                    )
+                    await db.flush()
+            except IntegrityError:
+                if not (await db.execute(stmt_report)).scalars().first():
+                    raise
+
+    @classmethod
+    async def ensure_artifacts_for_session(
+        cls,
+        session: SoulmateSession,
+        paid_at: datetime,
+        db: AsyncSession,
+    ) -> None:
+        """Public create/ensure entry point for artifact placeholders (SP-501 self-heal; used by SP-503 read path)."""
+        await cls._ensure_artifacts_initialized(session=session, paid_at=paid_at, db=db)
 
     @classmethod
     async def _reconcile_subscription_payments(
@@ -507,16 +539,15 @@ class SubscriptionService:
 
             # 3. First Payment & Entitlement Authority (PAY-AUTH-01, TIME-01)
             if last_paid_at is not None:
+                sess_stmt = select(SoulmateSession).where(SoulmateSession.id == sub.session_id)
+                session = (await db.execute(sess_stmt)).scalars().first()
+
                 if sub.first_payment_at is None:
                     sub.first_payment_at = last_paid_at
-                    # Locate and activate session
-                    sess_stmt = select(SoulmateSession).where(SoulmateSession.id == sub.session_id)
-                    session = (await db.execute(sess_stmt)).scalars().first()
                     if session is not None and session.subscription_success_at is None:
                         session.subscription_success_at = last_paid_at
                         session.status = "paid"
                         session.current_step = "result"
-                        await cls._ensure_artifacts_initialized(session=session, paid_at=last_paid_at, db=db)
                         log_event(
                             event_type="entitlement_activated",
                             message=f"Entitlement activated for session {session.public_id} via reconciliation",
@@ -528,6 +559,16 @@ class SubscriptionService:
                                 "subscription_success_at": last_paid_at.isoformat(),
                             },
                         )
+
+                # SP-501: create/ensure artifact placeholders whenever the session is entitled,
+                # so rows missing after a partial activation self-heal on later reconciliations.
+                # Idempotent; unlock base is the authoritative first payment time (TIME-01).
+                if session is not None and session.subscription_success_at is not None:
+                    await cls._ensure_artifacts_initialized(
+                        session=session,
+                        paid_at=sub.first_payment_at or last_paid_at,
+                        db=db,
+                    )
 
             # 4. Decoupled Payment Ledger Reconciliation (H-2, DEV-SPEC §9.4–9.7):
             # Backfill any missing payments (initial or recurring renewals) via transactions API
@@ -659,7 +700,13 @@ class SubscriptionService:
                     session.subscription_success_at = last_paid_at
                     session.status = "paid"
                     session.current_step = "result"
-                    await cls._ensure_artifacts_initialized(session=session, paid_at=last_paid_at, db=db)
+                # SP-501: create/ensure artifact placeholders (idempotent; heals missing rows;
+                # first_payment_at was just set from the authoritative provider data).
+                await cls._ensure_artifacts_initialized(
+                    session=session,
+                    paid_at=sub.first_payment_at or last_paid_at,
+                    db=db,
+                )
 
             # Reconcile payments using authentic transactions
             await cls._reconcile_subscription_payments(
