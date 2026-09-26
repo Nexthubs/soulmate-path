@@ -47,6 +47,12 @@ Subscription reconciliation/state mapping (`SP-408`) completed and evidenced in 
 Cancellation and Settings action (`SP-409`) completed and evidenced in `docs/handoffs/SP-409.md`.
 Payment-processing frontend state (`SP-410`) completed and evidenced in `docs/handoffs/SP-410.md`.
 *(Note: WAVE 4 is now 100% complete)*
+Artifact entitlement rows on first payment (`SP-501`) completed and evidenced in `docs/handoffs/SP-501.md`.
+12h/24h status derivation (`SP-502`) completed and evidenced in `docs/handoffs/SP-502.md`.
+Result aggregate API (`SP-503`) completed and evidenced in `docs/handoffs/SP-503.md`.
+Frontend countdown using server time (`SP-504`) completed and evidenced in `docs/handoffs/SP-504.md`.
+Result polling/refetch strategy (`SP-505`) completed and evidenced in `docs/handoffs/SP-505.md`.
+*(Note: WAVE 5 is now 100% complete — SP-501..505 all DONE; M3 milestone review is the next gate)*
 
 ## 2. Milestone status
 
@@ -61,7 +67,7 @@ Payment-processing frontend state (`SP-410`) completed and evidenced in `docs/ha
 
 ## 3. Active / blocked work
 
-Active tasks: Wave 5 start — `SP-501` (Artifact entitlement rows on first payment). Wave 4 (`SP-401`..`SP-410`) and Milestone M2 completed with review PASS.
+Active tasks: `M3` milestone review gate (SP-501..505 all DONE; independent high-risk reviewer required per TASK-BREAKDOWN M3 block). Wave 4 (`SP-401`..`SP-410`) and Milestone M2 completed with review PASS.
 
 
 
@@ -102,8 +108,8 @@ Report production provider: disabled / decision pending
 ## 6. Next safe tasks
 
 ```text
-1. SP-501 (Artifact entitlement rows on first payment).
-2. SP-502 (AI generation worker queue & dispatch).
+1. M3 milestone review (docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md, independent reviewer).
+2. SP-601 (Versioned Sketch prompt template — Wave 6 start, after M3 gate).
 ```
 
 ## 7. Update rule

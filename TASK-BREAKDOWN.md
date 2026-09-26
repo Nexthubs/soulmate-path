@@ -853,7 +853,7 @@ Map provider state into application subscription/entitlement state without trust
 
 **Priority:** P0  
 **Depends:** SP-408, SP-002  
-**Status:** TODO
+**Status:** DONE (docs/handoffs/SP-501.md)
 **Context refs:** DEV-SPEC §9.4, §10, §14 | Decisions: PAY-AUTH-01, TIME-01 | Dependency handoffs: SP-408, SP-002
 
 
@@ -874,7 +874,7 @@ On first successful payment, transactionally create/ensure:
 
 **Priority:** P0  
 **Depends:** SP-501  
-**Status:** TODO
+**Status:** DONE (docs/handoffs/SP-502.md)
 **Context refs:** DEV-SPEC §10 | Decisions: TIME-01 | Dependency handoffs: SP-501
 
 
@@ -890,7 +890,7 @@ On first successful payment, transactionally create/ensure:
 
 **Priority:** P1  
 **Depends:** SP-502  
-**Status:** TODO
+**Status:** DONE (docs/handoffs/SP-503.md)
 **Context refs:** DEV-SPEC §10.4, §15.8 | Decisions: TIME-01 | Dependency handoffs: SP-502
 
 
@@ -908,7 +908,7 @@ Single API supplies Result page with subscription + sketch + report status and s
 
 **Priority:** P1  
 **Depends:** SP-503, SP-106  
-**Status:** TODO
+**Status:** DONE (docs/handoffs/SP-504.md)
 **Context refs:** DEV-SPEC §10.4, §16 | Decisions: TIME-01 | Dependency handoffs: SP-503, SP-106
 
 
@@ -923,7 +923,7 @@ Single API supplies Result page with subscription + sketch + report status and s
 
 **Priority:** P1  
 **Depends:** SP-503  
-**Status:** TODO
+**Status:** DONE (docs/handoffs/SP-505.md)
 **Context refs:** DEV-SPEC §10.4 | Decisions: TIME-01 | Dependency handoffs: SP-503
 
 
