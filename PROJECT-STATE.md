@@ -6,9 +6,9 @@
 ## 1. Current milestone
 
 ```text
-Current milestone: M2 — Sandbox Revenue Ready
-Status: BLOCKED — RV-01/RV-02 remediation pending independent review and post-fix acceptance
-Latest review checkpoint: docs/reviews/RV-01-RV-02-REMEDIATION.md (BLOCKED; historical M2 PASS does not cover current changes)
+Current milestone: M3 — Entitlement / Result Ready
+Status: CONDITIONAL_PASS (docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md; conditions: RECOVERY-01 before PAY-02 change, first REVERSED occurrence)
+Latest accepted review: docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md (M3 CONDITIONAL_PASS; M2 PASS restored post-RV-remediation)
 ```
 
 Repository architecture & boundary (`SP-001`) completed and evidenced in `docs/handoffs/SP-001.md`.
@@ -38,36 +38,36 @@ Route guards (`SP-304`) completed and evidenced in `docs/handoffs/SP-304.md`.
 *(Note: WAVE 3 is now 100% complete)*
 PayPal Product/Plan provisioning (`SP-401`) completed and evidenced in `docs/handoffs/SP-401.md`.
 PayPal JS subscription checkout (`SP-402`) completed and evidenced in `docs/handoffs/SP-402.md`.
-Confirm subscription API (`SP-403`) under remediation review; evidence in `docs/handoffs/SP-403.md`.
+Confirm subscription API (`SP-403`) completed; RV remediation accepted 2026-09-26 (`docs/handoffs/SP-403.md`).
 PayPal webhook endpoint with raw body (`SP-404`) completed and evidenced in `docs/handoffs/SP-404.md`.
 PayPal webhook signature verification (`SP-405`) completed and evidenced in `docs/handoffs/SP-405.md`.
-Event idempotency and out-of-order handling (`SP-406`) under remediation review; evidence in `docs/handoffs/SP-406.md`.
-Payment ledger (`SP-407`) under remediation review; evidence in `docs/handoffs/SP-407.md`.
-Subscription reconciliation/state mapping (`SP-408`) under remediation review; evidence in `docs/handoffs/SP-408.md`.
+Event idempotency and out-of-order handling (`SP-406`) completed; RV remediation accepted 2026-09-26 (`docs/handoffs/SP-406.md`).
+Payment ledger (`SP-407`) completed; RV remediation accepted 2026-09-26 (`docs/handoffs/SP-407.md`).
+Subscription reconciliation/state mapping (`SP-408`) completed; RV remediation accepted 2026-09-26 (`docs/handoffs/SP-408.md`).
 Cancellation and Settings action (`SP-409`) completed and evidenced in `docs/handoffs/SP-409.md`.
 Payment-processing frontend state (`SP-410`) completed and evidenced in `docs/handoffs/SP-410.md`.
-*(Wave 4 affected payment tasks returned to REVIEW; see RV remediation.)*
-Artifact entitlement rows on first payment (`SP-501`) under remediation review; evidence in `docs/handoffs/SP-501.md`.
-12h/24h status derivation (`SP-502`) under remediation review; evidence in `docs/handoffs/SP-502.md`.
-Result aggregate API (`SP-503`) under remediation review; evidence in `docs/handoffs/SP-503.md`.
+*(Wave 4 is 100% complete — RV remediation accepted 2026-09-26 with live provider evidence.)*
+Artifact entitlement rows on first payment (`SP-501`) completed; RV remediation accepted 2026-09-26 (`docs/handoffs/SP-501.md`).
+12h/24h status derivation (`SP-502`) completed; RV remediation accepted 2026-09-26 (`docs/handoffs/SP-502.md`).
+Result aggregate API (`SP-503`) completed; RV remediation accepted 2026-09-26 (`docs/handoffs/SP-503.md`).
 Frontend countdown using server time (`SP-504`) completed and evidenced in `docs/handoffs/SP-504.md`.
 Result polling/refetch strategy (`SP-505`) completed and evidenced in `docs/handoffs/SP-505.md`.
-*(Wave 5 SP-501..503 returned to REVIEW after RV remediation; M3 is not accepted.)*
+*(Note: WAVE 5 is 100% complete — SP-501..505 DONE; M3 CONDITIONAL_PASS 2026-09-26.)*
 
 ## 2. Milestone status
 
 | Milestone | Status | Review artifact |
 |---|---|---|
 | M1 Quiz Funnel Ready | PASS | `docs/reviews/M1-QUIZ-FUNNEL-REVIEW.md` |
-| M2 Sandbox Revenue Ready | BLOCKED | `docs/reviews/M2-PAYPAL-SANDBOX-REVIEW.md` |
-| M3 Entitlement / Result Ready | BLOCKED | `docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md` |
+| M2 Sandbox Revenue Ready | PASS (restored post-RV-remediation) | `docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md` §6 |
+| M3 Entitlement / Result Ready | CONDITIONAL_PASS | `docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md` |
 | M4 Sketch Ready | NOT_STARTED | `docs/reviews/M4-SKETCH-REVIEW.md` |
 | M5 Report Scaffold Ready | NOT_STARTED | `docs/reviews/M5-REPORT-SCAFFOLD-REVIEW.md` |
 | M6 Production Ready | NOT_STARTED | `docs/reviews/M6-PRODUCTION-READINESS-REVIEW.md` |
 
 ## 3. Active / blocked work
 
-Active tasks: RV-01 / RV-02 Critical/High remediation implemented, awaiting independent re-review and required post-fix provider evidence. Affected SP-403/406/407/408/501/502/503 are REVIEW. See `docs/reviews/RV-01-RV-02-REMEDIATION.md`.
+Active tasks: M4 — Sketch Ready is the next milestone (Wave 6, `SP-601` onward). M2 restored to PASS and M3 CONDITIONAL_PASS on 2026-09-26 after RV-01/RV-02 remediation + live sandbox acceptance (first payment, replay dedupe, suspend/activate ordering, refund by sale_id, cancel/paid-through, browser navigation).
 
 Blocking decision IDs:
 
@@ -107,10 +107,6 @@ Report production provider: disabled / decision pending
 ## 6. Next safe tasks
 
 ```text
-1. Independently re-review RV-01/RV-02 repairs and obtain required post-fix provider evidence.
-2. Reassess M2/M3 gates; no Wave 6 work is authorized by this repair.
+1. SP-601 (Versioned Sketch prompt template — Wave 6 start).
+2. SP-602 (OpenAI image provider adapter).
 ```
-
-## 7. Update rule
-
-Keep this file short. Update only when milestone/status, critical blockers, accepted checkpoints, production-disabled capabilities, latest review, or next safe work changes.

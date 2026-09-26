@@ -716,7 +716,7 @@ Mandatory high-risk review.
 
 **Priority:** P0  
 **Depends:** SP-402  
-**Status:** REVIEW (docs/handoffs/SP-403.md; RV remediation pending acceptance)
+**Status:** DONE (docs/handoffs/SP-403.md; RV remediation accepted 2026-09-26 — see docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md)
 **Context refs:** DEV-SPEC §9.3–9.4, §15.7 | Decisions: PAY-AUTH-01 | Dependency handoffs: SP-402
 
 
@@ -766,7 +766,7 @@ Associate approved provider subscription with the authorized user/session and ex
 
 **Priority:** P0  
 **Depends:** SP-405  
-**Status:** REVIEW (docs/handoffs/SP-406.md; RV remediation pending acceptance)
+**Status:** DONE (docs/handoffs/SP-406.md; RV remediation accepted 2026-09-26 — see docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md)
 **Context refs:** DEV-SPEC §9.5–9.6, §14 | Decisions: PAY-AUTH-01 | Dependency handoffs: SP-405
 
 
@@ -786,7 +786,7 @@ Associate approved provider subscription with the authorized user/session and ex
 
 **Priority:** P0  
 **Depends:** SP-406  
-**Status:** REVIEW (docs/handoffs/SP-407.md; RV remediation pending acceptance)
+**Status:** DONE (docs/handoffs/SP-407.md; RV remediation accepted 2026-09-26 — see docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md)
 **Context refs:** DEV-SPEC §9.4–9.7, §14 | Decisions: PAY-AUTH-01 | Dependency handoffs: SP-406
 
 
@@ -801,7 +801,7 @@ Associate approved provider subscription with the authorized user/session and ex
 
 **Priority:** P0  
 **Depends:** SP-403, SP-406, SP-407  
-**Status:** REVIEW (docs/handoffs/SP-408.md; RV remediation pending acceptance)
+**Status:** DONE (docs/handoffs/SP-408.md; RV remediation accepted 2026-09-26 — see docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md)
 **Context refs:** DEV-SPEC §9.4–9.8, §10 | Decisions: PAY-AUTH-01 | Dependency handoffs: SP-403, SP-406, SP-407
 
 
@@ -853,7 +853,7 @@ Map provider state into application subscription/entitlement state without trust
 
 **Priority:** P0  
 **Depends:** SP-408, SP-002  
-**Status:** REVIEW (docs/handoffs/SP-501.md; RV remediation pending acceptance)
+**Status:** DONE (docs/handoffs/SP-501.md; RV remediation accepted 2026-09-26 — see docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md)
 **Context refs:** DEV-SPEC §9.4, §10, §14 | Decisions: PAY-AUTH-01, TIME-01 | Dependency handoffs: SP-408, SP-002
 
 
@@ -874,7 +874,7 @@ On first successful payment, transactionally create/ensure:
 
 **Priority:** P0  
 **Depends:** SP-501  
-**Status:** REVIEW (docs/handoffs/SP-502.md; RV remediation pending acceptance)
+**Status:** DONE (docs/handoffs/SP-502.md; RV remediation accepted 2026-09-26 — see docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md)
 **Context refs:** DEV-SPEC §10 | Decisions: TIME-01 | Dependency handoffs: SP-501
 
 
@@ -890,7 +890,7 @@ On first successful payment, transactionally create/ensure:
 
 **Priority:** P1  
 **Depends:** SP-502  
-**Status:** REVIEW (docs/handoffs/SP-503.md; RV remediation pending acceptance)
+**Status:** DONE (docs/handoffs/SP-503.md; RV remediation accepted 2026-09-26 — see docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md)
 **Context refs:** DEV-SPEC §10.4, §15.8 | Decisions: TIME-01 | Dependency handoffs: SP-502
 
 
@@ -1511,7 +1511,7 @@ These are not replacements for implementation tasks; they are explicit quality g
 ## RV-01 — Schema + state-machine review
 
 **After:** SP-203, SP-408, SP-502  
-**Status:** REVIEW (docs/handoffs/RV-01.md; RV remediation pending acceptance)
+**Status:** DONE (docs/handoffs/RV-01.md; remediation accepted with live provider evidence 2026-09-26 — docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md)
 **Context refs:** DEV-SPEC §6, §9–15, §20 | Decisions: QUIZ-01, PAY-AUTH-01, TIME-01, ASSET-01 | Dependency handoffs: —
 
 
@@ -1527,7 +1527,7 @@ Review:
 ## RV-02 — Payment security review
 
 **After:** SP-401..409  
-**Status:** REVIEW (docs/handoffs/RV-02.md; RV remediation pending acceptance)
+**Status:** DONE (docs/handoffs/RV-02.md; remediation accepted with live provider evidence 2026-09-26 — docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md)
 **Context refs:** DEV-SPEC §9–10, §20, §23 | Decisions: PAY-01, PAY-02, PAY-AUTH-01, TIME-01 | Dependency handoffs: —
 
 
