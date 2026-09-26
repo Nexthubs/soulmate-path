@@ -11,10 +11,12 @@ import {
   evaluateCountdownZeroNotification,
   getCalibratedRemainingSeconds,
   nextCountdownZeroRetry,
+  COUNTDOWN_ZERO_MAX_AUTO_RETRIES,
   COUNTDOWN_ZERO_RETRY_INTERVAL_MS,
   deriveCombinedUIState,
   formatCountdown,
 } from "./types";
+import { clientConfig } from "../../config";
 
 export interface ResultItemCardProps {
   /**
@@ -67,6 +69,12 @@ export interface ResultItemCardProps {
   onVisibleRefresh?: () => void;
 
   /**
+   * Configured external support contact (mailto: or https://). Empty renders the
+   * in-product support panel instead of a dead anchor (RV round-3, Finding 2).
+   */
+  supportUrl?: string;
+
+  /**
    * Callback fired once per `unlock_at` when the calibrated countdown reaches zero while the
    * server still reports LOCKED. The parent must refetch server state; the server response —
    * never the local zero — decides whether content unlocks (SP-504, TIME-01).
@@ -109,11 +117,13 @@ export function ResultItemCard({
   retryDisabled,
   onCountdownZero,
   onVisibleRefresh,
+  supportUrl = clientConfig.supportUrl || "",
   className = "",
 }: ResultItemCardProps) {
   const uiState: CombinedUIState = deriveCombinedUIState(state);
   const cardTitle = titleOverride || DEFAULT_TITLES[type];
   const subBadge = SUB_BADGES[type];
+  const [supportPanelOpen, setSupportPanelOpen] = useState(false);
 
   // Countdown calibration (TIME-01, SP-504): anchored to server time via the clock offset
   // captured at the last fetch; a wrong client clock cannot change the countdown.
@@ -124,7 +134,13 @@ export function ResultItemCard({
   const initialSeconds = getCalibratedRemainingSeconds(state.unlock_at, effectiveOffsetMs);
   const [remainingSeconds, setRemainingSeconds] = useState(initialSeconds);
   const [zeroAutoRetriesExhausted, setZeroAutoRetriesExhausted] = useState(false);
+  // Explicit retry-cycle counter (RV round-3, Finding 1): manual refresh bumps it so the
+  // bounded-retry effect re-runs even when unlock_at/offset/remaining are unchanged —
+  // resetting the ref alone cannot restart an effect whose dependencies did not change.
+  const [zeroCycle, setZeroCycle] = useState(0);
   const zeroRetryRef = useRef<CountdownZeroRetryState | null>(null);
+  const isZeroLocked =
+    uiState === "countdown" && remainingSeconds <= 0 && !!state.unlock_at;
 
   // Every refetch brings a fresh server_time: recalibrate from absolute timestamps (SP-504).
   useEffect(() => {
@@ -180,16 +196,24 @@ export function ResultItemCard({
 
   // Bounded automatic retries while the server still reports LOCKED at zero (RV round-2
   // Finding 1): up to COUNTDOWN_ZERO_MAX_AUTO_RETRIES spaced attempts, then a visible
-  // manual refresh affordance. Any positive remaining resets the counter.
+  // manual refresh affordance. The effect re-runs on every zeroCycle (manual refresh
+  // bumps it), so a failed manual refresh restarts the bounded chain instead of
+  // stranding the card (RV round-3, Finding 1). Any positive remaining resets it.
   useEffect(() => {
-    if (uiState !== "countdown" || remainingSeconds > 0 || !state.unlock_at) {
+    if (!isZeroLocked) {
       zeroRetryRef.current = null;
       setZeroAutoRetriesExhausted(false);
       return;
     }
-    const unlockAt = state.unlock_at;
+    const unlockAt = state.unlock_at as string;
+    const current = zeroRetryRef.current?.unlockAt === unlockAt ? zeroRetryRef.current : null;
+    if (current && current.attempts >= COUNTDOWN_ZERO_MAX_AUTO_RETRIES) {
+      setZeroAutoRetriesExhausted(true);
+      return;
+    }
     const timer = setInterval(() => {
-      const next = nextCountdownZeroRetry(zeroRetryRef.current, unlockAt);
+      const c = zeroRetryRef.current?.unlockAt === unlockAt ? zeroRetryRef.current : null;
+      const next = nextCountdownZeroRetry(c, unlockAt);
       if (next === null) {
         setZeroAutoRetriesExhausted(true);
         clearInterval(timer);
@@ -199,12 +223,16 @@ export function ResultItemCard({
       onCountdownZero?.(type);
     }, COUNTDOWN_ZERO_RETRY_INTERVAL_MS);
     return () => clearInterval(timer);
-  }, [uiState, remainingSeconds, state.unlock_at, onCountdownZero, type]);
+  }, [isZeroLocked, state.unlock_at, onCountdownZero, type, zeroCycle]);
 
   const handleManualZeroRefresh = () => {
     if (!state.unlock_at) return;
-    zeroRetryRef.current = { unlockAt: state.unlock_at, attempts: 0 };
+    // The click itself is attempt 1 of a fresh bounded cycle; the zeroCycle bump re-arms
+    // the spaced retries. If the refreshed state is still LOCKED at zero, the bounded
+    // chain exhausts again and the button reappears — the entry can never strand.
+    zeroRetryRef.current = { unlockAt: state.unlock_at, attempts: 1 };
     setZeroAutoRetriesExhausted(false);
+    setZeroCycle((c) => c + 1);
     onCountdownZero?.(type);
   };
 
@@ -450,13 +478,49 @@ export function ResultItemCard({
             >
               Retry
             </button>
-            <a
-              href="#support"
-              className="flex-1 h-[46px] rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-sans font-medium text-[14px] flex items-center justify-center transition-colors"
-            >
-              Support
-            </a>
+            {supportUrl ? (
+              <a
+                href={supportUrl}
+                target="_blank"
+                rel="noreferrer"
+                data-testid="support-link-button"
+                className="flex-1 h-[46px] rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-sans font-medium text-[14px] flex items-center justify-center transition-colors"
+              >
+                Support
+              </a>
+            ) : (
+              <button
+                type="button"
+                data-testid="support-toggle-button"
+                aria-expanded={supportPanelOpen}
+                onClick={() => setSupportPanelOpen((open) => !open)}
+                className="flex-1 h-[46px] rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-sans font-medium text-[14px] flex items-center justify-center transition-colors cursor-pointer"
+              >
+                Support
+              </button>
+            )}
           </div>
+
+          {/* In-product support panel (RV round-3, Finding 2): an actionable entry instead
+              of a dead anchor when no external support contact is configured. */}
+          {supportPanelOpen && !supportUrl && (
+            <div
+              data-testid="support-panel"
+              className="w-full rounded-xl bg-neutral-50 border border-neutral-200 p-3 text-left space-y-2"
+            >
+              <p className="text-xs text-neutral-600 leading-relaxed">
+                Generation is temporarily unavailable. You can retry when it is restored, and
+                your subscription remains active in the meantime.
+              </p>
+              <a
+                href="/soulmate/settings"
+                data-testid="support-panel-settings-link"
+                className="inline-block text-xs font-semibold text-purple-700 hover:text-purple-900 underline"
+              >
+                Manage your subscription in Settings →
+              </a>
+            </div>
+          )}
         </div>
       )}
     </div>

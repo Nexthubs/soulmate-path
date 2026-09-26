@@ -343,3 +343,37 @@ describe("RV round-2: countdown zero handling and retry affordances", () => {
     expect(enabledHtml).not.toContain("disabled");
   });
 });
+
+describe("RV round-3: support entry replaces the dead anchor", () => {
+  const failedState: ArtifactItemState = {
+    unlock_at: "2026-09-22T01:00:00Z",
+    availability: "UNLOCKED",
+    generation: "FAILED",
+    status: "FAILED",
+    error_message: "Generation failed.",
+  };
+
+  it("renders an in-product support toggle (no dead #support anchor) when no support URL is configured", () => {
+    const html = renderToStaticMarkup(
+      <ResultItemCard type="sketch" state={failedState} supportUrl="" retryDisabled />
+    );
+    expect(html).toContain('data-testid="support-toggle-button"');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).not.toContain('href="#support"');
+  });
+
+  it("renders a real external support link when a support URL is configured", () => {
+    const html = renderToStaticMarkup(
+      <ResultItemCard
+        type="sketch"
+        state={failedState}
+        supportUrl="mailto:support@example.com"
+        retryDisabled
+      />
+    );
+    expect(html).toContain('data-testid="support-link-button"');
+    expect(html).toContain('href="mailto:support@example.com"');
+    expect(html).not.toContain('href="#support"');
+    expect(html).not.toContain('data-testid="support-toggle-button"');
+  });
+});

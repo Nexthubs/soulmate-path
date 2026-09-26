@@ -10,6 +10,8 @@ export interface ClientConfig {
   currency: string;
   introPrice: string | null;
   regularPrice: string | null;
+  /** Optional configured support contact (mailto: or https://). Empty = in-product panel only. */
+  supportUrl?: string | null;
 }
 
 export const clientConfig: ClientConfig = {
@@ -19,6 +21,7 @@ export const clientConfig: ClientConfig = {
   currency: process.env.NEXT_PUBLIC_SOULMATE_CURRENCY || "USD",
   introPrice: process.env.NEXT_PUBLIC_SOULMATE_INTRO_PRICE || null,
   regularPrice: process.env.NEXT_PUBLIC_SOULMATE_REGULAR_PRICE || null,
+  supportUrl: process.env.NEXT_PUBLIC_SUPPORT_URL || null,
 };
 
 /**
