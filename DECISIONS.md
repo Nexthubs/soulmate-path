@@ -56,6 +56,14 @@
 - **Context:** source materials do not specify whether a returning subscriber can receive the intro price again.
 - **Decision:** TBD. Keep eligibility policy configurable/blocked rather than guessing.
 - **Affected:** subscription offer selection, historical eligibility query, M6.
+- **Update 2026-09-26 (RV follow-up):** under the current `blocked` policy, a same-email second paid session is **not reachable** — the offer is blocked and `confirm`/unknown-subscription reconciliation reject it server-side (`_validate_new_subscription_plan`). If this decision resolves to `single_intro` or `allow_intro`, that path becomes payable and RECOVERY-01 below must be resolved first.
+
+### RECOVERY-01 — Sketch recovery for a second paid session on the same email
+
+- **Status:** OPEN — blocks PAY-02 resolution away from `blocked`
+- **Context:** artifact creation dedupes by email (`uq_soulmate_one_sketch_per_email`) while artifact reads are strictly session-scoped (§20 — contact email is not verified identity). A second paid session on the same email therefore receives a REPORT placeholder but its Sketch shows LOCKED with no unlock time, and the create/ensure self-heal cannot fill it (the sketch row belongs to the first session). Isolation is intentional; the recovery path is the open product question.
+- **Decision:** TBD. Options: (a) verified-identity recovery flow that binds existing email-scoped assets to the new session after authentication; (b) block the second purchase before payment when the email already owns a sketch; (c) product accepts second-session Sketch as a separate purchasable asset. Do NOT restore bare-email cross-session reads.
+- **Affected:** SP-501 (ensure semantics), SP-502/SP-503 (status reads), PAY-02, checkout funnel, M6.
 
 ### AGE-01 — Minimum age / DOB eligibility
 

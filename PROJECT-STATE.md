@@ -79,6 +79,7 @@ Blocking decision IDs:
 | COPY-02 | complete Transition-2 production copy |
 | COPY-03 | final Transition-4 dynamic behavior |
 | REPORT-01 / REPORT-02 | production Report generation / SP-706 / M6 |
+| RECOVERY-01 | same-email second paid session Sketch recovery path; gates PAY-02 resolution away from `blocked` |
 | PROMPT-01 | future Sketch input-quality change |
 | DOMAIN-01 | canonical production URLs |
 | LEGAL-01 | production testimonials/statistics |
@@ -89,7 +90,7 @@ Details and current handling → `DECISIONS.md`.
 
 ```text
 Quiz config: soulmate-quiz-v1 (canonical JSON & seeded in DB soulmate_quiz_versions)
-DB migration: shared dev remains 0003_add_failed_payments; 0004_payment_event_order verified only in disposable PostgreSQL (upgrade/downgrade/re-upgrade with preserved data)
+DB migration: 0005_legacy_session_status (head) applied to shared dev and verified round-trip in disposable PostgreSQL; 0004 added provider/billing ordering checkpoints, 0005 normalized legacy post-payment session status to SUBSCRIBED
 Config checkpoint: DEV-SPEC §22 groups verified, centralized Decimal pricing, RFC 1123 domain syntax check, multi-layer frontend gate
 API checkpoint: DEV-SPEC v1.2 baseline; error taxonomy, correlation middleware, and structured logging established (SP-005)
 Payment provider: PayPal monthly subscription with intro first month + regular monthly renewal

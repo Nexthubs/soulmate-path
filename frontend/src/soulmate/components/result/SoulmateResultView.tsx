@@ -160,8 +160,11 @@ export function SoulmateResultView({
   // (RV round-2, Finding 3).
   const retryDisabled = !previewEnabled && !onRetry;
 
-  // Fixture toggle helper for testing all 5 states (dev/QA only)
+  // Fixture toggle helper for testing all 5 states (dev/QA only). Preview writes are
+  // limited to preview mode: in live data they would freeze later polled aggregates
+  // (same freeze class as RV round-2 Finding 3).
   const setPresetState = (stateName: CombinedUIState) => {
+    if (!previewEnabled) return;
     const base = previewOverride ?? initialData;
     switch (stateName) {
       case "countdown":
@@ -252,8 +255,9 @@ export function SoulmateResultView({
       data-testid="soulmate-result-view"
       className={`min-h-screen w-full max-w-[390px] mx-auto bg-gradient-to-b from-[#fbfaff] via-[#fff5f6] to-[#fff7eb] text-neutral-900 px-4 py-8 flex flex-col items-center justify-between ${className}`}
     >
-      {/* Dev / QA Fixture State Switcher Toolbar */}
-      {showFixtureToolbar && (
+      {/* Dev / QA Fixture State Switcher Toolbar — preview mode only: preset overrides
+          would freeze live polled aggregates (RV round-2, Finding 3 freeze class). */}
+      {showFixtureToolbar && previewEnabled && (
         <div
           data-testid="fixture-toolbar"
           className="w-full mb-4 p-2 bg-neutral-900/90 text-white rounded-xl text-xs space-y-1"

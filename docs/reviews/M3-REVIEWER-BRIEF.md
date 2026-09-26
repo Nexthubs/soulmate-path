@@ -28,6 +28,7 @@
 ## 3. Review range and key code
 
 - **Remediation commit:** `3a486c0` — review with `git show 3a486c0` or `git diff 81ca8ce..3a486c0`. It contains Codex's C1/H1–H5/R1 repairs plus the follow-up M7/M8 closure.
+- **Round-2 frontend audit fixes:** `f7eb51d` — countdown zero bounded-retry/refresh affordance, ceil rounding, per-tick recompute + visibility recalibration, production `?fixture=true` gate, live-Retry freeze removal (see `SP-504`/`SP-505` round-2 addenda).
 - **Adjacent E2E fixes:** `9f53818` (ACTIVATED reconcile kwarg), `4801189` (payment-processing StrictMode polling race), `e4417df`/`81ca8ce` (handoff addenda).
 - Key files: `backend/app/soulmate/services/subscription_service.py` (C1 binding, H1 earliest-transaction `activate_from_payment`, H5 `_validate_new_subscription_plan`), `webhook_service.py` (H2 savepoint/retry, H3 refund `sale_id`, H4 checkpoint usage), `payment_consistency.py` (advisory locks `payment_lock`, `apply_provider_status`, `apply_billing_count`), `status_service.py` (session-scoped reads), `alembic/versions/0004_payment_event_order.py` + `0005_legacy_session_status.py`, `backend/tests/test_payment_security_regressions.py`.
 - Note: evidence line numbers inside `RV-01-RV-02-REMEDIATION.md` refer to its working-tree checkpoint and may drift.
@@ -76,7 +77,7 @@ Reusable infrastructure: tunnel `https://ppwebhook.giaogiao.work/api/webhooks/pa
 
 ## 7. Judgment calls reserved for you
 
-- H6 trade-off: email uniqueness prevents duplicate generation but is not authorization — the remediation removed email-scoped artifact reads; decide whether a verified-recovery task must precede M3.
+- H6 trade-off: email uniqueness prevents duplicate generation but is not authorization — the remediation removed email-scoped artifact reads; decide whether a verified-recovery task must precede M3. A second paid session on the same email is currently UNREACHABLE (PAY-02 `blocked` policy blocks offer and server-side binding); the recovery-path decision is recorded as OPEN `RECOVERY-01` in `DECISIONS.md` and gates any PAY-02 resolution away from `blocked`.
 - M7 legacy migration: `0005` rewrites `'paid'` → `'SUBSCRIBED'` (downgrade restores it); confirm the migration strategy is acceptable.
 - PAY-01/PAY-02 stay OPEN; the remediation deliberately does not pick re-subscription policy.
 
