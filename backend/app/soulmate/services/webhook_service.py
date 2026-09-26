@@ -502,7 +502,7 @@ class PayPalWebhookService:
         stmt = select(Subscription).where(Subscription.provider_subscription_id == provider_sub_id)
         sub = (await db.execute(stmt)).scalars().first()
         if not sub:
-            sub = await cls.reconcile_subscription(provider_sub_id=provider_sub_id, db=db, client=client)
+            sub = await cls.reconcile_subscription(provider_subscription_id=provider_sub_id, db=db, client=client)
             if not sub:
                 return
 

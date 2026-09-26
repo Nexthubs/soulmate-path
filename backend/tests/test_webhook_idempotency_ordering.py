@@ -268,6 +268,76 @@ async def test_replayed_payment_id_across_different_event_ids_is_idempotent(asyn
     assert payments[0].provider_payment_id == shared_payment_id
 
 
+@pytest.mark.asyncio
+async def test_activated_event_for_unknown_subscription_reconciles_and_binds(async_db_session: AsyncSession):
+    """
+    Regression (live sandbox E2E 2026-09-26): BILLING.SUBSCRIPTION.ACTIVATED for a subscription
+    that is not yet in the local DB must take the reconcile-and-bind fallback (custom_id binding)
+    instead of failing with TypeError. The old call site passed `provider_sub_id=` while the
+    reconcile signature expects `provider_subscription_id=`, producing a 500 and leaving the
+    verified event unprocessed.
+    """
+    # Entitled-looking session with NO local subscription row yet
+    sess = SoulmateSession(
+        public_id=f"test_sess_{uuid.uuid4().hex[:10]}",
+        quiz_version="soulmate-quiz-v1",
+        status="email_captured",
+        current_step="subscribe",
+        email=f"newact_{uuid.uuid4().hex[:8]}@example.com",
+        email_normalized=f"newact_{uuid.uuid4().hex[:8]}@example.com",
+    )
+    # keep email deterministic for the row
+    sess.email_normalized = sess.email
+    async_db_session.add(sess)
+    await async_db_session.commit()
+    await async_db_session.refresh(sess)
+
+    provider_sub_id = f"I-NEWACT-{uuid.uuid4().hex[:8].upper()}"
+    remote_payload = {
+        "id": provider_sub_id,
+        "status": "ACTIVE",
+        "plan_id": settings.paypal_soulmate_intro_plan_id,
+        "custom_id": sess.public_id,
+        "billing_info": {
+            "next_billing_time": "2026-10-26T12:00:00Z",
+            # no last_payment yet: ACTIVATED alone must not grant entitlement (PAY-AUTH-01)
+        },
+    }
+
+    class MockReconcileClient(PayPalClient):
+        async def get_subscription(self, subscription_id: str) -> Optional[Dict[str, Any]]:
+            return remote_payload if subscription_id == provider_sub_id else None
+
+        async def list_subscription_transactions(self, subscription_id: str, start_time=None, end_time=None):
+            return []
+
+    event = {
+        "id": f"WH-ACT-NEW-{uuid.uuid4().hex[:8]}",
+        "create_time": "2026-09-26T12:00:00Z",
+        "event_type": "BILLING.SUBSCRIPTION.ACTIVATED",
+        "resource": {"id": provider_sub_id, "status": "ACTIVE"},
+    }
+    resp = await PayPalWebhookService.process_webhook(
+        raw_request=make_raw_request(event),
+        db=async_db_session,
+        verifier=MockSuccessVerifier(),
+        client=MockReconcileClient(),
+    )
+    assert resp.status == "received"
+
+    # The reconcile fallback created and bound the local subscription (no TypeError / 500)
+    stmt = select(Subscription).where(Subscription.provider_subscription_id == provider_sub_id)
+    sub = (await async_db_session.execute(stmt)).scalars().first()
+    assert sub is not None
+    assert sub.session_id == sess.id
+    assert sub.provider_status == "ACTIVE"
+    # PAY-AUTH-01: activation without a confirmed payment must not grant entitlement
+    assert sub.first_payment_at is None
+
+    await async_db_session.refresh(sess)
+    assert sess.subscription_success_at is None
+
+
 # ==============================================================================
 # 2. Acceptance Criteria 2: Out-of-Order Handling & State Regression Prevention
 # ==============================================================================
