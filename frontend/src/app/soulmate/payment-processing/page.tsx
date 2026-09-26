@@ -23,14 +23,19 @@ function PaymentProcessingContent() {
   const [manualCheckNote, setManualCheckNote] = useState<string | null>(null);
 
   const confirmedRef = useRef(false);
+  const mountedRef = useRef(false);
   const pollCountRef = useRef(0);
 
   // 1. Initial Confirmation Request (DEV-SPEC §9.3, §15.7, SP-403)
+  // StrictMode-safe (live E2E 2026-09-26): a component-level mount ref re-armed by every
+  // effect run, so the async confirm response is not silently discarded when React dev-mode
+  // unmount/remount races the in-flight request (the old effect-closure `isMounted` left the
+  // component in isPolling=false forever: zero status polls, guaranteed 60s timeout UI).
   useEffect(() => {
+    mountedRef.current = true;
     if (!subscriptionId || confirmedRef.current) return;
     const activeSubId = subscriptionId;
 
-    let isMounted = true;
     confirmedRef.current = true;
 
     async function performConfirmation(idToConfirm: string) {
@@ -39,7 +44,7 @@ function PaymentProcessingContent() {
           session_id: sessionId,
           paypal_subscription_id: idToConfirm,
         });
-        if (isMounted) {
+        if (mountedRef.current) {
           setIsConfirmed(true);
           // If already paid at confirmation time, navigate immediately (PAY-AUTH-01)
           if (resp.is_paid) {
@@ -49,7 +54,7 @@ function PaymentProcessingContent() {
           setIsPolling(true);
         }
       } catch (err: unknown) {
-        if (isMounted) {
+        if (mountedRef.current) {
           const msg = err instanceof Error ? err.message : "Failed to confirm subscription with server.";
           setConfirmError(msg);
           // Still allow polling in case server recorded the subscription asynchronously
@@ -61,7 +66,7 @@ function PaymentProcessingContent() {
     performConfirmation(activeSubId);
 
     return () => {
-      isMounted = false;
+      mountedRef.current = false;
     };
   }, [subscriptionId, sessionId, resultUrl, router]);
 
