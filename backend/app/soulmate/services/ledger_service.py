@@ -16,6 +16,8 @@ from app.core.logging import log_event
 from app.db.base import utc_now
 from app.db.models.billing import Subscription, SubscriptionPayment
 from app.db.models.session import SoulmateSession
+from app.core.errors import ForbiddenOwnershipError
+from app.soulmate.services.payment_consistency import payment_lock
 from app.soulmate.domain.ledger_models import (
     LedgerSearchQuery,
     LedgerSearchResult,
@@ -49,10 +51,15 @@ class PaymentLedgerService:
         if not pay_id:
             raise ValueError("provider_payment_id must not be empty")
 
+        await payment_lock(db, "ledger-subscription", create_data.subscription_id)
+        await payment_lock(db, "ledger-payment", pay_id)
+
         # 1. Idempotency Check: O(1) lookup on unique provider_payment_id
-        stmt = select(SubscriptionPayment).where(SubscriptionPayment.provider_payment_id == pay_id)
+        stmt = select(SubscriptionPayment).where(SubscriptionPayment.provider_payment_id == pay_id).execution_options(populate_existing=True)
         existing = (await db.execute(stmt)).scalars().first()
         if existing is not None:
+            if existing.subscription_id != create_data.subscription_id:
+                raise ForbiddenOwnershipError("Payment already belongs to a different subscription.")
             logger.info(
                 "PaymentLedger: duplicate provider_payment_id %s ignored idempotently (already exists on sub %s)",
                 pay_id,
@@ -114,12 +121,15 @@ class PaymentLedgerService:
         Record a refund or reversal on an existing payment (DEV-SPEC §9.5).
         """
         pay_id = provider_payment_id.strip()
-        stmt = select(SubscriptionPayment).where(SubscriptionPayment.provider_payment_id == pay_id)
+        await payment_lock(db, "ledger-payment", pay_id)
+        stmt = select(SubscriptionPayment).where(SubscriptionPayment.provider_payment_id == pay_id).execution_options(populate_existing=True)
         payment = (await db.execute(stmt)).scalars().first()
         if not payment:
             logger.warning("PaymentLedger: Cannot record refund for unknown payment %s", pay_id)
             return None
 
+        if payment.refunded_at is not None and refunded_at is not None and refunded_at <= payment.refunded_at:
+            return payment
         payment.status = status.upper()
         payment.refunded_at = refunded_at or utc_now()
         if raw_json and payment.raw_json is not None:

@@ -46,7 +46,7 @@ async def create_test_session_and_sub(
     sess = SoulmateSession(
         public_id=public_id,
         quiz_version="soulmate-quiz-v1",
-        status="paid",
+        status="SUBSCRIBED",
         current_step="result",
         email=user_email,
         email_normalized=user_email.lower(),

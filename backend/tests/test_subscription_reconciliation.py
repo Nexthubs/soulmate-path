@@ -97,7 +97,7 @@ async def create_test_session_and_sub(
     sess = SoulmateSession(
         public_id=public_id,
         quiz_version="soulmate-quiz-v1",
-        status="paid" if first_payment_at else "email_captured",
+        status="SUBSCRIBED" if first_payment_at else "email_captured",
         current_step="result" if first_payment_at else "subscribe",
         email=user_email,
         email_normalized=user_email.lower(),
@@ -179,7 +179,7 @@ async def test_reconciliation_sets_authoritative_first_payment_at_and_activates_
     # 2. Verify session entitlement
     await async_db.refresh(sess)
     assert sess.subscription_success_at == pay_time_dt
-    assert sess.status == "paid"
+    assert sess.status == "SUBSCRIBED"
     assert sess.current_step == "result"
 
     # 3. Verify artifacts initialized
@@ -463,6 +463,10 @@ async def test_api_reconcile_endpoint(async_db: AsyncSession, monkeypatch):
         return None
 
     monkeypatch.setattr(PayPalClient, "get_subscription", mock_get_sub)
+    async def mock_transactions(self, subscription_id, start_time=None, end_time=None):
+        return await MockPayPalClient({sub_id: mock_payload}).list_subscription_transactions(subscription_id)
+    monkeypatch.setattr(PayPalClient, "list_subscription_transactions", mock_transactions)
+
 
     token = generate_session_token(sess.public_id)
     transport = ASGITransport(app=app)
@@ -501,6 +505,10 @@ async def test_api_status_polling_with_reconcile_query(async_db: AsyncSession, m
         return None
 
     monkeypatch.setattr(PayPalClient, "get_subscription", mock_get_sub)
+    async def mock_transactions(self, subscription_id, start_time=None, end_time=None):
+        return await MockPayPalClient({sub_id: mock_payload}).list_subscription_transactions(subscription_id)
+    monkeypatch.setattr(PayPalClient, "list_subscription_transactions", mock_transactions)
+
 
     token = generate_session_token(sess.public_id)
     transport = ASGITransport(app=app)
@@ -615,12 +623,12 @@ async def test_reconciliation_prioritizes_custom_id_over_subscriber_email(
 
 
 @pytest.mark.asyncio
-async def test_reconciliation_fallback_to_subscriber_email_when_custom_id_missing(
+async def test_reconciliation_rejects_subscriber_email_when_custom_id_missing(
     async_db: AsyncSession, monkeypatch
 ):
     """
     C-2 Verification:
-    When custom_id is missing, fallback binds to single session matching subscriber email.
+    Missing custom_id must fail closed even with a unique matching contact email.
     """
     plan_id = "P-SOULMATE-INTRO-VALID"
     monkeypatch.setattr(settings, "paypal_soulmate_intro_plan_id", plan_id)
@@ -655,8 +663,9 @@ async def test_reconciliation_fallback_to_subscriber_email_when_custom_id_missin
         provider_subscription_id=sub_id,
         paypal_client=client,
     )
-    assert reconciled is not None
-    assert reconciled.session_id == sess.id
+    assert reconciled is None
+    await async_db.refresh(sess)
+    assert sess.subscription_success_at is None
 
 
 @pytest.mark.asyncio
@@ -717,13 +726,12 @@ async def test_reconciliation_rejects_ambiguous_multiple_unpaid_sessions_for_sam
 
 
 @pytest.mark.asyncio
-async def test_reconciliation_binds_to_unique_unpaid_session_when_prior_session_already_paid(
+async def test_reconciliation_rejects_unique_unpaid_email_match_even_with_paid_history(
     async_db: AsyncSession, monkeypatch
 ):
     """
-    C-2 Verification:
-    When a user has a previously paid session and a newer unpaid session,
-    the fallback binds to the unique active unpaid session.
+    RV-02 C1: paid history does not make the newer unpaid contact-email
+    match an authenticated subscription binding.
     """
     plan_id = "P-SOULMATE-INTRO-VALID"
     monkeypatch.setattr(settings, "paypal_soulmate_intro_plan_id", plan_id)
@@ -733,7 +741,7 @@ async def test_reconciliation_binds_to_unique_unpaid_session_when_prior_session_
     sess_paid = SoulmateSession(
         public_id=f"test_sess_paid_{uuid.uuid4().hex[:8]}",
         quiz_version="soulmate-quiz-v1",
-        status="paid",
+        status="SUBSCRIBED",
         current_step="result",
         email=email,
         email_normalized=email,
@@ -770,8 +778,9 @@ async def test_reconciliation_binds_to_unique_unpaid_session_when_prior_session_
         provider_subscription_id=sub_id,
         paypal_client=client,
     )
-    assert reconciled is not None
-    assert reconciled.session_id == sess_unpaid.id
+    assert reconciled is None
+    await async_db.refresh(sess_unpaid)
+    assert sess_unpaid.subscription_success_at is None
 
 
 @pytest.mark.asyncio

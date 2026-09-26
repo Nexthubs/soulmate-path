@@ -42,8 +42,8 @@ def test_session(db_session: Session) -> SoulmateSession:
         quiz_version="soulmate-quiz-v1",
         status=SessionStatus.EMAIL_CAPTURED.value,
         current_step="transition_5",
-        email="buyer@example.com",
-        email_normalized="buyer@example.com",
+        email=f"{public_id}@example.com",
+        email_normalized=f"{public_id}@example.com",
     )
     db_session.add(sess)
     db_session.commit()

@@ -485,6 +485,9 @@ async def test_http_endpoint_verified_webhook_succeeds_and_persists(async_db_ses
                 resource_id="LEGIT-PAY-123",
             )
 
+            from test_paypal_webhooks import bind_sample_sale
+            await bind_sample_sale(event)
+
             resp = await ac.post(
                 "/api/webhooks/paypal",
                 content=json.dumps(event).encode("utf-8"),
@@ -506,7 +509,7 @@ async def test_http_endpoint_verified_webhook_succeeds_and_persists(async_db_ses
         assert evt.paypal_event_id == event_id
         assert evt.verified is True
         assert evt.event_type == "PAYMENT.SALE.COMPLETED"
-        assert evt.resource_id == "LEGIT-PAY-123"
+        assert evt.resource_id == event["resource"]["id"]
 
     finally:
         app.dependency_overrides.pop(get_webhook_verifier, None)

@@ -5,7 +5,8 @@ from app.core.config import ConfigurationError, Settings, settings
 
 def test_default_settings_loaded():
     """Verify default local development settings are valid."""
-    assert settings.environment == "development"
+    assert Settings(_env_file=None, environment="development").environment == "development"
+    assert settings.environment in {"development", "test", "testing"}
     assert settings.debug is False or settings.debug is True
     assert settings.is_production is False
     assert settings.is_sandbox is True

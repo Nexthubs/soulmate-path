@@ -125,7 +125,7 @@ async def seed_session_with_artifacts(
     sess = SoulmateSession(
         public_id=f"test_sess_{uuid.uuid4().hex[:10]}",
         quiz_version="soulmate-quiz-v1",
-        status="paid",
+        status="SUBSCRIBED",
         current_step="result",
         email=f"sp502_{uuid.uuid4().hex[:8]}@example.com",
         email_normalized=f"sp502_{uuid.uuid4().hex[:8]}@example.com",
@@ -236,16 +236,15 @@ async def test_service_defaults_to_server_clock_when_now_omitted(async_db: Async
 
 
 # ==============================================================================
-# ASSET-01 (Wave 5 audit H6): returning session sees the email-scoped sketch
+# RV-02 C1: contact email cannot authorize cross-session Sketch reads
 # ==============================================================================
 
 
 @pytest.mark.asyncio
-async def test_second_session_same_email_sees_email_scoped_sketch(async_db: AsyncSession):
+async def test_second_session_same_email_cannot_read_other_sessions_sketch(async_db: AsyncSession):
     """
-    ASSET-01: one sketch per email. A second paid session with the same email owns no SKETCH
-    row (the partial unique index gives it to the first session), but its Result view must
-    still surface the email's sketch state — not a permanent LOCKED-without-unlock (audit H6).
+    ASSET-01 uniqueness remains enforced, but contact-email equality cannot
+    authorize access to the first session’s Sketch metadata.
     """
     email = f"sp502shared_{uuid.uuid4().hex[:8]}@example.com"
     sess_a = await seed_session_with_artifacts(async_db, sketch_generation="COMPLETED")
@@ -262,7 +261,7 @@ async def test_second_session_same_email_sees_email_scoped_sketch(async_db: Asyn
     sess_b = SoulmateSession(
         public_id=f"test_sess_{uuid.uuid4().hex[:10]}",
         quiz_version="soulmate-quiz-v1",
-        status="paid",
+        status="SUBSCRIBED",
         current_step="result",
         email=email,
         email_normalized=email,
@@ -287,15 +286,15 @@ async def test_second_session_same_email_sees_email_scoped_sketch(async_db: Asyn
     result = await ArtifactStatusService.get_artifact_statuses(
         async_db, sess_b.id, now=FIRST_PAYMENT_AT + timedelta(hours=25), email_normalized=email
     )
-    # Sketch resolves to the email-scoped row (session A's) with its real unlock + generation state
-    assert result.sketch.unlock_at == SKETCH_UNLOCK_AT
-    assert result.sketch.generation == ArtifactGeneration.COMPLETED
-    assert result.sketch.status == ArtifactStatus.COMPLETED
+    # Unverified email must not reveal session A's timestamps or generation state.
+    assert result.sketch.unlock_at is None
+    assert result.sketch.generation == ArtifactGeneration.NOT_STARTED
+    assert result.sketch.status == ArtifactStatus.LOCKED
     # Report is session B's own row
     assert result.report.unlock_at == REPORT_UNLOCK_AT
     assert result.report.status == ArtifactStatus.READY
 
-    # Regression guard: without the email hint the old behavior failed closed (audit H6 symptom)
+    # Both call forms must enforce the same session ownership boundary.
     result_no_email = await ArtifactStatusService.get_artifact_statuses(
         async_db, sess_b.id, now=FIRST_PAYMENT_AT + timedelta(hours=25)
     )

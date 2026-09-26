@@ -362,15 +362,22 @@ def test_foreign_key_and_query_indexes_exist(db_session):
 
 
 def test_alembic_current_revision_is_head(db_session):
-    """Verify that the database migration state is at 0003_add_failed_payments head."""
+    """Verify that the database migration state matches the latest revision."""
+    from alembic.config import Config as AlembicConfig
+    from alembic.script import ScriptDirectory
+
+    script = ScriptDirectory.from_config(AlembicConfig("backend/alembic.ini"))
+    expected_head = script.get_current_head()
     result = db_session.execute(text("SELECT version_num FROM alembic_version")).scalar()
-    assert result == "0003_add_failed_payments"
+    assert result == expected_head
 
     # Verify 0003 added columns on subscriptions table
     inspector = inspect(db_session.bind)
     sub_cols = {col["name"] for col in inspector.get_columns("subscriptions")}
     assert "failed_payments_count" in sub_cols
     assert "billing_issue_detected_at" in sub_cols
+    assert "provider_status_updated_at" in sub_cols
+    assert "billing_updated_at" in sub_cols
 
 
 

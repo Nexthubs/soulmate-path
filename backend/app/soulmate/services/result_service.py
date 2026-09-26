@@ -62,10 +62,6 @@ class ResultService:
             db,
             session.id,
             now=effective_now,
-            # ASSET-01 (audit H6): sketch is unique per email — a returning session
-            # must see the email-scoped sketch state. Same fallback expression the
-            # SP-501 ensure uses when persisting the row.
-            email_normalized=session.email_normalized or session.email,
         )
 
         # SP-501 self-heal: placeholder rows missing for an entitled session
@@ -77,14 +73,13 @@ class ResultService:
                 )
                 await SubscriptionService.ensure_artifacts_for_session(
                     session=session,
-                    paid_at=sub.first_payment_at,
+                    paid_at=session.subscription_success_at,
                     db=db,
                 )
                 statuses = await ArtifactStatusService.get_artifact_statuses(
                     db,
                     session.id,
                     now=effective_now,
-                    email_normalized=session.email_normalized or session.email,
                 )
 
         subscription_view = None

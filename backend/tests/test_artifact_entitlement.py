@@ -180,7 +180,7 @@ async def test_first_payment_creates_one_sketch_and_one_report_with_exact_unlock
     await async_db.refresh(session)
 
     assert session.subscription_success_at == FIRST_PAYMENT_TIME
-    assert session.status == "paid"
+    assert session.status == "SUBSCRIBED"
     assert session.current_step == "result"
 
     artifacts = await load_artifacts(async_db, session.id)

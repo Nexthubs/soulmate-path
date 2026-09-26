@@ -75,7 +75,7 @@ async def create_test_session_with_active_sub(
         public_id=public_id,
         email=user_email,
         email_normalized=user_email.lower(),
-        status="paid" if first_payment_at else "subscribed",
+        status="SUBSCRIBED" if first_payment_at else "subscribed",
         current_step="result",
         subscription_success_at=first_payment_at,
         quiz_completed_at=now - timedelta(hours=2),

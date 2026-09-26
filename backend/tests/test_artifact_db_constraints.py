@@ -61,7 +61,7 @@ def _make_session(db_session, email: str) -> SoulmateSession:
         email=email,
         email_normalized=email,
         quiz_version="soulmate-quiz-v1",
-        status="paid",
+        status="SUBSCRIBED",
         current_step="result",
     )
     db_session.add(sess)

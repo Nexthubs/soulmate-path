@@ -69,6 +69,25 @@ def make_sample_event(
     }
 
 
+async def bind_sample_sale(event):
+    """A verified SALE can return 2xx only after its business mutation succeeds."""
+    from decimal import Decimal
+    async with AsyncSessionLocal() as db:
+        key = uuid.uuid4().hex
+        session = SoulmateSession(public_id=f"webhook_{key}", quiz_version="soulmate-quiz-v1",
+            status="EMAIL_CAPTURED", current_step="subscribe",
+            email=f"{key}@example.com", email_normalized=f"{key}@example.com")
+        db.add(session)
+        await db.flush()
+        sub_id = f"I-{key[:12].upper()}"
+        db.add(Subscription(session_id=session.id, provider_subscription_id=sub_id,
+            provider_plan_id="P-TEST", provider_status="APPROVAL_PENDING", currency="USD",
+            intro_price=Decimal("19"), regular_price=Decimal("29")))
+        await db.commit()
+        event["resource"]["billing_agreement_id"] = sub_id
+        event["resource"]["id"] = f"SALE-{key}"
+
+
 # ==============================================================================
 # 1. Raw Request Body & Header Preservation Tests (Acceptance #1)
 # ==============================================================================
@@ -172,6 +191,7 @@ async def test_endpoint_unprotected_by_normal_user_auth(mock_webhook_verifier):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         event = make_sample_event(event_id=f"WH-NOAUTH-{uuid.uuid4().hex[:8]}")
+        await bind_sample_sale(event)
         resp = await ac.post(
             "/api/webhooks/paypal",
             content=json.dumps(event).encode("utf-8"),
@@ -191,6 +211,7 @@ async def test_endpoint_mounted_at_both_canonical_and_alias_paths(mock_webhook_v
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         # 1. Canonical /api/webhooks/paypal
         canonical_event = make_sample_event(event_id=f"WH-CANONICAL-{uuid.uuid4().hex[:8]}")
+        await bind_sample_sale(canonical_event)
         resp1 = await ac.post(
             "/api/webhooks/paypal",
             content=json.dumps(canonical_event).encode("utf-8"),
@@ -200,6 +221,7 @@ async def test_endpoint_mounted_at_both_canonical_and_alias_paths(mock_webhook_v
 
         # 2. Alias /api/soulmate/webhooks/paypal
         alias_event = make_sample_event(event_id=f"WH-ALIAS-{uuid.uuid4().hex[:8]}")
+        await bind_sample_sale(alias_event)
         resp2 = await ac.post(
             "/api/soulmate/webhooks/paypal",
             content=json.dumps(alias_event).encode("utf-8"),
@@ -275,6 +297,7 @@ async def test_unverified_event_signature_failure_rejected_and_mutates_no_state(
 async def test_successful_event_recorded_in_db(async_db_session: AsyncSession):
     """Verified webhook event is committed to paypal_webhook_events table."""
     event = make_sample_event(event_id=f"WH-OK-{uuid.uuid4().hex[:8]}")
+    await bind_sample_sale(event)
     raw_bytes = json.dumps(event).encode("utf-8")
 
     class RequestWithHeaders:
@@ -299,7 +322,7 @@ async def test_successful_event_recorded_in_db(async_db_session: AsyncSession):
     assert saved.paypal_event_id == event["id"]
     assert saved.event_type == "PAYMENT.SALE.COMPLETED"
     assert saved.verified is True
-    assert saved.resource_id == "CAPTURE-111"
+    assert saved.resource_id == event["resource"]["id"]
     assert saved.processed_at is not None
 
 
@@ -307,6 +330,7 @@ async def test_successful_event_recorded_in_db(async_db_session: AsyncSession):
 async def test_idempotent_duplicate_event_returns_200_to_stop_paypal_retries(async_db_session: AsyncSession):
     """Replaying the same event returns 200 OK with duplicate=True without recreating records."""
     event = make_sample_event(event_id=f"WH-DUP-{uuid.uuid4().hex[:8]}")
+    await bind_sample_sale(event)
     raw_bytes = json.dumps(event).encode("utf-8")
 
     class RequestWithHeaders:
@@ -435,6 +459,7 @@ async def test_http_endpoint_duplicate_event_returns_200_duplicate_true(mock_web
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         event = make_sample_event(event_id=f"WH-HTTP-DUP-{uuid.uuid4().hex[:8]}")
+        await bind_sample_sale(event)
         payload = json.dumps(event).encode("utf-8")
 
         # First delivery

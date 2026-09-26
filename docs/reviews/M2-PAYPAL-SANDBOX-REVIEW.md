@@ -189,3 +189,13 @@ Next milestone may start: YES
 - [x] `docs/handoffs/SP-401.md` aligned with PASS evidence.
 - [x] `docs/reviews/SP-410-HIGH-RISK-REVIEW.md` created.
 - [x] `docs/reviews/M2-PAYPAL-SANDBOX-REVIEW.md` created.
+
+---
+
+## 13. Supersession addendum (2026-09-26, RV-01/RV-02 remediation)
+
+**This review's PASS conclusion is SUPERSEDED.** It remains here as historical evidence of the checkpoint it reviewed (HEAD at M2 time) and MUST NOT be cited as acceptance of the current implementation.
+
+- The subsequent RV-01 (schema/state machine) and RV-02 (payment security) reviews identified a Critical and five High findings in the reviewed components (unverified-email ownership binding, latest-payment-as-first-payment, unresolved SALE events acknowledged, refund identity/order, stale status regression, plan-policy bypass) plus a concurrency-evidence gap. See `docs/reviews/RV-01-RV-02-REMEDIATION.md` for the remediation evidence and its "BLOCKED for milestone acceptance" verdict pending independent re-review.
+- Correction to §10: the Wave 5 task list in this review mislabeled `SP-502` as "AI generation worker queue & dispatch". Per `TASK-BREAKDOWN.md`, `SP-502` is "12h/24h status derivation"; the AI generation worker is `SP-602`. The gate list for M3 in this document is therefore inaccurate and TASK-BREAKDOWN remains the canonical source.
+- The "Open P0: 0 / Open P1: 0" figures in §11 described only the findings known at that checkpoint; the RV findings above supersede them for milestone decisions. `PROJECT-STATE.md` now records M2 as BLOCKED.

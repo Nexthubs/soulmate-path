@@ -161,7 +161,7 @@ async def test_replay_payment_event_n_times_single_ledger_and_activation(async_d
     await async_db_session.refresh(session)
     await async_db_session.refresh(sub)
     assert session.subscription_success_at is not None
-    assert session.status == "paid"
+    assert session.status == "SUBSCRIBED"
     assert sub.first_payment_at is not None
     assert sub.provider_status == "ACTIVE"
 
@@ -741,7 +741,7 @@ async def test_failed_webhook_dispatch_retried_on_redelivery(async_db_session: A
     recorded_event = (await async_db_session.execute(event_stmt)).scalars().first()
     assert recorded_event is not None
     assert recorded_event.processing_error is not None
-    assert "Simulated transient database error" in recorded_event.processing_error
+    assert "RuntimeError" in recorded_event.processing_error
     assert recorded_event.processed_at is None
 
     await async_db_session.refresh(sub)

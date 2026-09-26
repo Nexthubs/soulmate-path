@@ -11,7 +11,7 @@ import logging
 import re
 from typing import Any, Dict, Optional, Set
 import uuid
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,14 +19,16 @@ from app.core.config import settings
 from app.core.errors import (
     ForbiddenOwnershipError,
     NotFoundError,
+    ProviderUnavailableError,
     ValidationError,
 )
 from app.core.logging import log_event
 from app.db.base import utc_now
 from app.db.models.artifact import SoulmateArtifact
-from app.db.models.billing import Subscription
+from app.db.models.billing import Subscription, SubscriptionPayment
 from app.db.models.session import SoulmateSession
 from app.soulmate.domain.ledger_models import PaymentRecordCreate
+from app.soulmate.domain.session_state import SessionStatus
 from app.soulmate.schema import (
     PayPalConfirmResponse,
     SubscriptionCancelResponse,
@@ -34,6 +36,8 @@ from app.soulmate.schema import (
 )
 from app.soulmate.services.ledger_service import PaymentLedgerService
 from app.soulmate.services.paypal_client import PayPalClient
+from app.soulmate.services.offer_service import OfferService
+from app.soulmate.services.payment_consistency import payment_lock, apply_provider_status, apply_billing_count
 
 logger = logging.getLogger(__name__)
 
@@ -78,8 +82,10 @@ class SubscriptionService:
         if not sub_id_clean:
             raise ValidationError("PayPal subscription ID must not be empty.")
 
+        await payment_lock(db, "subscription", sub_id_clean)
+
         # 1. Idempotency & Cross-Session Hijack Prevention Check
-        stmt = select(Subscription).where(Subscription.provider_subscription_id == sub_id_clean)
+        stmt = select(Subscription).where(Subscription.provider_subscription_id == sub_id_clean).execution_options(populate_existing=True)
         res = await db.execute(stmt)
         existing_sub = res.scalars().first()
 
@@ -151,24 +157,8 @@ class SubscriptionService:
         provider_plan_id = sub_data.get("plan_id")
         provider_status = sub_data.get("status", "APPROVAL_PENDING").upper()
 
-        # 4. Validate Plan ID against allowed Soulmate plans (DEV-SPEC §15.7 step 3, fail-closed)
-        allowed_plans: Set[str] = set()
-        if settings.paypal_soulmate_intro_plan_id:
-            allowed_plans.add(settings.paypal_soulmate_intro_plan_id)
-        if settings.paypal_soulmate_standard_plan_id:
-            allowed_plans.add(settings.paypal_soulmate_standard_plan_id)
-
-        if not allowed_plans:
-            logger.error("No Soulmate subscription plans configured; rejecting subscription confirmation (fail-closed)")
-            raise ValidationError("Soulmate subscription plans are not configured.")
-
-        if not provider_plan_id or provider_plan_id not in allowed_plans:
-            logger.warning(
-                "Subscription confirmation rejected: plan %s not in allowed plans %s",
-                provider_plan_id,
-                allowed_plans,
-            )
-            raise ValidationError(f"Subscription plan '{provider_plan_id}' does not match configured Soulmate plans.")
+        # Serialize eligibility decisions across subscriptions for the same contact/user.
+        await cls._validate_new_subscription_plan(db, session, provider_plan_id)
 
         # 5. Validate Provider Status (Reject terminal invalid states)
         if provider_status in {"CANCELLED", "EXPIRED", "SUSPENDED"}:
@@ -304,420 +294,195 @@ class SubscriptionService:
         db: AsyncSession,
     ) -> None:
         """Public create/ensure entry point for artifact placeholders (SP-501 self-heal; used by SP-503 read path)."""
+        await payment_lock(db, "session", session.id)
+        await db.refresh(session)
+        paid_at = session.subscription_success_at or paid_at
         await cls._ensure_artifacts_initialized(session=session, paid_at=paid_at, db=db)
 
     @classmethod
-    async def _reconcile_subscription_payments(
-        cls,
-        sub: Subscription,
-        remote_data: Dict[str, Any],
-        client: PayPalClient,
-        db: AsyncSession,
+    async def _validate_new_subscription_plan(
+        cls, db: AsyncSession, session: SoulmateSession, provider_plan_id: Optional[str],
     ) -> None:
+        # This is policy enforcement, never email-based authorization. The same
+        # policy evaluator feeds the offer UI and both server binding paths.
+        allowed = {p for p in (settings.paypal_soulmate_intro_plan_id, settings.paypal_soulmate_standard_plan_id) if p}
+        if not allowed:
+            raise ValidationError("Soulmate subscription plans are not configured.")
+        if provider_plan_id not in allowed:
+            raise ValidationError("Subscription plan does not match configured Soulmate plans.")
+        await payment_lock(db, "eligibility", session.email_normalized or session.id)
+        if session.user_id:
+            await payment_lock(db, "eligibility-user", session.user_id)
+        offer = await OfferService.get_subscription_offer(db=db, session=session)
+        if offer.eligibility.is_blocked or not offer.paypal_plan_id:
+            raise ValidationError("Subscription checkout is blocked by the configured eligibility policy.")
+        if provider_plan_id != offer.paypal_plan_id:
+            raise ValidationError("Subscription plan does not match the server-selected Soulmate plan.")
+
+    @classmethod
+    async def lock_subscription(
+        cls, db: AsyncSession, provider_subscription_id: str,
+    ) -> Optional[Subscription]:
+        await payment_lock(db, "subscription", provider_subscription_id)
+        sub = (await db.execute(
+            select(Subscription).where(Subscription.provider_subscription_id == provider_subscription_id)
+            .execution_options(populate_existing=True)
+        )).scalars().first()
+        if sub is not None:
+            await payment_lock(db, "session", sub.session_id)
+        return sub
+
+    @classmethod
+    async def activate_from_payment(
+        cls, db: AsyncSession, sub: Subscription, paid_at: datetime,
+    ) -> None:
+        """Serialize first-payment and artifact updates, including earlier evidence.
+
+        Renewals never move an unlock forward. Delayed evidence of an earlier
+        successful payment corrects the base atomically without replacing assets.
         """
-        Reconcile payment transactions from PayPal into the durable ledger (DEV-SPEC §9.4–9.7, H-2).
-        1. Calls PayPal /v1/billing/subscriptions/{id}/transactions to get all completed transactions.
-        2. Records each completed transaction with its authentic transaction ID (idempotent via PaymentLedgerService).
-        3. If transactions endpoint returns no transactions, falls back to billing_info.last_payment IF it has a real id.
-        4. NEVER generates fictitious payment IDs (e.g. PAYPAL-LASTPAY-...).
+        await payment_lock(db, "session", sub.session_id)
+        session = (await db.execute(
+            select(SoulmateSession).where(SoulmateSession.id == sub.session_id)
+            .execution_options(populate_existing=True)
+        )).scalars().first()
+        if session is None:
+            raise ProviderUnavailableError("Payment session is not available for reconciliation.")
+        if sub.first_payment_at is None or paid_at < sub.first_payment_at:
+            sub.first_payment_at = paid_at
+        base = min(t for t in (sub.first_payment_at, session.subscription_success_at) if t is not None)
+        previous = session.subscription_success_at
+        session.subscription_success_at = base
+        if previous is None:
+            # Canonical post-payment status per DEV-SPEC §6.2 (RV-01/RV-02 M7).
+            session.status = SessionStatus.SUBSCRIBED.value
+            session.current_step = "result"
+        if previous is not None and base < previous:
+            artifacts = (await db.execute(select(SoulmateArtifact).where(
+                SoulmateArtifact.session_id == session.id
+            ))).scalars().all()
+            for artifact in artifacts:
+                hours = {"SKETCH": settings.soulmate_sketch_unlock_hours,
+                         "REPORT": settings.soulmate_report_unlock_hours}.get(artifact.artifact_type)
+                if hours is not None:
+                    artifact.unlock_at = min(artifact.unlock_at, base + timedelta(hours=hours))
+        await cls._ensure_artifacts_initialized(session=session, paid_at=base, db=db)
+        if previous is None or base < previous:
+            log_event(event_type="entitlement_activated" if previous is None else "entitlement_time_corrected",
+                      message="Persisted transaction-backed entitlement time",
+                      extra_data={"session_id": str(session.id), "subscription_id": str(sub.id),
+                                  "first_payment_at": base.isoformat()})
+
+    @classmethod
+    async def _reconcile_subscription_payments(
+        cls, sub: Subscription, remote_data: Dict[str, Any], client: PayPalClient, db: AsyncSession,
+    ) -> Optional[datetime]:
+        """Backfill real transactions BEFORE selecting the earliest successful time.
+
+        last_payment is a latest-payment summary, not first-payment evidence.
+        Failures propagate so a webhook cannot acknowledge an incomplete restore.
         """
-        transactions: List[Dict[str, Any]] = []
-        try:
-            # Determine transaction range for PayPal transactions endpoint (DEV-SPEC §9.4, PayPal API required params)
-            start_dt = sub.created_at or (utc_now() - timedelta(days=90))
-            if start_dt.tzinfo is None:
-                start_dt = start_dt.replace(tzinfo=timezone.utc)
-            start_iso = (start_dt - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
-            end_iso = (utc_now() + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-            transactions = await client.list_subscription_transactions(
-                sub.provider_subscription_id,
-                start_time=start_iso,
-                end_time=end_iso,
-            )
-        except Exception as e:
-            logger.warning("Failed to list PayPal transactions for subscription %s: %s", sub.provider_subscription_id, e)
-
-        recorded_count = 0
-        if transactions:
-            for tx in transactions:
-                tx_status = str(tx.get("status", "")).upper()
-                if tx_status != "COMPLETED":
-                    continue
-                tx_id = tx.get("id")
-                if not tx_id or not str(tx_id).strip():
-                    continue
-
-                tx_id = str(tx_id).strip()
-                gross = tx.get("amount_with_breakdown", {}).get("gross_amount", {})
-                amount_str = gross.get("value") or tx.get("amount", {}).get("value")
-                if not amount_str:
-                    logger.warning(
-                        "Reconciliation: transaction %s for subscription %s missing amount; skipping ledger write to avoid guessing",
-                        tx_id,
-                        sub.provider_subscription_id,
-                    )
-                    continue
-                try:
-                    amount = Decimal(str(amount_str))
-                except Exception:
-                    logger.warning(
-                        "Reconciliation: transaction %s for subscription %s has unparseable amount '%s'; skipping ledger write",
-                        tx_id,
-                        sub.provider_subscription_id,
-                        amount_str,
-                    )
-                    continue
-
-                currency = gross.get("currency_code") or tx.get("amount", {}).get("currency_code") or sub.currency
-                if not currency:
-                    logger.warning(
-                        "Reconciliation: transaction %s for subscription %s missing currency; skipping ledger write",
-                        tx_id,
-                        sub.provider_subscription_id,
-                    )
-                    continue
-
-                raw_time = tx.get("time")
-                paid_at = parse_iso_datetime(raw_time) if raw_time else None
-                if not paid_at:
-                    logger.warning(
-                        "Reconciliation: transaction %s for subscription %s missing or invalid time '%s'; skipping ledger write to avoid guessing",
-                        tx_id,
-                        sub.provider_subscription_id,
-                        raw_time,
-                    )
-                    continue
-
-                await PaymentLedgerService.record_payment(
-                    db=db,
-                    create_data=PaymentRecordCreate(
-                        subscription_id=sub.id,
-                        provider_payment_id=tx_id,
-                        amount=amount,
-                        currency=currency,
-                        status="COMPLETED",
-                        paid_at=paid_at,
-                        raw_json=tx,
-                    ),
-                )
-                recorded_count += 1
-
-        if recorded_count == 0:
-            last_payment_info = remote_data.get("billing_info", {}).get("last_payment", {}) if remote_data else {}
-            pay_id = last_payment_info.get("id")
-            if pay_id and str(pay_id).strip():
-                pay_id = str(pay_id).strip()
-                amount_val = last_payment_info.get("amount", {}).get("value")
-                if not amount_val:
-                    logger.warning(
-                        "Reconciliation: last_payment for subscription %s missing amount; skipping ledger write to avoid guessing",
-                        sub.provider_subscription_id,
-                    )
-                    return
-                try:
-                    amount = Decimal(str(amount_val))
-                except Exception:
-                    logger.warning(
-                        "Reconciliation: last_payment for subscription %s has unparseable amount '%s'; skipping ledger write",
-                        sub.provider_subscription_id,
-                        amount_val,
-                    )
-                    return
-
-                currency = last_payment_info.get("amount", {}).get("currency_code") or sub.currency
-                if not currency:
-                    logger.warning(
-                        "Reconciliation: last_payment for subscription %s missing currency; skipping ledger write",
-                        sub.provider_subscription_id,
-                    )
-                    return
-
-                raw_time = last_payment_info.get("time")
-                paid_at = parse_iso_datetime(raw_time) if raw_time else None
-                if not paid_at:
-                    logger.warning(
-                        "Reconciliation: last_payment for subscription %s missing or invalid time '%s'; skipping ledger write to avoid guessing",
-                        sub.provider_subscription_id,
-                        raw_time,
-                    )
-                    return
-
-                await PaymentLedgerService.record_payment(
-                    db=db,
-                    create_data=PaymentRecordCreate(
-                        subscription_id=sub.id,
-                        provider_payment_id=pay_id,
-                        amount=amount,
-                        currency=currency,
-                        status="COMPLETED",
-                        paid_at=paid_at,
-                        raw_json=remote_data,
-                    ),
-                )
-            elif last_payment_info:
-                logger.warning(
-                    "Reconciliation: PayPal subscription %s reported last_payment without transaction ID and no transactions returned; skipping ledger write to avoid fictitious ID.",
-                    sub.provider_subscription_id,
-                )
+        start = parse_iso_datetime(remote_data.get("create_time")) or sub.created_at
+        if start is None:
+            raise ProviderUnavailableError("Subscription creation time is unavailable.")
+        start = start.replace(tzinfo=timezone.utc) if start.tzinfo is None else start
+        transactions = await client.list_subscription_transactions(
+            sub.provider_subscription_id,
+            start_time=(start - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            end_time=(utc_now() + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        )
+        valid = []
+        for tx in transactions:
+            if str(tx.get("status", "")).upper() != "COMPLETED":
+                continue
+            pay_id = str(tx.get("id") or "").strip()
+            paid_at = parse_iso_datetime(tx.get("time"))
+            gross = tx.get("amount_with_breakdown", {}).get("gross_amount", {}) or tx.get("amount", {})
+            try:
+                amount = Decimal(str(gross.get("value")))
+            except Exception:
+                continue
+            currency = gross.get("currency_code")
+            if not pay_id or paid_at is None or not currency or not amount.is_finite() or amount <= 0:
+                continue
+            valid.append((paid_at, pay_id, amount, currency, tx))
+        # Stable order also makes ledger context deterministic during backfills.
+        for paid_at, pay_id, amount, currency, tx in sorted(valid, key=lambda row: (row[0], row[1])):
+            await PaymentLedgerService.record_payment(db=db, create_data=PaymentRecordCreate(
+                subscription_id=sub.id, provider_payment_id=pay_id, amount=amount,
+                currency=currency, status="COMPLETED", paid_at=paid_at, raw_json=tx,
+            ))
+        await db.flush()
+        return (await db.execute(select(func.min(SubscriptionPayment.paid_at)).where(
+            SubscriptionPayment.subscription_id == sub.id,
+            SubscriptionPayment.status.in_(["COMPLETED", "REFUNDED", "REVERSED"]),
+        ))).scalar()
 
     @classmethod
     async def reconcile_subscription(
-        cls,
-        db: AsyncSession,
-        provider_subscription_id: str,
+        cls, db: AsyncSession, provider_subscription_id: str,
         paypal_client: Optional[PayPalClient] = None,
     ) -> Optional[Subscription]:
-        """
-        Reconcile local subscription state against PayPal REST API (DEV-SPEC §9.4, §15.7–15.8, SP-408).
-        Ensures:
-        1. Monotonicity: never regresses terminal CANCELLED or EXPIRED states.
-        2. First payment authority (PAY-AUTH-01): sets first_payment_at, subscription_success_at,
-           and unlocks artifacts exactly once if confirmed by PayPal billing_info.last_payment.
-        3. Never deletes already-owned generated artifacts upon cancellation or expiration.
-        4. Reconciles next_billing_at and paid_through_at.
-        5. Records ledger payment via PaymentLedgerService if missing.
-        """
+        """Restore only a trustworthy binding and transaction-backed payment state."""
         sub_id = provider_subscription_id.strip()
         if not sub_id or not sub_id.startswith("I-"):
             return None
-
-        stmt = select(Subscription).where(Subscription.provider_subscription_id == sub_id)
-        sub = (await db.execute(stmt)).scalars().first()
-
-        client = paypal_client or PayPalClient(
-            client_id=settings.paypal_client_id,
-            client_secret=settings.paypal_client_secret,
-            environment=settings.paypal_env,
-        )
-
+        sub = await cls.lock_subscription(db, sub_id)
+        client = paypal_client or PayPalClient()
         try:
-            remote_data = await client.get_subscription(sub_id)
-        except Exception as e:
-            logger.warning("Failed to fetch PayPal subscription %s during reconciliation: %s", sub_id, e)
-            return sub
-
-        if not remote_data:
-            return sub
-
-        remote_status = str(remote_data.get("status", "")).upper()
-        billing_info = remote_data.get("billing_info", {})
-        next_billing_str = billing_info.get("next_billing_time")
-        next_billing_at = parse_iso_datetime(next_billing_str)
-        status_update_time = parse_iso_datetime(remote_data.get("status_update_time")) or utc_now()
-
-        last_payment = billing_info.get("last_payment", {})
-        last_payment_time_str = last_payment.get("time")
-        last_paid_at = parse_iso_datetime(last_payment_time_str)
-
-        if sub is not None:
-            # 1. Monotonicity rule: Do not regress CANCELLED or EXPIRED if local state is already terminal
-            if sub.provider_status in ("CANCELLED", "EXPIRED") and remote_status in ("ACTIVE", "APPROVAL_PENDING", "APPROVED"):
-                logger.info(
-                    "Reconciliation skipped status regression for %s: local=%s, remote=%s",
-                    sub_id,
-                    sub.provider_status,
-                    remote_status,
-                )
-            else:
-                if remote_status:
-                    sub.provider_status = remote_status
-                if remote_status == "CANCELLED" and not sub.cancelled_at:
-                    sub.cancelled_at = status_update_time
-                elif remote_status == "SUSPENDED" and not sub.suspended_at:
-                    sub.suspended_at = status_update_time
-                elif remote_status == "EXPIRED" and not sub.expired_at:
-                    sub.expired_at = status_update_time
-                elif remote_status == "ACTIVE":
-                    sub.suspended_at = None
-
-            # 2. Reconcile next billing and paid-through dates
-            if next_billing_at:
-                sub.next_billing_at = next_billing_at
-                if not sub.paid_through_at or next_billing_at > sub.paid_through_at:
-                    sub.paid_through_at = next_billing_at
-
-            # 3. First Payment & Entitlement Authority (PAY-AUTH-01, TIME-01)
-            if last_paid_at is not None:
-                sess_stmt = select(SoulmateSession).where(SoulmateSession.id == sub.session_id)
-                session = (await db.execute(sess_stmt)).scalars().first()
-
-                if sub.first_payment_at is None:
-                    sub.first_payment_at = last_paid_at
-                    if session is not None and session.subscription_success_at is None:
-                        session.subscription_success_at = last_paid_at
-                        session.status = "paid"
-                        session.current_step = "result"
-                        log_event(
-                            event_type="entitlement_activated",
-                            message=f"Entitlement activated for session {session.public_id} via reconciliation",
-                            level=logging.INFO,
-                            extra_data={
-                                "session_public_id": session.public_id,
-                                "subscription_id": str(sub.id),
-                                "provider_sub_id": sub_id,
-                                "subscription_success_at": last_paid_at.isoformat(),
-                            },
-                        )
-
-                # SP-501: create/ensure artifact placeholders whenever the session is entitled,
-                # so rows missing after a partial activation self-heal on later reconciliations.
-                # Idempotent; unlock base is the authoritative first payment time (TIME-01).
-                if session is not None and session.subscription_success_at is not None:
-                    await cls._ensure_artifacts_initialized(
-                        session=session,
-                        paid_at=sub.first_payment_at or last_paid_at,
-                        db=db,
-                    )
-
-            # 4. Decoupled Payment Ledger Reconciliation (H-2, DEV-SPEC §9.4–9.7):
-            # Backfill any missing payments (initial or recurring renewals) via transactions API
-            if last_paid_at is not None or remote_status in ("ACTIVE", "CANCELLED", "SUSPENDED", "EXPIRED"):
-                await cls._reconcile_subscription_payments(
-                    sub=sub,
-                    remote_data=remote_data,
-                    client=client,
-                    db=db,
-                )
-
-            # Synchronize billing issues from provider billing_info (Medium Finding 5)
-            billing_info = remote_data.get("billing_info", {}) if remote_data else {}
-            provider_failed_count = billing_info.get("failed_payments_count")
-            if provider_failed_count is not None:
-                sub.failed_payments_count = int(provider_failed_count)
-                if sub.failed_payments_count == 0:
-                    sub.billing_issue_detected_at = None
-            elif remote_status == "ACTIVE":
-                # Only clear if a successful payment occurred on or after the issue was detected
-                if sub.billing_issue_detected_at and last_paid_at and last_paid_at >= sub.billing_issue_detected_at:
-                    sub.failed_payments_count = 0
-                    sub.billing_issue_detected_at = None
-
-            await db.flush()
-            return sub
-
-        # If sub does not exist locally yet, validate plan and locate session via custom_id or subscriber email (C-2, DEV-SPEC §8.3)
-        # 1. Validate Plan ID against allowed Soulmate plans (fail-closed)
-        allowed_plans: Set[str] = set()
-        if settings.paypal_soulmate_intro_plan_id:
-            allowed_plans.add(settings.paypal_soulmate_intro_plan_id)
-        if settings.paypal_soulmate_standard_plan_id:
-            allowed_plans.add(settings.paypal_soulmate_standard_plan_id)
-
-        remote_plan_id = remote_data.get("plan_id")
-        if not allowed_plans or not remote_plan_id or remote_plan_id not in allowed_plans:
-            logger.warning(
-                "Reconciliation rejected for unknown subscription %s: plan '%s' is not in allowed Soulmate plans %s",
-                sub_id,
-                remote_plan_id,
-                allowed_plans,
-            )
+            remote = await client.get_subscription(sub_id)
+        except Exception as exc:
+            raise ProviderUnavailableError("PayPal subscription reconciliation is temporarily unavailable.") from exc
+        if not remote:
             return None
-
-        # 2. Session lookup via custom_id (matches session public_id)
-        custom_id = (remote_data.get("custom_id") or "").strip()
-        session: Optional[SoulmateSession] = None
-        if custom_id:
-            sess_stmt = select(SoulmateSession).where(SoulmateSession.public_id == custom_id)
-            session = (await db.execute(sess_stmt)).scalars().first()
-            if not session:
-                logger.warning(
-                    "Reconciliation rejected: custom_id '%s' on subscription %s not found in sessions. "
-                    "Refusing fallback to email to prevent cross-session hijacking.",
-                    custom_id,
-                    sub_id,
-                )
+        billing = remote.get("billing_info", {})
+        remote_status = str(remote.get("status", "")).upper()
+        if sub is None:
+            custom_id = str(remote.get("custom_id") or "").strip()
+            if not custom_id:
+                return None  # Contact/payer email is NEVER a binding credential.
+            session = (await db.execute(select(SoulmateSession).where(
+                SoulmateSession.public_id == custom_id
+            ))).scalars().first()
+            if session is None:
                 return None
-        else:
-            # 3. Fallback to subscriber email ONLY when custom_id is completely absent, with strict ambiguity checks
-            subscriber_email = remote_data.get("subscriber", {}).get("email_address")
-            if subscriber_email:
-                clean_email = subscriber_email.strip().lower()
-                sess_stmt = select(SoulmateSession).where(SoulmateSession.email_normalized == clean_email)
-                matching_sessions = (await db.execute(sess_stmt)).scalars().all()
-
-                if len(matching_sessions) == 1:
-                    session = matching_sessions[0]
-                    logger.warning(
-                        "Reconciliation: bound unknown subscription %s to session %s via fallback subscriber email '%s' (custom_id missing)",
-                        sub_id,
-                        session.public_id,
-                        clean_email,
-                    )
-                elif len(matching_sessions) > 1:
-                    # Filter for candidates that haven't already had a subscription succeeded
-                    unpaid_sessions = [
-                        s for s in matching_sessions
-                        if s.subscription_success_at is None and s.status != "paid"
-                    ]
-                    if len(unpaid_sessions) == 1:
-                        session = unpaid_sessions[0]
-                        logger.warning(
-                            "Reconciliation: bound unknown subscription %s to unique unpaid session %s for email '%s'",
-                            sub_id,
-                            session.public_id,
-                            clean_email,
-                        )
-                    else:
-                        logger.error(
-                            "Reconciliation rejected: ambiguous subscriber email '%s' for subscription %s matches %d sessions (unpaid=%d). Refusing automatic binding to prevent cross-session confusion.",
-                            clean_email,
-                            sub_id,
-                            len(matching_sessions),
-                            len(unpaid_sessions),
-                        )
-                        return None
-            else:
-                logger.warning(
-                    "Reconciliation rejected: subscription %s has neither custom_id nor subscriber email.",
-                    sub_id,
-                )
+            try:
+                await cls._validate_new_subscription_plan(db, session, remote.get("plan_id"))
+            except ValidationError:
                 return None
-
-        if session:
             sub = Subscription(
-                session_id=session.id,
-                user_id=session.user_id,
-                provider="paypal",
-                provider_subscription_id=sub_id,
-                provider_plan_id=remote_data.get("plan_id", ""),
-                provider_status=remote_status or "APPROVAL_PENDING",
-                currency=settings.soulmate_currency or "USD",
-                intro_price=settings.soulmate_intro_price,
-                regular_price=settings.soulmate_regular_price or Decimal("29.00"),
-                first_payment_at=last_paid_at,
-                next_billing_at=next_billing_at,
-                paid_through_at=next_billing_at,
-                cancelled_at=status_update_time if remote_status == "CANCELLED" else None,
-                suspended_at=status_update_time if remote_status == "SUSPENDED" else None,
-                expired_at=status_update_time if remote_status == "EXPIRED" else None,
+                session_id=session.id, user_id=session.user_id, provider="paypal",
+                provider_subscription_id=sub_id, provider_plan_id=remote["plan_id"],
+                provider_status="APPROVAL_PENDING", currency=settings.soulmate_currency,
+                intro_price=settings.soulmate_intro_price, regular_price=settings.soulmate_regular_price,
             )
             db.add(sub)
             await db.flush()
-
-            if last_paid_at is not None:
-                if session.subscription_success_at is None:
-                    session.subscription_success_at = last_paid_at
-                    session.status = "paid"
-                    session.current_step = "result"
-                # SP-501: create/ensure artifact placeholders (idempotent; heals missing rows;
-                # first_payment_at was just set from the authoritative provider data).
-                await cls._ensure_artifacts_initialized(
-                    session=session,
-                    paid_at=sub.first_payment_at or last_paid_at,
-                    db=db,
-                )
-
-            # Reconcile payments using authentic transactions
-            await cls._reconcile_subscription_payments(
-                sub=sub,
-                remote_data=remote_data,
-                client=client,
-                db=db,
-            )
-            return sub
-
-        return None
+        await payment_lock(db, "session", sub.session_id)
+        status_time = parse_iso_datetime(remote.get("status_update_time"))
+        # A fetched provider snapshot is current; use its event time when available.
+        snapshot_time = utc_now()
+        if remote_status:
+            apply_provider_status(sub, remote_status, status_time or snapshot_time)
+        next_at = parse_iso_datetime(billing.get("next_billing_time"))
+        if next_at:
+            if sub.provider_status not in ("CANCELLED", "EXPIRED"):
+                sub.next_billing_at = next_at
+            if sub.paid_through_at is None or next_at > sub.paid_through_at:
+                sub.paid_through_at = next_at
+        if billing.get("last_payment") or remote_status in ("ACTIVE", "CANCELLED", "SUSPENDED", "EXPIRED"):
+            paid_at = await cls._reconcile_subscription_payments(sub, remote, client, db)
+            if paid_at is not None:
+                await cls.activate_from_payment(db, sub, paid_at)
+        provider_count = billing.get("failed_payments_count")
+        if provider_count is not None:
+            apply_billing_count(sub, int(provider_count), snapshot_time)
+        else:
+            last_paid = parse_iso_datetime(billing.get("last_payment", {}).get("time"))
+            if last_paid and sub.first_payment_at is not None:
+                apply_billing_count(sub, 0, last_paid)
+        await db.flush()
+        return sub
 
     @classmethod
     async def reconcile_session_subscription(
@@ -915,9 +680,8 @@ class SubscriptionService:
 
         # 3. Update local state
         now = utc_now()
-        sub.provider_status = "CANCELLED"
-        sub.cancelled_at = now
-        sub.next_billing_at = None
+        sub = await cls.lock_subscription(db, sub.provider_subscription_id)
+        apply_provider_status(sub, "CANCELLED", now)
 
         # 4. Invariant: Retain existing artifacts (Acceptance #4, DEV-SPEC §9.8, ASSET-01)
         art_stmt = select(SoulmateArtifact).where(SoulmateArtifact.session_id == session.id)
@@ -950,4 +714,3 @@ class SubscriptionService:
             paid_through_at=sub.paid_through_at,
             message="Subscription successfully cancelled. Access remains active through your current billing cycle.",
         )
-

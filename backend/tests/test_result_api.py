@@ -58,7 +58,7 @@ async def seed_entitled_session(
     sess = SoulmateSession(
         public_id=f"test_sess_{uuid.uuid4().hex[:10]}",
         quiz_version="soulmate-quiz-v1",
-        status="paid" if entitled else "email_captured",
+        status="SUBSCRIBED" if entitled else "email_captured",
         current_step="result" if entitled else "subscribe",
         email=email,
         email_normalized=email,
@@ -276,11 +276,10 @@ async def test_result_aggregate_reflects_generation_states(async_db: AsyncSessio
 
 
 @pytest.mark.asyncio
-async def test_result_aggregate_returns_email_scoped_sketch_for_returning_session(async_db: AsyncSession):
+async def test_result_aggregate_does_not_expose_same_email_other_sessions_sketch(async_db: AsyncSession):
     """
-    ASSET-01 (Wave 5 audit H6): a second paid session with the same email owns no SKETCH row,
-    but its Result aggregate must surface the email-scoped sketch (not a permanent LOCKED
-    without unlock_at) alongside its own session-scoped REPORT.
+    Contact email does not prove ownership: a second paid session must not
+    expose the first session’s Sketch metadata. Its own Report remains accessible.
     """
     from datetime import timedelta as _timedelta
 
@@ -300,21 +299,10 @@ async def test_result_aggregate_returns_email_scoped_sketch_for_returning_sessio
     assert resp.status_code == 200
     data = resp.json()
 
-    # Sketch: the email-scoped row owned by session A — compare against A's actual row
-    assert data["sketch"]["unlock_at"] is not None
-    a_sketch = (
-        await async_db.execute(
-            select(SoulmateArtifact).where(
-                SoulmateArtifact.session_id == sess_a.id,
-                SoulmateArtifact.artifact_type == "SKETCH",
-            )
-        )
-    ).scalars().first()
-    assert a_sketch is not None
-    assert (
-        datetime.fromisoformat(data["sketch"]["unlock_at"].replace("Z", "+00:00"))
-        == a_sketch.unlock_at
-    )
+    # Contact-email equality is not ownership, even for another paid session.
+    assert data["sketch"]["unlock_at"] is None
+    assert data["sketch"]["status"] == "LOCKED"
+    assert data["sketch"]["generation"] == "NOT_STARTED"
 
     # Report: session B's own row (its first payment + 24h), self-healed on read
     expected_report_unlock = sub_b.first_payment_at + _timedelta(hours=24)
