@@ -87,8 +87,6 @@ JOB_COMPLETED = "COMPLETED"
 JOB_FAILED_RETRYABLE = "FAILED_RETRYABLE"
 JOB_FAILED_PERMANENT = "FAILED_PERMANENT"
 
-ACTIVE_JOB_STATUSES = (JOB_QUEUED, JOB_PROCESSING)
-
 RECLAIM_ERROR_CODE = "CLAIM_STALE"
 INTERNAL_ERROR_CODE = "INTERNAL_ERROR"
 
@@ -142,6 +140,13 @@ class SketchEnqueueOutcome:
     artifact: SoulmateArtifact
     job: Optional[AIGenerationJob]
     created: bool
+    # True when the resolved identity-owned sketch artifact belongs to a DIFFERENT
+    # session of the same normalized email. Reads stay session-scoped (RECOVERY-01):
+    # the caller must not expose the owning session's job/artifact state to this
+    # session (the endpoint therefore reports job_status=None for cross-session
+    # outcomes). Write-side convergence (one logical generation per identity, §11.5)
+    # is unaffected.
+    cross_session: bool = False
 
 
 @dataclass
@@ -167,10 +172,21 @@ class SketchGenerationService:
         now: Optional[datetime] = None,
     ) -> SketchEnqueueOutcome:
         """
-        Enqueue one logical sketch generation for an entitled, unlocked session.
+        Enqueue the ONE logical sketch generation owned by the session's normalized
+        email identity (§11.5, SP-606).
 
-        Concurrent calls converge on a single job row (unique idempotency key +
-        advisory lock). A COMPLETED artifact short-circuits without a new job.
+        Identity-level rules (canonical DB key: `email_normalized`, enforced by
+        `uq_soulmate_one_sketch_per_email`; `user_id` is deterministically derived
+        from the email in SP-301 but never set on anonymous sessions):
+        - identity asset COMPLETED → returned as-is, never regenerated;
+        - any existing job for the identity → converged on, never a second job;
+        - no job yet → exactly one is created, TIME-01-gated by the ASSET's
+          persisted `unlock_at`, triggerable by ANY entitled session of the
+          identity (the asset belongs to its owning session).
+
+        Cross-session reads stay session-scoped (Decision RECOVERY-01): outcomes
+        resolved against another session's artifact carry `cross_session=True` and
+        `job=None` so callers never expose the owning session's state.
         """
         effective_now = now or utc_now()
 
@@ -196,30 +212,37 @@ class SketchGenerationService:
         # Serialize concurrent enqueues for the same identity (§11.5/§11.6).
         await payment_lock(db, "sketch-generate", email)
 
-        artifact = await cls._get_sketch_artifact(db, session.id)
+        artifact = await cls._resolve_identity_sketch_artifact(db, session, email)
         if artifact is None:
             raise InternalServerError("Sketch artifact row is missing after self-heal.")
 
-        # TIME-01: on_demand trigger only after the persisted unlock time.
+        own = artifact.session_id == session.id
+        generation = normalize_generation(artifact.generation_status)
+        key = sketch_idempotency_key(email, artifact.artifact_version)
+
+        # §11.5: an identity-owned COMPLETED asset is never regenerated.
+        if generation.value == "COMPLETED":
+            return SketchEnqueueOutcome(
+                artifact=artifact, job=None, created=False, cross_session=not own
+            )
+
+        # §11.5: at most one job per identity — converge on the existing record
+        # (QUEUED, PROCESSING, or terminal retry record alike).
+        existing_job = await cls._get_job_by_key(db, key)
+        if existing_job is not None:
+            return SketchEnqueueOutcome(
+                artifact=artifact,
+                job=existing_job if own else None,  # job state is only for the owning session
+                created=False,
+                cross_session=not own,
+            )
+
+        # No job exists yet. TIME-01 gates on the asset's persisted unlock time —
+        # the same server-side rule regardless of which entitled session triggers.
         if artifact.unlock_at is None or effective_now < artifact.unlock_at:
             raise LockedAssetError(
                 "Sketch is still locked; generation unlocks at the persisted server time (TIME-01)."
             )
-
-        generation = normalize_generation(artifact.generation_status)
-        if generation.value == "COMPLETED":
-            # §11.4: an existing completed result is returned directly — never regenerated.
-            return SketchEnqueueOutcome(artifact=artifact, job=None, created=False)
-
-        key = sketch_idempotency_key(email, artifact.artifact_version)
-
-        if generation.value in ("QUEUED", "PROCESSING"):
-            existing = await cls._get_job_by_key(db, key)
-            if existing is not None and existing.status in ACTIVE_JOB_STATUSES:
-                return SketchEnqueueOutcome(artifact=artifact, job=existing, created=False)
-            # Artifact stuck mid-generation without an active job (e.g. a terminal
-            # job after the artifact was reset by support): fall through and
-            # converge on the idempotency key.
 
         created = False
         job = AIGenerationJob(
@@ -244,7 +267,12 @@ class SketchGenerationService:
 
         await db.commit()
         await db.refresh(artifact)
-        return SketchEnqueueOutcome(artifact=artifact, job=job, created=created)
+        return SketchEnqueueOutcome(
+            artifact=artifact,
+            job=job if own else None,  # same isolation rule as convergence above
+            created=created,
+            cross_session=not own,
+        )
 
     # ------------------------------------------------------------------
     # Worker (§11.6, SP-604 retry/idempotency)
@@ -668,7 +696,32 @@ class SketchGenerationService:
     # ------------------------------------------------------------------
 
     @classmethod
+    async def _resolve_identity_sketch_artifact(
+        cls,
+        db: AsyncSession,
+        session: SoulmateSession,
+        email: str,
+    ) -> Optional[SoulmateArtifact]:
+        """
+        Resolves the ONE sketch artifact owned by the normalized-email identity
+        (§11.5): the session's own row, or the row held by another session of the
+        same identity. `uq_soulmate_one_sketch_per_email` guarantees at most one
+        SKETCH row per email, so the resolution is unambiguous. The canonical DB
+        identity key is email_normalized (user_id is deterministically derived
+        from it in SP-301 but is never set on anonymous sessions).
+        """
+        stmt = select(SoulmateArtifact).where(
+            SoulmateArtifact.artifact_type == "SKETCH",
+            or_(
+                SoulmateArtifact.session_id == session.id,
+                SoulmateArtifact.email_normalized == email,
+            ),
+        )
+        return (await db.execute(stmt)).scalars().first()
+
+    @classmethod
     async def _get_sketch_artifact(cls, db: AsyncSession, session_id) -> Optional[SoulmateArtifact]:
+        """Session-scoped lookup (reads remain session-isolated per RECOVERY-01)."""
         stmt = select(SoulmateArtifact).where(
             SoulmateArtifact.session_id == session_id,
             SoulmateArtifact.artifact_type == "SKETCH",

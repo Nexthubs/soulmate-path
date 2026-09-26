@@ -110,8 +110,16 @@ async def seed_generation_session(
     unlocked: bool = True,
     sketch_generation: str = "NOT_STARTED",
     email: str | None = None,
+    with_sketch: bool = True,
+    display_email: str | None = None,
 ):
-    """Paid session + artifacts + complete profile (the worker's real input)."""
+    """Paid session + artifacts + complete profile (the worker's real input).
+
+    `with_sketch=False` mimics a second session of the same identity under the
+    SP-501 ensure semantics: it receives only a REPORT placeholder because the
+    sketch row is owned by the first session (uq_soulmate_one_sketch_per_email).
+    `display_email` sets the raw (non-normalized) email for normalization tests.
+    """
     now = datetime.now(timezone.utc)
     paid_at = now - timedelta(hours=1)
     email = email or f"sp603_{uuid.uuid4().hex[:8]}@example.com"
@@ -121,7 +129,7 @@ async def seed_generation_session(
         quiz_version="soulmate-quiz-v1",
         status="SUBSCRIBED",
         current_step="result",
-        email=email,
+        email=display_email or email,
         email_normalized=email,
         subscription_success_at=paid_at,
     )
@@ -144,16 +152,17 @@ async def seed_generation_session(
         )
     )
 
-    db.add(
-        SoulmateArtifact(
-            session_id=sess.id,
-            email_normalized=email,
-            artifact_type="SKETCH",
-            artifact_version="v1",
-            unlock_at=now - timedelta(hours=1) if unlocked else now + timedelta(hours=12),
-            generation_status=sketch_generation,
+    if with_sketch:
+        db.add(
+            SoulmateArtifact(
+                session_id=sess.id,
+                email_normalized=email,
+                artifact_type="SKETCH",
+                artifact_version="v1",
+                unlock_at=now - timedelta(hours=1) if unlocked else now + timedelta(hours=12),
+                generation_status=sketch_generation,
+            )
         )
-    )
     db.add(
         SoulmateArtifact(
             session_id=sess.id,
@@ -444,7 +453,7 @@ async def test_worker_missing_profile_fails_permanent(async_db):
 
     outcome = await SketchGenerationService.enqueue_sketch_generation(async_db, sess)
     status = await SketchGenerationService.process_next_queued_job(
-        provider=FakeProvider(), sink=RecordingSink()
+        provider=FakeProvider(), sink=RecordingSink(), job_id=outcome.job.id
     )
 
     assert status == JOB_FAILED_PERMANENT

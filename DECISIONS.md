@@ -73,6 +73,7 @@
 - **Decision:** TBD. Options: (a) verified-identity recovery flow that binds existing email-scoped assets to the new session after authentication; (b) block the second purchase before payment when the email already owns a sketch; (c) product accepts second-session Sketch as a separate purchasable asset. Do NOT restore bare-email cross-session reads.
 - **Affected:** SP-501 (ensure semantics), SP-502/SP-503 (status reads), PAY-02, checkout funnel, M6.
 - **Reachability boundary (2026-09-26, RV round-3):** the `blocked` policy blocks OUR offer and binding paths, but it cannot prevent a crafted client from creating a subscription directly at PayPal (client_id/plan are public) and being charged; such a payment stays unbound (confirm 403, events retryable). Refund handling + support are the fallback; this strengthens the case for keeping `blocked` until this decision resolves.
+- **Update 2026-09-26 (SP-606):** the generation WRITE path is now identity-level (§11.5): any entitled session of the same normalized email converges on — or may trigger, TIME-01-gated by the asset's persisted `unlock_at` — the single logical sketch generation (`sketch:<email_hash>:v1`; DB uniqueness backstop unchanged). Cross-session READS remain session-scoped and a non-owning session's generate response never exposes the owning session's job/artifact state. The recovery-display product choice (options a/b/c) remains OPEN.
 
 ### AGE-01 — Minimum age / DOB eligibility
 
