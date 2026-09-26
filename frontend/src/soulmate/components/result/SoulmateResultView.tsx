@@ -11,9 +11,11 @@ import {
 
 export interface SoulmateResultViewProps {
   /**
-   * Aggregate result data from GET /api/soulmate/result.
+   * Aggregate result data backing the view. REQUIRED (Wave 5 audit H4): live callers pass
+   * the fetched aggregate; the QA fixture path passes DEFAULT_RESULT_FIXTURE explicitly.
+   * Refetched/polled data flows into the render without extra syncing (audit H5).
    */
-  initialData?: ResultAggregateData;
+  initialData: ResultAggregateData;
 
   /**
    * Client-to-server clock offset in milliseconds (SP-504, TIME-01). Forwarded to the cards
@@ -78,9 +80,15 @@ export const DEFAULT_RESULT_FIXTURE: ResultAggregateData = {
 
 /**
  * Full Result Screen Container (Figma Nodes 102:1201 & 102:1332; DEV-SPEC §2, §10).
+ *
+ * `initialData` is REQUIRED so a parent can never accidentally render fixture placeholder
+ * data (Wave 5 audit H4): live callers pass the fetched aggregate; the QA fixture path
+ * passes DEFAULT_RESULT_FIXTURE explicitly. Live refetches (SP-505 polling / zero-refetch)
+ * flow straight into the render because data is DERIVED from the prop — audit H5 — and only
+ * explicit dev/QA interactions (toolbar, retry preview) create a local override.
  */
 export function SoulmateResultView({
-  initialData = DEFAULT_RESULT_FIXTURE,
+  initialData,
   clockOffsetMs,
   userEmail = "user@example.com",
   showFixtureToolbar = false,
@@ -90,7 +98,10 @@ export function SoulmateResultView({
   className = "",
 }: SoulmateResultViewProps) {
   const router = useRouter();
-  const [data, setData] = useState<ResultAggregateData>(initialData);
+  // H5 (Wave 5 audit): derive instead of copying the prop into state, so refetched/polled
+  // aggregate data always reaches the mounted cards without a prop->state sync effect.
+  const [previewOverride, setPreviewOverride] = useState<ResultAggregateData | null>(null);
+  const data = previewOverride ?? initialData;
 
   const handleAction = (type: ArtifactType) => {
     if (onAction) {
@@ -105,98 +116,102 @@ export function SoulmateResultView({
   };
 
   const handleRetry = (type: ArtifactType) => {
-    // Simulate re-triggering generation
-    setData((prev) => ({
-      ...prev,
+    // Dev/QA preview only: server state is authoritative for real data.
+    setPreviewOverride((prev) => ({
+      ...(prev ?? initialData),
       [type]: {
-        ...prev[type],
+        ...(prev ?? initialData)[type],
         generation: "PROCESSING",
         error_message: undefined,
       },
     }));
   };
 
-  // Fixture toggle helper for testing all 5 states
+  // Fixture toggle helper for testing all 5 states (dev/QA only)
   const setPresetState = (stateName: CombinedUIState) => {
-    setData((prev) => {
-      switch (stateName) {
-        case "countdown":
-          return {
-            ...prev,
-            sketch: {
-              ...prev.sketch,
-              availability: "LOCKED",
-              generation: "NOT_STARTED",
-              unlock_at: new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
-            },
-            report: {
-              ...prev.report,
-              availability: "LOCKED",
-              generation: "NOT_STARTED",
-              unlock_at: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
-            },
-          };
-        case "ready":
-          return {
-            ...prev,
-            sketch: {
-              ...prev.sketch,
-              availability: "UNLOCKED",
-              generation: "NOT_STARTED",
-            },
-            report: {
-              ...prev.report,
-              availability: "UNLOCKED",
-              generation: "NOT_STARTED",
-            },
-          };
-        case "generating":
-          return {
-            ...prev,
-            sketch: {
-              ...prev.sketch,
-              availability: "UNLOCKED",
-              generation: "PROCESSING",
-            },
-            report: {
-              ...prev.report,
-              availability: "UNLOCKED",
-              generation: "PROCESSING",
-            },
-          };
-        case "completed":
-          return {
-            ...prev,
-            sketch: {
-              ...prev.sketch,
-              availability: "UNLOCKED",
-              generation: "COMPLETED",
-              artifact_url: "/images/email/sketch-female.png",
-            },
-            report: {
-              ...prev.report,
-              availability: "UNLOCKED",
-              generation: "COMPLETED",
-            },
-          };
-        case "failed":
-          return {
-            ...prev,
-            sketch: {
-              ...prev.sketch,
-              availability: "UNLOCKED",
-              generation: "FAILED",
-              error_message: "Network timeout while generating sketch image.",
-            },
-            report: {
-              ...prev.report,
-              availability: "UNLOCKED",
-              generation: "FAILED",
-              error_message: "Failed to compile astrological chart insights.",
-            },
-          };
-      }
-    });
+    const base = previewOverride ?? initialData;
+    switch (stateName) {
+      case "countdown":
+        setPreviewOverride({
+          ...base,
+          sketch: {
+            ...base.sketch,
+            availability: "LOCKED",
+            generation: "NOT_STARTED",
+            unlock_at: new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
+          },
+          report: {
+            ...base.report,
+            availability: "LOCKED",
+            generation: "NOT_STARTED",
+            unlock_at: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
+          },
+        });
+        return;
+      case "ready":
+        setPreviewOverride({
+          ...base,
+          sketch: {
+            ...base.sketch,
+            availability: "UNLOCKED",
+            generation: "NOT_STARTED",
+          },
+          report: {
+            ...base.report,
+            availability: "UNLOCKED",
+            generation: "NOT_STARTED",
+          },
+        });
+        return;
+      case "generating":
+        setPreviewOverride({
+          ...base,
+          sketch: {
+            ...base.sketch,
+            availability: "UNLOCKED",
+            generation: "PROCESSING",
+          },
+          report: {
+            ...base.report,
+            availability: "UNLOCKED",
+            generation: "PROCESSING",
+          },
+        });
+        return;
+      case "completed":
+        setPreviewOverride({
+          ...base,
+          sketch: {
+            ...base.sketch,
+            availability: "UNLOCKED",
+            generation: "COMPLETED",
+            artifact_url: "/images/email/sketch-female.png",
+          },
+          report: {
+            ...base.report,
+            availability: "UNLOCKED",
+            generation: "COMPLETED",
+          },
+        });
+        return;
+      case "failed":
+        setPreviewOverride({
+          ...base,
+          sketch: {
+            ...base.sketch,
+            availability: "UNLOCKED",
+            generation: "FAILED",
+            error_message: "Network timeout while generating sketch image.",
+          },
+          report: {
+            ...base.report,
+            availability: "UNLOCKED",
+            generation: "FAILED",
+            error_message: "Failed to compile astrological chart insights.",
+          },
+        });
+        return;
+    }
   };
 
   return (

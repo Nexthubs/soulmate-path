@@ -12,6 +12,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.artifact import SoulmateArtifact
@@ -232,3 +233,71 @@ async def test_service_defaults_to_server_clock_when_now_omitted(async_db: Async
     # Unlock is in 2026-09-26; a default-clock derivation must not crash and must echo a server instant
     assert result.server_time is not None
     assert result.server_time.tzinfo is not None
+
+
+# ==============================================================================
+# ASSET-01 (Wave 5 audit H6): returning session sees the email-scoped sketch
+# ==============================================================================
+
+
+@pytest.mark.asyncio
+async def test_second_session_same_email_sees_email_scoped_sketch(async_db: AsyncSession):
+    """
+    ASSET-01: one sketch per email. A second paid session with the same email owns no SKETCH
+    row (the partial unique index gives it to the first session), but its Result view must
+    still surface the email's sketch state — not a permanent LOCKED-without-unlock (audit H6).
+    """
+    email = f"sp502shared_{uuid.uuid4().hex[:8]}@example.com"
+    sess_a = await seed_session_with_artifacts(async_db, sketch_generation="COMPLETED")
+    # Force session A and its artifact rows onto the SAME shared email
+    sess_a.email_normalized = email
+    await async_db.commit()
+    a_artifacts = (
+        await async_db.execute(select(SoulmateArtifact).where(SoulmateArtifact.session_id == sess_a.id))
+    ).scalars().all()
+    for artifact in a_artifacts:
+        artifact.email_normalized = email
+    await async_db.commit()
+
+    sess_b = SoulmateSession(
+        public_id=f"test_sess_{uuid.uuid4().hex[:10]}",
+        quiz_version="soulmate-quiz-v1",
+        status="paid",
+        current_step="result",
+        email=email,
+        email_normalized=email,
+        subscription_success_at=FIRST_PAYMENT_AT,
+    )
+    async_db.add(sess_b)
+    await async_db.commit()
+    await async_db.refresh(sess_b)
+    async_db.add(
+        SoulmateArtifact(
+            session_id=sess_b.id,
+            email_normalized=email,
+            artifact_type="REPORT",
+            artifact_version="v1",
+            unlock_at=REPORT_UNLOCK_AT,
+            generation_status="NOT_STARTED",
+        )
+    )
+    await async_db.commit()
+
+    # Session B: no own SKETCH row, own REPORT row
+    result = await ArtifactStatusService.get_artifact_statuses(
+        async_db, sess_b.id, now=FIRST_PAYMENT_AT + timedelta(hours=25), email_normalized=email
+    )
+    # Sketch resolves to the email-scoped row (session A's) with its real unlock + generation state
+    assert result.sketch.unlock_at == SKETCH_UNLOCK_AT
+    assert result.sketch.generation == ArtifactGeneration.COMPLETED
+    assert result.sketch.status == ArtifactStatus.COMPLETED
+    # Report is session B's own row
+    assert result.report.unlock_at == REPORT_UNLOCK_AT
+    assert result.report.status == ArtifactStatus.READY
+
+    # Regression guard: without the email hint the old behavior failed closed (audit H6 symptom)
+    result_no_email = await ArtifactStatusService.get_artifact_statuses(
+        async_db, sess_b.id, now=FIRST_PAYMENT_AT + timedelta(hours=25)
+    )
+    assert result_no_email.sketch.unlock_at is None
+    assert result_no_email.sketch.status == ArtifactStatus.LOCKED

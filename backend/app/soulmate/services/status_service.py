@@ -30,6 +30,7 @@ class ArtifactStatusService:
         db: AsyncSession,
         session_id,
         now: Optional[datetime] = None,
+        email_normalized: Optional[str] = None,
     ) -> SessionArtifactStatuses:
         """
         Derive SKETCH and REPORT statuses for a session from persisted rows.
@@ -38,6 +39,12 @@ class ArtifactStatusService:
         (entitlement not yet initialized / drift) fails closed to LOCKED; the
         SP-501 create/ensure self-heal runs on the next confirmed payment or
         reconciliation and restores the rows.
+
+        ASSET-01 (Wave 5 audit H6): the sketch is unique per EMAIL
+        (uq_soulmate_one_sketch_per_email), so a returning paid session whose
+        sketch row belongs to a prior session must still see that sketch's
+        state — the lookup falls back to the email-scoped row for SKETCH.
+        REPORT remains session-scoped.
         """
         effective_now = now or utc_now()
 
@@ -46,6 +53,13 @@ class ArtifactStatusService:
         by_type = {a.artifact_type: a for a in artifacts}
 
         sketch = by_type.get("SKETCH")
+        if sketch is None and email_normalized:
+            sketch_stmt = select(SoulmateArtifact).where(
+                SoulmateArtifact.email_normalized == email_normalized,
+                SoulmateArtifact.artifact_type == "SKETCH",
+            )
+            sketch = (await db.execute(sketch_stmt)).scalars().first()
+
         report = by_type.get("REPORT")
 
         if sketch is None or report is None:

@@ -44,6 +44,7 @@ async def seed_entitled_session(
     with_artifacts: bool = True,
     sketch_generation: str = "NOT_STARTED",
     sketch_unlock_offset_hours: float = 12.0,
+    email: str | None = None,
 ) -> tuple[SoulmateSession, Subscription | None]:
     """
     Seed a paid session (+ optional subscription/artifacts) with unlock timestamps
@@ -52,7 +53,7 @@ async def seed_entitled_session(
     """
     now = datetime.now(timezone.utc)
     paid_at = now - timedelta(hours=1)
-    email = f"sp503_{uuid.uuid4().hex[:8]}@example.com"
+    email = email or f"sp503_{uuid.uuid4().hex[:8]}@example.com"
 
     sess = SoulmateSession(
         public_id=f"test_sess_{uuid.uuid4().hex[:10]}",
@@ -272,3 +273,58 @@ async def test_result_aggregate_reflects_generation_states(async_db: AsyncSessio
     data = resp.json()
     assert data["sketch"]["status"] == "GENERATING"
     assert data["sketch"]["generation"] == "PROCESSING"
+
+
+@pytest.mark.asyncio
+async def test_result_aggregate_returns_email_scoped_sketch_for_returning_session(async_db: AsyncSession):
+    """
+    ASSET-01 (Wave 5 audit H6): a second paid session with the same email owns no SKETCH row,
+    but its Result aggregate must surface the email-scoped sketch (not a permanent LOCKED
+    without unlock_at) alongside its own session-scoped REPORT.
+    """
+    from datetime import timedelta as _timedelta
+
+    shared_email = f"sp503shared_{uuid.uuid4().hex[:8]}@example.com"
+    sess_a, sub_a = await seed_entitled_session(async_db, email=shared_email)
+    sess_b, sub_b = await seed_entitled_session(
+        async_db, email=shared_email, with_artifacts=False
+    )
+    assert sub_a is not None and sub_b is not None
+    assert sub_a.first_payment_at is not None and sub_b.first_payment_at is not None
+
+    token_b = generate_session_token(sess_b.public_id)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        client.cookies.set("soulmate_sid", token_b)
+        resp = await client.get(RESULT_URL)
+    assert resp.status_code == 200
+    data = resp.json()
+
+    # Sketch: the email-scoped row owned by session A — compare against A's actual row
+    assert data["sketch"]["unlock_at"] is not None
+    a_sketch = (
+        await async_db.execute(
+            select(SoulmateArtifact).where(
+                SoulmateArtifact.session_id == sess_a.id,
+                SoulmateArtifact.artifact_type == "SKETCH",
+            )
+        )
+    ).scalars().first()
+    assert a_sketch is not None
+    assert (
+        datetime.fromisoformat(data["sketch"]["unlock_at"].replace("Z", "+00:00"))
+        == a_sketch.unlock_at
+    )
+
+    # Report: session B's own row (its first payment + 24h), self-healed on read
+    expected_report_unlock = sub_b.first_payment_at + _timedelta(hours=24)
+    assert datetime.fromisoformat(data["report"]["unlock_at"].replace("Z", "+00:00")) == expected_report_unlock
+
+    # Exactly one sketch row still exists for the email (no duplicates created)
+    stmt = select(SoulmateArtifact).where(
+        SoulmateArtifact.email_normalized == shared_email,
+        SoulmateArtifact.artifact_type == "SKETCH",
+    )
+    sketches = list((await async_db.execute(stmt)).scalars().all())
+    assert len(sketches) == 1
+    assert sketches[0].session_id == sess_a.id

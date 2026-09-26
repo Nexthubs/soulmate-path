@@ -153,9 +153,9 @@ describe("SP-409: Subscription Cancellation & Settings Action", () => {
     });
 
     it("renders settings navigation link in SoulmateResultView", async () => {
-      const { SoulmateResultView } = await import("../src/soulmate/components/result");
+      const { SoulmateResultView, DEFAULT_RESULT_FIXTURE } = await import("../src/soulmate/components/result");
       const html = renderToStaticMarkup(
-        <SoulmateResultView userEmail="subscriber@example.com" />
+        <SoulmateResultView initialData={DEFAULT_RESULT_FIXTURE} userEmail="subscriber@example.com" />
       );
 
       expect(html).toContain('href="/soulmate/settings"');

@@ -58,7 +58,15 @@ class ResultService:
         )
         sub = (await db.execute(stmt)).scalars().first()
 
-        statuses = await ArtifactStatusService.get_artifact_statuses(db, session.id, now=effective_now)
+        statuses = await ArtifactStatusService.get_artifact_statuses(
+            db,
+            session.id,
+            now=effective_now,
+            # ASSET-01 (audit H6): sketch is unique per email — a returning session
+            # must see the email-scoped sketch state. Same fallback expression the
+            # SP-501 ensure uses when persisting the row.
+            email_normalized=session.email_normalized or session.email,
+        )
 
         # SP-501 self-heal: placeholder rows missing for an entitled session
         if (statuses.sketch.unlock_at is None or statuses.report.unlock_at is None) and sub is not None:
@@ -72,7 +80,12 @@ class ResultService:
                     paid_at=sub.first_payment_at,
                     db=db,
                 )
-                statuses = await ArtifactStatusService.get_artifact_statuses(db, session.id, now=effective_now)
+                statuses = await ArtifactStatusService.get_artifact_statuses(
+                    db,
+                    session.id,
+                    now=effective_now,
+                    email_normalized=session.email_normalized or session.email,
+                )
 
         subscription_view = None
         if sub is not None:
