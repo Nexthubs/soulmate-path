@@ -51,7 +51,7 @@ import hashlib
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Optional, Protocol, Union
+from typing import Optional, Protocol, Union, runtime_checkable
 from uuid import UUID
 
 from sqlalchemy import or_, select
@@ -105,6 +105,7 @@ def retry_backoff_seconds(attempt: int) -> float:
     return base * (2 ** max(0, attempt - 1))
 
 
+@runtime_checkable
 class SketchResultSink(Protocol):
     """
     App-owned seam between the worker and durable storage (ASSET-01, §11.7).
@@ -689,11 +690,12 @@ class SketchGenerationWorker:
         sink: Optional[SketchResultSink] = None,
         poll_seconds: Optional[float] = None,
     ):
-        # Lazy import avoids a circular import at module load (services package).
+        # Lazy imports avoid circular imports at module load (services package).
+        from app.soulmate.services.object_storage_sink import build_default_sketch_sink
         from app.soulmate.services.openai_image_provider import OpenAIImageProvider
 
         self.provider = provider or OpenAIImageProvider()
-        self.sink = sink or LoggingSketchResultSink()
+        self.sink = sink or build_default_sketch_sink()
         self.poll_seconds = (
             poll_seconds if poll_seconds is not None else settings.job_worker_poll_seconds
         )

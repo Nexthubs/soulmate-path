@@ -1019,7 +1019,7 @@ Use existing job system if present. If not, implement the smallest repo-consiste
 
 **Priority:** P0  
 **Depends:** SP-602/603  
-**Status:** TODO
+**Status:** DONE (2026-09-26, `docs/handoffs/SP-605.md`)  
 **Context refs:** DEV-SPEC §11.7 | Decisions: ASSET-01 | Dependency handoffs: SP-602
 
 
