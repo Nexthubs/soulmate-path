@@ -14,7 +14,10 @@ function ResultContent() {
 
   const sessionId = searchParams.get("session_id") || undefined;
   const isProduction = process.env.NODE_ENV === "production";
-  const isFixture = searchParams.get("fixture") === "true";
+  // RV round-2 Finding 2: fixture preview is a non-production QA affordance only. In
+  // production the parameter is ignored so an entitled user can never freeze the page on
+  // placeholder data by adding ?fixture=true.
+  const isFixture = searchParams.get("fixture") === "true" && !isProduction;
   const guardEnabled = isProduction || (!isFixture && searchParams.get("guard") === "true");
 
   // DEV-SPEC §3: Route Guard for /soulmate/result (First payment confirmed per PAY-AUTH-01)
@@ -158,6 +161,7 @@ function ResultContent() {
           initialData={DEFAULT_RESULT_FIXTURE}
           userEmail={email || "user@example.com"}
           showFixtureToolbar={showToolbar}
+          previewEnabled={isFixture}
         />
       </>
     );
@@ -178,7 +182,9 @@ function ResultContent() {
         clockOffsetMs={liveData ? live.clockOffsetMs : undefined}
         userEmail={email || "user@example.com"}
         showFixtureToolbar={showToolbar}
-        onCountdownZero={liveData ? () => live.onCountdownZero() : undefined}
+        previewEnabled={isFixture}
+        onCountdownZero={liveData ? live.onCountdownZero : undefined}
+        onVisibleRefresh={liveData ? live.refresh : undefined}
       />
     </>
   );

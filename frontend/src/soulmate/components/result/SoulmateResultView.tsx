@@ -39,10 +39,29 @@ export interface SoulmateResultViewProps {
   onAction?: (type: ArtifactType) => void;
 
   /**
+   * Whether dev/QA preview interactions (fixture toolbar, retry preview) may mutate the
+   * displayed data. MUST be false for live data — a preview override would freeze the
+   * cards on a stale snapshot and shadow later polled aggregates (RV round-2, Finding 3).
+   */
+  previewEnabled?: boolean;
+
+  /**
+   * Formal generation-retry handler (Wave 6). When absent in live mode the cards render
+   * the Retry control disabled with the Support entry (RV round-2, Finding 3).
+   */
+  onRetry?: (type: ArtifactType) => void;
+
+  /**
    * Fired when a calibrated countdown reaches zero while the server still reports LOCKED.
    * The parent must refetch the aggregate; the server decides the unlock (SP-504, TIME-01).
    */
   onCountdownZero?: (type: ArtifactType) => void;
+
+  /**
+   * Fired when a card regains tab visibility so the parent can refetch the aggregate and
+   * recalibrate the countdown against a fresh server_time (RV round-2, Finding 4).
+   */
+  onVisibleRefresh?: () => void;
 
   /**
    * Optional accelerated checkout offer price (e.g. from server offer config).
@@ -92,8 +111,11 @@ export function SoulmateResultView({
   clockOffsetMs,
   userEmail = "user@example.com",
   showFixtureToolbar = false,
+  previewEnabled = false,
   onAction,
+  onRetry,
   onCountdownZero,
+  onVisibleRefresh,
   acceleratedPrice,
   className = "",
 }: SoulmateResultViewProps) {
@@ -116,16 +138,27 @@ export function SoulmateResultView({
   };
 
   const handleRetry = (type: ArtifactType) => {
-    // Dev/QA preview only: server state is authoritative for real data.
-    setPreviewOverride((prev) => ({
-      ...(prev ?? initialData),
-      [type]: {
-        ...(prev ?? initialData)[type],
-        generation: "PROCESSING",
-        error_message: undefined,
-      },
-    }));
+    if (previewEnabled) {
+      // Dev/QA preview only (RV round-2, Finding 3): server state is authoritative for
+      // real data — a live preview override would freeze later polled aggregates.
+      setPreviewOverride((prev) => ({
+        ...(prev ?? initialData),
+        [type]: {
+          ...(prev ?? initialData)[type],
+          generation: "PROCESSING",
+          error_message: undefined,
+        },
+      }));
+      return;
+    }
+    // Live path: forward to the formal generation-retry handler (Wave 6). When the page
+    // provides none, cards render Retry disabled with the Support entry instead.
+    onRetry?.(type);
   };
+
+  // Live mode without a formal retry handler disables the failed-state Retry control
+  // (RV round-2, Finding 3).
+  const retryDisabled = !previewEnabled && !onRetry;
 
   // Fixture toggle helper for testing all 5 states (dev/QA only)
   const setPresetState = (stateName: CombinedUIState) => {
@@ -288,7 +321,9 @@ export function SoulmateResultView({
           clockOffsetMs={clockOffsetMs}
           onAction={handleAction}
           onRetry={handleRetry}
+          retryDisabled={retryDisabled}
           onCountdownZero={onCountdownZero}
+          onVisibleRefresh={onVisibleRefresh}
         />
 
         {/* Report Status Card (Figma 102:1332) */}
@@ -299,7 +334,9 @@ export function SoulmateResultView({
           clockOffsetMs={clockOffsetMs}
           onAction={handleAction}
           onRetry={handleRetry}
+          retryDisabled={retryDisabled}
           onCountdownZero={onCountdownZero}
+          onVisibleRefresh={onVisibleRefresh}
         />
 
         {/* Accelerated Early-Access Teaser Banner (Figma 102:1201; PAY-01 Compliance Gate) */}

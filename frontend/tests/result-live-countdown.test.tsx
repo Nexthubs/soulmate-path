@@ -17,6 +17,7 @@ import {
   deriveCombinedUIState,
   evaluateCountdownZeroNotification,
   getCalibratedRemainingSeconds,
+  nextCountdownZeroRetry,
 } from "../src/soulmate/components/result/types";
 import {
   getResultAggregate,
@@ -283,5 +284,62 @@ describe("SP-504: Server-time calibrated countdown", () => {
       expect(apiErr.errorCode).toBe("FORBIDDEN_OWNERSHIP");
       return true;
     });
+  });
+});
+
+describe("RV round-2: countdown zero handling and retry affordances", () => {
+  it("rounds positive sub-second remaining UP so zero means truly unlocked", () => {
+    const serverNowMs = Date.UTC(2026, 8, 26, 12, 0, 0);
+    const offset = 0;
+    // 400ms before unlock: floor would say 0 (early zero); ceil correctly says 1
+    const almostUnlock = new Date(serverNowMs + 400).toISOString();
+    expect(getCalibratedRemainingSeconds(almostUnlock, offset, serverNowMs)).toBe(1);
+    // Exactly at the unlock instant -> 0
+    const atUnlock = new Date(serverNowMs).toISOString();
+    expect(getCalibratedRemainingSeconds(atUnlock, offset, serverNowMs)).toBe(0);
+  });
+
+  it("nextCountdownZeroRetry bounds automatic retries per unlock_at", () => {
+    const unlockAt = "2026-09-26T12:00:00Z";
+    const other = "2026-09-27T12:00:00Z";
+    // No prior state -> first attempt
+    expect(nextCountdownZeroRetry(null, unlockAt)).toBe(1);
+    // Attempts grow until the bound
+    expect(nextCountdownZeroRetry({ unlockAt, attempts: 1 }, unlockAt)).toBe(2);
+    expect(nextCountdownZeroRetry({ unlockAt, attempts: 2 }, unlockAt)).toBe(3);
+    expect(nextCountdownZeroRetry({ unlockAt, attempts: 3 }, unlockAt)).toBeNull();
+    expect(
+      nextCountdownZeroRetry({ unlockAt, attempts: 3 }, unlockAt, 5)
+    ).toBe(4);
+    // A NEW unlock (e.g. corrected base) restarts the bounded chain
+    expect(nextCountdownZeroRetry({ unlockAt, attempts: 3 }, other)).toBe(1);
+  });
+
+  it("failed-state Retry renders disabled with Support entry when no formal handler exists", () => {
+    const state: ArtifactItemState = {
+      unlock_at: "2026-09-22T01:00:00Z",
+      availability: "UNLOCKED",
+      generation: "FAILED",
+      status: "FAILED",
+      error_message: "Generation failed.",
+    };
+
+    const disabledHtml = renderToStaticMarkup(
+      <ResultItemCard type="sketch" state={state} retryDisabled />
+    );
+    expect(disabledHtml).toContain('data-testid="retry-action-button"');
+    expect(disabledHtml).toContain("disabled");
+    expect(disabledHtml).toContain("Support");
+
+    const enabledHtml = renderToStaticMarkup(
+      <ResultItemCard
+        type="sketch"
+        state={state}
+        retryDisabled={false}
+        onRetry={() => {}}
+      />
+    );
+    expect(enabledHtml).toContain('data-testid="retry-action-button"');
+    expect(enabledHtml).not.toContain("disabled");
   });
 });

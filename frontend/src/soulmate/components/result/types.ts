@@ -153,7 +153,9 @@ export function getCalibratedRemainingSeconds(
   if (isNaN(target)) return 0;
   const serverNowMs = clientNowMs + clockOffsetMs;
   const diffMs = target - serverNowMs;
-  return Math.max(0, Math.floor(diffMs / 1000));
+  // Round UP for positive remaining (RV round-2 fix): a sub-second gap must display
+  // 00:00:01, not 00:00:00, so the zero state is reached only at/after the true unlock.
+  return Math.max(0, Math.ceil(diffMs / 1000));
 }
 
 /**
@@ -180,4 +182,31 @@ export function evaluateCountdownZeroNotification(
     return { notify: false, nextLastNotifiedUnlock: null };
   }
   return { notify: false, nextLastNotifiedUnlock: lastNotifiedUnlock };
+}
+
+/** Bounded automatic retries after a zero-countdown refetch (RV round-2, Finding 1). */
+export const COUNTDOWN_ZERO_MAX_AUTO_RETRIES = 3;
+
+/** Spacing between automatic zero-retry requests (RV round-2, Finding 1). */
+export const COUNTDOWN_ZERO_RETRY_INTERVAL_MS = 5000;
+
+export interface CountdownZeroRetryState {
+  unlockAt: string;
+  attempts: number;
+}
+
+/**
+ * Pure decision for the next bounded zero-retry attempt (RV round-2, Finding 1).
+ * Returns the new attempt count (1-based, the first request is the immediate
+ * zero-notification), or null when the bounded retries are exhausted — the card
+ * then shows a manual refresh affordance instead of retrying silently.
+ */
+export function nextCountdownZeroRetry(
+  current: CountdownZeroRetryState | null,
+  unlockAt: string,
+  maxAttempts: number = COUNTDOWN_ZERO_MAX_AUTO_RETRIES
+): number | null {
+  if (!current || current.unlockAt !== unlockAt) return 1;
+  if (current.attempts >= maxAttempts) return null;
+  return current.attempts + 1;
 }

@@ -6,9 +6,12 @@ import {
   ArtifactItemState,
   ArtifactType,
   CombinedUIState,
+  CountdownZeroRetryState,
   calculateServerClockOffsetMs,
   evaluateCountdownZeroNotification,
   getCalibratedRemainingSeconds,
+  nextCountdownZeroRetry,
+  COUNTDOWN_ZERO_RETRY_INTERVAL_MS,
   deriveCombinedUIState,
   formatCountdown,
 } from "./types";
@@ -51,6 +54,19 @@ export interface ResultItemCardProps {
   onRetry?: (type: ArtifactType) => void;
 
   /**
+   * Disables the failed-state Retry button (RV round-2, Finding 3): used when no formal
+   * generation-retry handler exists yet (Wave 6) so live users get the Support entry instead
+   * of a control that would silently do nothing.
+   */
+  retryDisabled?: boolean;
+
+  /**
+   * Fired when the tab regains visibility so the parent can refetch server state and
+   * recalibrate the countdown offset (RV round-2, Finding 4).
+   */
+  onVisibleRefresh?: () => void;
+
+  /**
    * Callback fired once per `unlock_at` when the calibrated countdown reaches zero while the
    * server still reports LOCKED. The parent must refetch server state; the server response —
    * never the local zero — decides whether content unlocks (SP-504, TIME-01).
@@ -90,7 +106,9 @@ export function ResultItemCard({
   titleOverride,
   onAction,
   onRetry,
+  retryDisabled,
   onCountdownZero,
+  onVisibleRefresh,
   className = "",
 }: ResultItemCardProps) {
   const uiState: CombinedUIState = deriveCombinedUIState(state);
@@ -105,22 +123,42 @@ export function ResultItemCard({
       : calculateServerClockOffsetMs(serverTime);
   const initialSeconds = getCalibratedRemainingSeconds(state.unlock_at, effectiveOffsetMs);
   const [remainingSeconds, setRemainingSeconds] = useState(initialSeconds);
+  const [zeroAutoRetriesExhausted, setZeroAutoRetriesExhausted] = useState(false);
+  const zeroRetryRef = useRef<CountdownZeroRetryState | null>(null);
 
   // Every refetch brings a fresh server_time: recalibrate from absolute timestamps (SP-504).
   useEffect(() => {
     setRemainingSeconds(getCalibratedRemainingSeconds(state.unlock_at, effectiveOffsetMs));
   }, [state.unlock_at, effectiveOffsetMs]);
 
-  // Local tick for smooth countdown display only — pure interpolation between server calibrations.
+  // Local tick for smooth countdown display — recomputed from absolute timestamps each tick
+  // (RV round-2 Finding 4): time elapsed while the tab was suspended or the device asleep is
+  // counted, because the value is derived from the server-anchored target, not decremented.
   useEffect(() => {
-    if (uiState !== "countdown" || remainingSeconds <= 0) return;
+    if (uiState !== "countdown") return;
 
     const timer = setInterval(() => {
-      setRemainingSeconds((prev) => Math.max(0, prev - 1));
+      setRemainingSeconds(getCalibratedRemainingSeconds(state.unlock_at, effectiveOffsetMs));
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [uiState, remainingSeconds]);
+  }, [uiState, state.unlock_at, effectiveOffsetMs]);
+
+  // Regaining visibility recalibrates from the persisted anchor immediately (RV round-2
+  // Finding 4) and lets the parent refetch the server state for a fresh offset (TIME-01).
+  useEffect(() => {
+    const recalibrate = () => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+      setRemainingSeconds(getCalibratedRemainingSeconds(state.unlock_at, effectiveOffsetMs));
+      onVisibleRefresh?.();
+    };
+    document.addEventListener("visibilitychange", recalibrate);
+    window.addEventListener("focus", recalibrate);
+    return () => {
+      document.removeEventListener("visibilitychange", recalibrate);
+      window.removeEventListener("focus", recalibrate);
+    };
+  }, [state.unlock_at, effectiveOffsetMs, onVisibleRefresh]);
 
   // Reaching zero while still LOCKED triggers a server refetch — never a local unlock (SP-504).
   const zeroNotifiedUnlockRef = useRef<string | null>(null);
@@ -135,9 +173,40 @@ export function ResultItemCard({
       zeroNotifiedUnlockRef.current = zeroDecision.nextLastNotifiedUnlock;
     }
     if (zeroDecision.notify) {
+      zeroRetryRef.current = { unlockAt: state.unlock_at ?? "", attempts: 1 };
       onCountdownZero?.(type);
     }
-  }, [zeroDecision.notify, zeroDecision.nextLastNotifiedUnlock, onCountdownZero, type]);
+  }, [zeroDecision.notify, zeroDecision.nextLastNotifiedUnlock, onCountdownZero, type, state.unlock_at]);
+
+  // Bounded automatic retries while the server still reports LOCKED at zero (RV round-2
+  // Finding 1): up to COUNTDOWN_ZERO_MAX_AUTO_RETRIES spaced attempts, then a visible
+  // manual refresh affordance. Any positive remaining resets the counter.
+  useEffect(() => {
+    if (uiState !== "countdown" || remainingSeconds > 0 || !state.unlock_at) {
+      zeroRetryRef.current = null;
+      setZeroAutoRetriesExhausted(false);
+      return;
+    }
+    const unlockAt = state.unlock_at;
+    const timer = setInterval(() => {
+      const next = nextCountdownZeroRetry(zeroRetryRef.current, unlockAt);
+      if (next === null) {
+        setZeroAutoRetriesExhausted(true);
+        clearInterval(timer);
+        return;
+      }
+      zeroRetryRef.current = { unlockAt, attempts: next };
+      onCountdownZero?.(type);
+    }, COUNTDOWN_ZERO_RETRY_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [uiState, remainingSeconds, state.unlock_at, onCountdownZero, type]);
+
+  const handleManualZeroRefresh = () => {
+    if (!state.unlock_at) return;
+    zeroRetryRef.current = { unlockAt: state.unlock_at, attempts: 0 };
+    setZeroAutoRetriesExhausted(false);
+    onCountdownZero?.(type);
+  };
 
   return (
     <div
@@ -205,6 +274,19 @@ export function ResultItemCard({
           <p className="text-xs text-neutral-400">
             Locked until server unlock time. Client timer is display-only.
           </p>
+
+          {/* Visible manual refresh entry once bounded zero-retries are exhausted
+              (RV round-2, Finding 1): the server response, not the local zero, decides. */}
+          {remainingSeconds <= 0 && zeroAutoRetriesExhausted && (
+            <button
+              type="button"
+              data-testid="countdown-refresh-btn"
+              onClick={handleManualZeroRefresh}
+              className="px-4 py-2 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-semibold transition-colors cursor-pointer"
+            >
+              Refresh status ↻
+            </button>
+          )}
         </div>
       )}
 
@@ -358,7 +440,13 @@ export function ResultItemCard({
               type="button"
               data-testid="retry-action-button"
               onClick={() => onRetry && onRetry(type)}
-              className="flex-1 h-[46px] rounded-xl bg-red-600 hover:bg-red-700 text-white font-sans font-semibold text-[14px] transition-colors cursor-pointer"
+              disabled={retryDisabled}
+              title={retryDisabled ? "Generation retry is not available yet — contact support." : undefined}
+              className={`flex-1 h-[46px] rounded-xl text-white font-sans font-semibold text-[14px] transition-colors ${
+                retryDisabled
+                  ? "bg-red-300 cursor-not-allowed select-none"
+                  : "bg-red-600 hover:bg-red-700 cursor-pointer"
+              }`}
             >
               Retry
             </button>

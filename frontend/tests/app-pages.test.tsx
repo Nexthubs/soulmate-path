@@ -235,6 +235,24 @@ describe("App Router Page-Level Behavioral Integration (M-3 Audit Remediation)",
       }
     });
 
+    it("RV round-2: production ignores ?fixture=true and takes the live server-data path", () => {
+      const originalEnv = process.env.NODE_ENV;
+      try {
+        (process.env as Record<string, string | undefined>).NODE_ENV = "production";
+        mockSearchParams = new URLSearchParams({ fixture: "true" });
+
+        const html = renderToStaticMarkup(<SoulmateResultPage />);
+        // Live path (guard verification first) — never fixture placeholder content
+        expect(html).toContain("data-testid=\"result-guard-loading\"");
+        expect(html).not.toContain("HAND-CRAFTING");
+        expect(html).not.toContain("Just 5 minutes");
+        expect(html).not.toContain('data-testid="fixture-toolbar"');
+        expect(html).not.toContain('data-testid="result-fixture-banner"');
+      } finally {
+        (process.env as Record<string, string | undefined>).NODE_ENV = originalEnv;
+      }
+    });
+
     it("renders demo preview banner in dev mode", () => {
       const html = renderToStaticMarkup(<SoulmateResultPage />);
       expect(html).toContain("data-testid=\"result-fixture-banner\"");
