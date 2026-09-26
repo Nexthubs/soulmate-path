@@ -397,3 +397,19 @@ class ResultAggregateResponse(BaseModel):
     report: ArtifactStatusView = Field(..., description="Report countdown/status view")
 
     model_config = ConfigDict(from_attributes=True, extra="ignore")
+
+
+class SketchGenerationResponse(BaseModel):
+    """
+    Response for POST /artifacts/sketch/generate (DEV-SPEC §15.10, SP-603).
+    Returns the authoritative sketch status after enqueue (GENERATING/COMPLETED/FAILED)
+    plus the durable job state when a generation job is attached.
+    """
+    server_time: datetime = Field(..., description="Server clock UTC instant used for this derivation")
+    sketch: ArtifactStatusView = Field(..., description="Sketch countdown/status view after enqueue")
+    job_status: Optional[str] = Field(
+        default=None,
+        description="Durable job state (QUEUED/PROCESSING/COMPLETED/FAILED_RETRYABLE/FAILED_PERMANENT); None when no job is attached (e.g. already completed)",
+    )
+
+    model_config = ConfigDict(from_attributes=True, extra="ignore")

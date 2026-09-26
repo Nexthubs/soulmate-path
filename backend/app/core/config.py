@@ -122,6 +122,9 @@ class Settings(BaseSettings):
     # --------------------------------------------------------------------------
     # 5. AI Image Generation / Sketch (Spec §11, ASSET-01, PROMPT-01)
     # --------------------------------------------------------------------------
+    # OPENAI_BASE_URL allows OpenAI-compatible gateways (e.g. self-hosted proxies);
+    # it must point to the API root (no trailing /images/generations path).
+    openai_base_url: str = "https://api.openai.com/v1"
     openai_api_key: Optional[str] = None
     soulmate_image_model: str = "gpt-image-2"
     soulmate_image_size: str = "1024x1536"
@@ -151,6 +154,8 @@ class Settings(BaseSettings):
     # --------------------------------------------------------------------------
     redis_url: Optional[str] = None
     job_worker_concurrency: int = 4
+    job_worker_enabled: bool = True
+    job_worker_poll_seconds: float = 2.0
 
     @property
     def is_production(self) -> bool:

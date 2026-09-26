@@ -1,4 +1,5 @@
 from fastapi import APIRouter
+from app.api.soulmate.artifacts import router as artifacts_router
 from app.api.soulmate.guard import router as guard_router
 from app.api.soulmate.health import router as health_router
 from app.api.soulmate.quiz import router as quiz_router
@@ -45,6 +46,9 @@ api_router.include_router(ledger_router, prefix="/ledger", tags=["Payment Ledger
 
 # Mount Result aggregate endpoint (DEV-SPEC §10.4, SP-503)
 api_router.include_router(result_router, prefix="/result", tags=["Result"])
+
+# Mount Sketch/Report artifact endpoints (DEV-SPEC §15.10, SP-603)
+api_router.include_router(artifacts_router, prefix="/artifacts", tags=["Artifacts"])
 
 # Also mount aliases per DEV-SPEC §15 router table
 api_router.add_api_route(

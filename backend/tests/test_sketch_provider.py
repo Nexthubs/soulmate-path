@@ -23,12 +23,14 @@ from app.soulmate.domain.sketch_models import (
     SketchProviderError,
 )
 from app.soulmate.services.openai_image_provider import (
-    OPENAI_IMAGES_GENERATIONS_URL,
+    OPENAI_DEFAULT_BASE_URL,
     OpenAIImageProvider,
+    images_generations_url,
 )
 
 FAKE_API_KEY = "sk-test-secret-key-12345-do-not-leak"
 FAKE_IMAGE_BYTES = b"fake-webp-image-bytes-0xdeadbeef"
+GEN_URL = images_generations_url(OPENAI_DEFAULT_BASE_URL)
 
 
 def _b64_payload() -> str:
@@ -72,6 +74,34 @@ async def test_swappable_fake_provider_satisfies_interface():
     assert isinstance(FakeProvider(), SketchImageProvider)
 
 
+def test_images_generations_url_strips_trailing_slash():
+    assert images_generations_url("https://gw.test/v1") == "https://gw.test/v1/images/generations"
+    assert images_generations_url("https://gw.test/v1/") == "https://gw.test/v1/images/generations"
+
+
+@pytest.mark.asyncio
+async def test_custom_compatible_endpoint_base_url_is_used():
+    """OPENAI_BASE_URL must target any OpenAI-compatible gateway's API root."""
+    captured: dict = {}
+    gateway_root = "https://gw.internal.test/v1"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        return httpx.Response(200, json={"created": 1, "data": [{"b64_json": _b64_payload()}]})
+
+    transport = httpx.MockTransport(handler)
+    provider = OpenAIImageProvider(
+        api_key=FAKE_API_KEY,
+        base_url=gateway_root + "/",  # trailing slash must be normalized away
+        http_client=httpx.AsyncClient(transport=transport),
+    )
+    result = await provider.generate_image("portrait prompt")
+    await provider.close()
+
+    assert captured["url"] == images_generations_url(gateway_root)
+    assert result.provider_request_id is None  # gateway sent no x-request-id; tolerated
+
+
 @pytest.mark.asyncio
 async def test_request_uses_config_defaults_and_spec_target_model():
     captured: dict = {}
@@ -89,7 +119,7 @@ async def test_request_uses_config_defaults_and_spec_target_model():
     result = await provider.generate_image("A pencil portrait of {nothing}.")
     await provider.close()
 
-    assert captured["url"] == OPENAI_IMAGES_GENERATIONS_URL
+    assert captured["url"] == GEN_URL
     # Settings defaults (§22): model defaults to the spec target gpt-image-2.
     assert provider.model == settings.soulmate_image_model == "gpt-image-2"
     assert provider.size == settings.soulmate_image_size == "1024x1536"
@@ -303,7 +333,7 @@ async def test_url_fallback_downloads_bytes_immediately():
     """ASSET-01: temporary provider URLs are fetched to bytes, kept for tracing only."""
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if str(request.url).startswith(OPENAI_IMAGES_GENERATIONS_URL):
+        if str(request.url).startswith(GEN_URL):
             return httpx.Response(
                 200,
                 json={"created": 1, "data": [{"url": "https://tmp.openai.test/img.webp"}]},
@@ -362,7 +392,7 @@ async def test_undecodable_b64_is_permanent():
 @pytest.mark.asyncio
 async def test_url_download_failure_is_retryable():
     def handler(request: httpx.Request) -> httpx.Response:
-        if str(request.url).startswith(OPENAI_IMAGES_GENERATIONS_URL):
+        if str(request.url).startswith(GEN_URL):
             return httpx.Response(200, json={"created": 1, "data": [{"url": "https://tmp.openai.test/img.webp"}]})
         return httpx.Response(503, text="slow down")
 

@@ -41,6 +41,14 @@
 - **Affected:** SP-603..607.
 - **Source/evidence:** DEV-SPEC v1.2.
 
+### IMGPROVIDER-01 — OpenAI-compatible image endpoint configuration
+
+- **Status:** RESOLVED
+- **Date:** 2026-09-26
+- **Context:** the deployment will consume `gpt-image-2` through an OpenAI-compatible gateway rather than the official API host; the sketch provider must be pointable at any compatible endpoint without code changes.
+- **Decision:** the image provider base URL is configuration (`OPENAI_BASE_URL`, default `https://api.openai.com/v1`, API root without `/images/generations`), alongside `OPENAI_API_KEY` and `SOULMATE_IMAGE_MODEL` (spec target default `gpt-image-2`). The adapter contract, request shape, and error taxonomy remain the DEV-SPEC §25 OpenAI images API; compatible-endpoint behavior is verified at the M4 live-provider gate.
+- **Affected:** SP-602, SP-603, M4 review evidence, M6 production configuration.
+
 ## Open decisions / TBD register
 
 ### PAY-01 — First-month promotional price

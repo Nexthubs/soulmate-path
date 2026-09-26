@@ -1,10 +1,11 @@
 """
-OpenAI image provider adapter (DEV-SPEC §11, §22, §25; Decisions: ASSET-01, SP-602).
+OpenAI-compatible image provider adapter (DEV-SPEC §11, §22, §25; Decisions: ASSET-01, SP-602).
 
 Implements the app-owned `SketchImageProvider` interface against
-`POST /v1/images/generations` (spec target model `gpt-image-2`). All request
-parameters come from server configuration (§22); the API key never leaves this
-module, is never logged, and never appears in error details or result payloads.
+`POST {OPENAI_BASE_URL}/images/generations` (spec target model `gpt-image-2`).
+All request parameters come from server configuration (§22); the API key never
+leaves this module, is never logged, and never appears in error details or
+result payloads.
 """
 
 import base64
@@ -25,18 +26,25 @@ from app.soulmate.domain.sketch_models import (
 
 logger = logging.getLogger(__name__)
 
-OPENAI_IMAGES_GENERATIONS_URL = "https://api.openai.com/v1/images/generations"
+# Official API root; overridable via OPENAI_BASE_URL for OpenAI-compatible endpoints.
+OPENAI_DEFAULT_BASE_URL = "https://api.openai.com/v1"
 
 _NETWORK_ERROR_CODE = "NETWORK_ERROR"
 _TIMEOUT_ERROR_CODE = "TIMEOUT"
 
 
+def images_generations_url(base_url: str) -> str:
+    """Builds the images/generations URL from an API root (no trailing slash)."""
+    return base_url.rstrip().rstrip("/") + "/images/generations"
+
+
 class OpenAIImageProvider:
     """
-    Async OpenAI images adapter satisfying `SketchImageProvider`.
+    Async OpenAI-images-compatible adapter satisfying `SketchImageProvider`.
 
-    Model/size/quality/format default to §22 configuration; explicit constructor
-    arguments exist for tests and future per-call overrides only.
+    Base URL/model/size/quality/format default to §22 configuration; explicit
+    constructor arguments exist for tests and future per-call overrides only.
+    The base URL may point at any OpenAI-compatible endpoint.
     """
 
     provider_name = "openai"
@@ -44,6 +52,7 @@ class OpenAIImageProvider:
     def __init__(
         self,
         api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
         model: Optional[str] = None,
         size: Optional[str] = None,
         quality: Optional[str] = None,
@@ -52,6 +61,8 @@ class OpenAIImageProvider:
         timeout: float = 120.0,
     ):
         self.api_key = api_key or settings.openai_api_key
+        self.base_url = (base_url or settings.openai_base_url or OPENAI_DEFAULT_BASE_URL).rstrip("/")
+        self.images_url = images_generations_url(self.base_url)
         self.model = model or settings.soulmate_image_model
         self.size = size or settings.soulmate_image_size
         self.quality = quality or settings.soulmate_image_quality
@@ -118,7 +129,7 @@ class OpenAIImageProvider:
         client = await self._get_client()
         try:
             resp = await client.post(
-                OPENAI_IMAGES_GENERATIONS_URL,
+                self.images_url,
                 json=payload,
                 headers=headers,
             )

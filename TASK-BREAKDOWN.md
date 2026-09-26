@@ -982,7 +982,7 @@ Implement the PRD-provided prompt as a versioned template with explicit inputs.
 
 **Priority:** P0  
 **Depends:** SP-501, SP-602  
-**Status:** TODO
+**Status:** DONE (2026-09-26, `docs/handoffs/SP-603.md`)  
 **Context refs:** DEV-SPEC §11.4, §11.6 | Decisions: ASSET-01 | Dependency handoffs: SP-501, SP-602
 
 
