@@ -43,3 +43,21 @@
 ## Disposition
 
 The M4 "Sketch Ready" exit criteria are now evidenced end-to-end with real money-flow and real provider/storage integrations. Remaining for the M4 review artifact: independent reviewer pass over the handoffs (SP-601..607 + WAVE6-REVIEW-FIXES + this evidence doc).
+
+## Addendum — provider-call audit (2026-09-27, product-owner observation)
+
+The owner observed 8 gateway consumption rows for `gpt-image-2` and questioned the request policy. Full audit against our DB (every provider call leaves a `provider_request_id` on the job/artifact):
+
+| Gateway row (local) | Attribution | Request id |
+|---|---|---|
+| 11:00:14 (in 1410 / out 3168) | **Real gate-run success** (attempt 4 after in-run fixes) | `b3980150…` |
+| 11:11:15 / 11:11:57 / 11:13:01 / 11:15:06 (in 1394 / out 3168) | **Test-suite drain**: the live backend's lifespan workers claimed jobs enqueued by the backend test suite executed while the server was up — a process-hygiene violation of our own documented rule ("never run pytest with a live server"), not a product defect | `ce03ccde…`, `59a85b4b…`, `408e892f…`, `7ca7a63b…` |
+| 11:11:21 / 11:13:05 / 11:15:00 (in 697 / out ~166) | **Not ours**: no matching `provider_request_id` exists in our DB; our adapter makes exactly one POST per attempt, so no code path emits a second smaller call. Occurring seconds after each completion, these are most plausibly gateway-internal rows (e.g. moderation/metadata pass or upstream retry) or unrelated traffic on the shared token — owner can expand a row to inspect the prompt | — |
+
+Also accounted: the real gate generation's earlier 3 attempts (format-gate failures under the old sink code, ~09:02–09:05 local, request ids `aec45aff…`/`e27554ea…` + one overwritten) predate the screenshot's visible window — total real spend for the user generation = 4 calls across its defect-fixing lifetime, 1 per attempt per the §11.6 retry budget.
+
+**Remediation:**
+- Dev DB purged: 150 leftover test jobs + 2053 test artifacts deleted; only the gate session's COMPLETED job/artifact remain. The ~136 stale QUEUED garbage jobs (which would fail cheaply in phase A without provider calls but pollute the queue) are gone.
+- Re-verified after cleanup: worker silent (no new calls), gate artifact/R2 object/API all intact.
+- Standing rule re-confirmed and now practiced: the backend must be stopped (or `JOB_WORKER_ENABLED=false`) before running the backend test suite; durable-queue drain-on-start is correct production behavior but burns real tokens on shared-dev-DB test data.
+- Pair spacing (<10s) explained: `JOB_WORKER_CONCURRENCY=4` workers poll simultaneously and claim different jobs within milliseconds when multiple are QUEUED.
