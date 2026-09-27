@@ -8,6 +8,7 @@ import { getCurrentSession } from "@/soulmate/api/session";
 import { useRouteGuard } from "@/soulmate/hooks/useRouteGuard";
 import { SOULMATE_ROUTES } from "@/soulmate/domain";
 import { PayPalSubscriptionButton, PayPalSubscriptionApprovalData } from "@/soulmate/components/subscribe";
+import { trackOnce, trackSoulmateEvent } from "@/soulmate/analytics";
 
 function SubscribeContent() {
   const router = useRouter();
@@ -90,6 +91,25 @@ function SubscribeContent() {
     };
   }, [sessionId]);
 
+  // §18.1 subscribe view: price disclosure properties, once per page instance
+  // (fixture preview and guard-denied renders stay untracked).
+  const subscribeViewTrackedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (subscribeViewTrackedRef.current) return;
+    if (isFixture) return;
+    if (loading) return;
+    if (guardEnabled && guard.allowed === false) return;
+    subscribeViewTrackedRef.current = true;
+    trackOnce("subscribe_view", {
+      name: "soulmate_subscribe_view",
+      properties: {
+        intro_price: offer?.intro_price ?? null,
+        regular_price: offer?.regular_price ?? null,
+        currency: offer?.currency ?? null,
+      },
+    });
+  }, [isFixture, loading, offer, guardEnabled, guard.allowed]);
+
   /**
    * Handle buyer approval from PayPal Subscriptions JS SDK (DEV-SPEC §9.3, SP-402).
    * HIGH-RISK INVARIANT (PAY-AUTH-01):
@@ -97,6 +117,12 @@ function SubscribeContent() {
    * It strictly forwards subscriptionID to the server verification flow via payment-processing route.
    */
   const handleApprove = (data: PayPalSubscriptionApprovalData) => {
+    // §18.1 client approval (never entitlement authority — PAY-AUTH-01):
+    // the payment truth is confirmed server-side on the processing route.
+    trackSoulmateEvent({
+      name: "soulmate_paypal_approved",
+      properties: { subscription_id: data.subscriptionID },
+    });
     const params = new URLSearchParams(searchParams.toString());
     params.set("subscription_id", data.subscriptionID);
     if (sessionId) {

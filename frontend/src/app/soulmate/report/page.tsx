@@ -7,6 +7,7 @@ import { ReportRenderer } from "@/soulmate/components/report";
 import { useRouteGuard } from "@/soulmate/hooks/useRouteGuard";
 import { deriveReportViewState, useReportStatus } from "@/soulmate/hooks/useReportStatus";
 import { SOULMATE_ROUTES, sanitizeInternalRoute } from "@/soulmate/domain";
+import { trackArtifactUnlocked, trackSoulmateEvent } from "@/soulmate/analytics";
 
 function SharedPageChrome({ children }: { children: React.ReactNode }) {
   return (
@@ -79,6 +80,30 @@ function ReportPageContent() {
   }, [isLive, viewState, router]);
 
   const backUrl = sanitizeInternalRoute(searchParams.get("backUrl"), SOULMATE_ROUTES.RESULT);
+
+  // §18.1: first live unlocked view of the report page also marks the unlock
+  // (deduplicated with the Result dashboard by the analytics wrapper); the
+  // rendered validated content marks `soulmate_report_viewed`.
+  const reportUnlockedTrackedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!isLive || guard.allowed === false) return;
+    if (viewState === "locked" || viewState === null) return;
+    if (reportUnlockedTrackedRef.current) return;
+    reportUnlockedTrackedRef.current = true;
+    // Identity is cookie-bound on this page (no public session id in scope).
+    trackArtifactUnlocked("report", {});
+  }, [isLive, guard.allowed, viewState]);
+
+  const reportViewedTrackedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!isLive || effectiveViewState !== "completed" || !liveContent) return;
+    if (reportViewedTrackedRef.current) return;
+    reportViewedTrackedRef.current = true;
+    trackSoulmateEvent({
+      name: "soulmate_report_viewed",
+      properties: { report_version: liveContent.schemaVersion },
+    });
+  }, [isLive, effectiveViewState, liveContent]);
 
   if (guard.allowed === false && guardEnabled) {    return (
       <SharedPageChrome>

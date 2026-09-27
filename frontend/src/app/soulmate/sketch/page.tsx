@@ -6,6 +6,7 @@ import { SketchViewer, SketchViewState } from "@/soulmate/components/sketch";
 import { useRouteGuard } from "@/soulmate/hooks/useRouteGuard";
 import { useSketchStatus, deriveSketchViewState } from "@/soulmate/hooks/useSketchStatus";
 import { SOULMATE_ROUTES, sanitizeInternalRoute } from "@/soulmate/domain";
+import { trackArtifactUnlocked, trackSoulmateEvent } from "@/soulmate/analytics";
 
 function SketchPageContent() {
   const searchParams = useSearchParams();
@@ -73,6 +74,32 @@ function SketchPageContent() {
     : liveImageUrl;
   const backUrl = sanitizeInternalRoute(searchParams.get("backUrl"));
   const showToolbar = isFixture;
+
+  // §18.1: first live unlocked view of the sketch page also marks the unlock
+  // (deduplicated with the Result dashboard by the analytics wrapper), and the
+  // displayed durable asset marks `soulmate_sketch_viewed`.
+  const sketchUnlockedTrackedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!isLive || guard.allowed === false) return;
+    if (viewState === "locked" || viewState === null) return;
+    if (sketchUnlockedTrackedRef.current) return;
+    sketchUnlockedTrackedRef.current = true;
+    // Identity is cookie-bound on this page (no public session id in scope).
+    trackArtifactUnlocked("sketch", {});
+  }, [isLive, guard.allowed, viewState]);
+
+  const sketchViewedTrackedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!isLive || effectiveViewState !== "completed" || !liveImageUrl) return;
+    if (sketchViewedTrackedRef.current) return;
+    sketchViewedTrackedRef.current = true;
+    trackSoulmateEvent({
+      name: "soulmate_sketch_viewed",
+      // The artifact version is not exposed by the artifact status API yet;
+      // null documents the intent until the response carries it.
+      properties: { artifact_version: null },
+    });
+  }, [isLive, effectiveViewState, liveImageUrl]);
 
   if (guard.allowed === false && guardEnabled) {
     return (

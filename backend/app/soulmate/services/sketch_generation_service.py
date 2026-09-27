@@ -74,6 +74,7 @@ from app.db.base import utc_now
 from app.db.models.artifact import AIGenerationJob, SoulmateArtifact
 from app.db.models.session import SoulmateProfile, SoulmateSession
 from app.db.session import AsyncSessionLocal
+from app.soulmate.analytics import track_funnel_event
 from app.soulmate.domain.artifact_status import normalize_generation
 from app.soulmate.domain.profile import ProfileValidationError, SoulmateProfileV1
 from app.soulmate.domain.sketch_models import SketchGenerationResult, SketchProviderError
@@ -466,6 +467,11 @@ class SketchGenerationService:
                         "Sketch job %s terminated %s at claim time (crash-loop budget exhausted)",
                         job.id, JOB_FAILED_RETRYABLE,
                     )
+                    track_funnel_event(
+                        "soulmate_sketch_generation_failed",
+                        session_id=str(artifact.session_id) if artifact is not None else None,
+                        properties={"error_code": BUDGET_EXHAUSTED_CODE, "attempts": job.attempt or 0},
+                    )
                     return JOB_FAILED_RETRYABLE
                 claim_attempt = job.attempt or 0
 
@@ -570,6 +576,15 @@ class SketchGenerationService:
                     )
 
                 await db.commit()
+                # §18.1: the provider call for this claim has started.
+                track_funnel_event(
+                    "soulmate_sketch_generation_started",
+                    session_id=str(artifact.session_id),
+                    properties={
+                        "model": settings.soulmate_image_model,
+                        "prompt_version": rendered.prompt_version,
+                    },
+                )
                 return _ClaimedWork(
                     job_id=job.id,
                     artifact_id=artifact.id,
@@ -691,6 +706,10 @@ class SketchGenerationService:
                         "storage_key": storage_key,
                     },
                 )
+                # Captured inside the fenced txn for the post-commit §18.1 event.
+                gen_started_at = artifact.generation_started_at
+                gen_completed_at = artifact.completed_at
+                gen_session_id = artifact.session_id
 
             logger.info(
                 "Sketch generation completed for artifact %s (job %s, model=%s, request_id=%s, key=%s)",
@@ -699,6 +718,14 @@ class SketchGenerationService:
                 result.model,
                 result.provider_request_id,
                 storage_key,
+            )
+            latency_ms = None
+            if gen_started_at is not None and gen_completed_at is not None:
+                latency_ms = int((gen_completed_at - gen_started_at).total_seconds() * 1000)
+            track_funnel_event(
+                "soulmate_sketch_generation_completed",
+                session_id=str(gen_session_id) if gen_session_id else None,
+                properties={"latency_ms": latency_ms, "attempts": claim_attempt},
             )
             return JOB_COMPLETED
 
@@ -832,6 +859,12 @@ class SketchGenerationService:
         logger.warning(
             "Sketch job %s reached terminal %s after %s attempt(s) (error_code=%s, provider_code=%s)",
             job.id, status, claim_attempt, error_code, provider_code,
+        )
+        # §18.1 terminal failure only — bounded retries stay off the funnel.
+        track_funnel_event(
+            "soulmate_sketch_generation_failed",
+            session_id=str(artifact.session_id) if artifact is not None else None,
+            properties={"error_code": error_code, "attempts": claim_attempt},
         )
         return status
 

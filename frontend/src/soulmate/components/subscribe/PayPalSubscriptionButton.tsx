@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { loadScript, PayPalScriptOptions, PayPalNamespace } from "@paypal/paypal-js";
+import { trackSoulmateEvent } from "@/soulmate/analytics";
 
 export interface PayPalSubscriptionApprovalData {
   subscriptionID: string;
@@ -100,6 +101,9 @@ export function PayPalSubscriptionButton({
             label: "subscribe",
           },
           createSubscription: (_data: unknown, actions: any) => {
+            // §18.1 checkout start: the buyer clicked the PayPal button and the
+            // subscription creation began (plan code only — no PII).
+            trackSoulmateEvent({ name: "soulmate_paypal_start", properties: { plan_id: planId } });
             return actions.subscription.create({
               plan_id: planId,
               custom_id: sessionId,

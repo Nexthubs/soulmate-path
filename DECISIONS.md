@@ -176,6 +176,18 @@
 - **Source/evidence:** owner directive 2026-09-27; docs/handoffs/SP-805.md.
 - **Supersedes / superseded by:** —
 
+### ANALYTICS-01 — Production analytics transport/sink for funnel events
+
+- **Status:** OPEN
+- **Date:** 2026-09-27
+- **Owner/approver:** TBD (product owner; M6 release QA)
+- **Context:** SP-901 shipped the §18.1 funnel event contract with central wrappers on both sides (`frontend/src/soulmate/analytics`, `backend/app/soulmate/analytics.py`). No third-party analytics provider or internal collector endpoint is approved yet; §18.2 forbids raw email to third-party systems and the privacy-safe default is to drop. The default sink therefore logs to console in development and drops in production, so production funnel data is currently not captured anywhere.
+- **Decision (needed):** choose and approve the production analytics destination (third-party provider with a privacy-reviewed adapter, or an internal collector writing to structured logs/DB), then wire it via `setSoulmateAnalyticsSink` (frontend) / the §19.1 log pipeline (backend). Instrumented call sites must not change.
+- **Rationale:** choosing a provider is a product/privacy decision outside SP-901's scope; the wrapper keeps the decision reversible and contained.
+- **Affected:** SP-901 (sink wiring), SP-902/903/904 (metrics/alerts read from the same stream), M6 release QA.
+- **Source/evidence:** docs/handoffs/SP-901.md (§2, §9).
+- **Supersedes / superseded by:** —
+
 ## Decision entry template
 
 ```md

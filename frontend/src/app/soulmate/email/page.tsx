@@ -11,6 +11,7 @@ import {
   saveSessionEmail,
   EmailSummaryResponse,
 } from "@/soulmate/api/session";
+import { deriveEmailDomainType, trackOnce, trackSoulmateEvent } from "@/soulmate/analytics";
 
 function EmailPageContent() {
   const router = useRouter();
@@ -134,6 +135,17 @@ function EmailPageContent() {
   const effectiveUserGender =
     summaryData?.user_gender || userGender;
 
+  // §18.1 email page view: gender option code only, once per page instance.
+  const emailViewTrackedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (emailViewTrackedRef.current || (guardEnabled && guard.allowed === false)) return;
+    emailViewTrackedRef.current = true;
+    trackSoulmateEvent({
+      name: "soulmate_email_view",
+      properties: { partner_gender: preferredPartnerGender },
+    });
+  }, []);
+
   const handleSubmit = async (email: string) => {
     // If route guard explicitly denied access, block submission
     if (guardEnabled && guard.allowed === false) {
@@ -180,6 +192,12 @@ function EmailPageContent() {
         nextRoute = res.next;
       }
     }
+
+    // §18.1/§18.2: the raw email NEVER enters analytics — domain bucket only.
+    trackOnce("email_submitted", {
+      name: "soulmate_email_submitted",
+      properties: { domain_type: deriveEmailDomainType(email) },
+    });
 
     const params = new URLSearchParams();
     params.set("preferred_partner_gender", effectivePreferredPartnerGender);

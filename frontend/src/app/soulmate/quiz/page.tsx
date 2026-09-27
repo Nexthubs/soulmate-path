@@ -16,6 +16,7 @@ import {
   SessionCurrentResponse,
 } from "@/soulmate/api/session";
 import { getSafeUserErrorMessage } from "@/soulmate/api/errors";
+import { trackOnce, trackSoulmateEvent } from "@/soulmate/analytics";
 import quizData from "@/soulmate/quiz/soulmate-quiz-v1.json";
 
 type PreviewQuestionType = "single" | "date" | "multi";
@@ -60,6 +61,10 @@ function QuizPageContent() {
   const [error, setError] = useState<{ message: string; onRetry?: () => void } | null>(null);
 
   const questionStartTime = useRef<number>(Date.now());
+  // §18.1 quiz funnel tracking state (one-shot start + per-question duration base)
+  const quizStartedTrackedRef = useRef(false);
+  const quizStartedAtRef = useRef<number | null>(null);
+  const activeQuestionRef = useRef<string | null>(null);
 
   // Dynamic quiz configuration matching the session's pinned version (DEV-SPEC §15.2)
   const [activeQuizConfig, setActiveQuizConfig] = useState<QuizConfig>(quizData as QuizConfig);
@@ -68,6 +73,27 @@ function QuizPageContent() {
   const currentQuestion =
     activeQuizConfig.questions.find((q) => q.code === activeStepCode) ||
     activeQuizConfig.questions[0];
+
+  // §18.1 quiz_started (once per session) + question_view (per rendered question).
+  // Fires only for live question rendering — fixture preview and loading skeletons
+  // stay untracked so funnel data reflects real question views.
+  React.useEffect(() => {
+    if (isFixtureMode || isLoading) return;
+    if (activeQuestionRef.current === activeStepCode) return;
+    activeQuestionRef.current = activeStepCode;
+    if (!quizStartedTrackedRef.current) {
+      quizStartedTrackedRef.current = true;
+      quizStartedAtRef.current = Date.now();
+      trackOnce("quiz_started", {
+        name: "soulmate_quiz_started",
+        properties: { quiz_version: sessionData?.quiz_version ?? null },
+      });
+    }
+    trackSoulmateEvent({
+      name: "soulmate_question_view",
+      properties: { question_code: activeStepCode },
+    });
+  }, [activeStepCode, isFixtureMode, isLoading, sessionData]);
 
   // Helper to pre-populate answers for a question (Acceptance: refresh at any question restores answer/state)
   const restoreAnswerForQuestion = (qCode: string, savedAnswer?: SavedAnswerDetail, config?: QuizConfig) => {
@@ -202,6 +228,17 @@ function QuizPageContent() {
     };
   }, [isFixtureMode, codeParam, router]);
 
+  // §18.1 quiz_completed: the quiz ends when an answer resolves to any
+  // non-question step (transition/interstitial/email). One-shot per session.
+  const trackQuizCompleted = () => {
+    const total =
+      quizStartedAtRef.current != null ? Date.now() - quizStartedAtRef.current : null;
+    trackOnce("quiz_completed", {
+      name: "soulmate_quiz_completed",
+      properties: { total_duration: total },
+    });
+  };
+
   // Helper to advance to next authoritative step returned by backend
   const advanceToNextStep = (nextStep: string) => {
     setIsSubmitting(false);
@@ -267,6 +304,17 @@ function QuizPageContent() {
         };
       }
 
+      // §18.1: save success, option code only (§18.2 — never the raw answer text)
+      trackSoulmateEvent({
+        name: "soulmate_question_answered",
+        properties: {
+          question_code: activeStepCode,
+          option_codes: [optionCode],
+          duration_ms: duration,
+        },
+      });
+      if (!res.next_step.startsWith("q")) trackQuizCompleted();
+
       // 150ms visual selection feedback before advancing (DEV-SPEC §4.2)
       setTimeout(() => {
         advanceToNextStep(res.next_step);
@@ -316,6 +364,18 @@ function QuizPageContent() {
         };
       }
 
+      // §18.2: the raw date value (DOB) is PII — the analytics event carries
+      // the question + duration only, with NO option_codes content.
+      trackSoulmateEvent({
+        name: "soulmate_question_answered",
+        properties: {
+          question_code: activeStepCode,
+          option_codes: [],
+          duration_ms: duration,
+        },
+      });
+      if (!res.next_step.startsWith("q")) trackQuizCompleted();
+
       advanceToNextStep(res.next_step);
     } catch (err: unknown) {
       setIsSubmitting(false);
@@ -362,6 +422,17 @@ function QuizPageContent() {
         };
       }
 
+      // §18.1: option codes only (§18.2 — never free text)
+      trackSoulmateEvent({
+        name: "soulmate_question_answered",
+        properties: {
+          question_code: activeStepCode,
+          option_codes: multiValues,
+          duration_ms: duration,
+        },
+      });
+      if (!res.next_step.startsWith("q")) trackQuizCompleted();
+
       advanceToNextStep(res.next_step);
     } catch (err: unknown) {
       setIsSubmitting(false);
@@ -399,6 +470,12 @@ function QuizPageContent() {
     try {
       const flowState = await navigateBack(sessionId);
       const prevStep = flowState.current_step;
+
+      // §18.1 back navigation (to_q is null when back leaves the question flow)
+      trackSoulmateEvent({
+        name: "soulmate_quiz_back",
+        properties: { from_q: activeStepCode, to_q: prevStep.startsWith("q") ? prevStep : null },
+      });
 
       if (prevStep.startsWith("transition_")) {
         const stepNum = prevStep.replace("transition_", "");

@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { SOULMATE_ROUTES } from "@/soulmate/domain";
 import { DrawerMenuButton } from "@/soulmate/components/drawer";
+import { trackSoulmateEvent } from "@/soulmate/analytics";
 
 export interface SoulmateLandingPageProps {
   /**
@@ -40,6 +41,25 @@ export function SoulmateLandingPage({
 }: SoulmateLandingPageProps) {
   const router = useRouter();
 
+  // §18.1 landing view: attribution comes from URL query only (no PII).
+  const landingTrackedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (landingTrackedRef.current) return;
+    landingTrackedRef.current = true;
+    let source: string | undefined;
+    let campaign: string | undefined;
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      source = params.get("utm_source") || undefined;
+      campaign = params.get("utm_campaign") || undefined;
+    }
+    trackSoulmateEvent({ name: "soulmate_landing_view", properties: { source, campaign } });
+  }, []);
+
+  const handleLoginClick = () => {
+    trackSoulmateEvent({ name: "soulmate_login_click", properties: {} });
+  };
+
   // Determine whether to display marketing badges per LEGAL-01 compliance gate
   // In production, unverified marketing claims are strictly disabled regardless of query or props.
   const isProduction = process.env.NODE_ENV === "production";
@@ -49,6 +69,7 @@ export function SoulmateLandingPage({
       (process.env.NEXT_PUBLIC_ENABLE_MARKETING_CLAIMS === "true"));
 
   const handleStart = () => {
+    trackSoulmateEvent({ name: "soulmate_start_click", properties: {} });
     if (onStartSession) {
       onStartSession();
       return;
@@ -77,6 +98,7 @@ export function SoulmateLandingPage({
         <div className="flex items-center gap-2">
           <a
             href={loginUrl}
+            onClick={handleLoginClick}
             className="font-sans text-[18px] leading-[24px] text-[#000000] hover:text-neutral-700 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 rounded px-1.5 py-0.5"
             aria-label="Log in to existing account"
           >

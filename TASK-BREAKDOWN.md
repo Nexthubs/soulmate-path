@@ -1263,7 +1263,7 @@ Copy is derived from actual access date/state and does not promise an unsupporte
 
 **Priority:** P1  
 **Depends:** stable UI/API flows  
-**Status:** TODO
+**Status:** REVIEW (2026-09-27 — §18.1 catalog implemented on both sides via central wrappers; evidence in `docs/handoffs/SP-901.md`; production sink pending `ANALYTICS-01`)
 **Context refs:** DEV-SPEC §18 | Decisions: — | Dependency handoffs: —
 
 

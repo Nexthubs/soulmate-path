@@ -25,6 +25,7 @@ import {
   FlowStateResponse,
 } from "@/soulmate/api/session";
 import { getSafeUserErrorMessage } from "@/soulmate/api/errors";
+import { trackSoulmateEvent } from "@/soulmate/analytics";
 
 function LoadingContent() {
   const router = useRouter();
@@ -153,6 +154,14 @@ function LoadingContent() {
     };
   }, [isFixtureMode]);
 
+  // §18.1 transition view per rendered step (fixture preview stays untracked).
+  const transitionTrackedStepRef = React.useRef<number | null>(null);
+  React.useEffect(() => {
+    if (isFixtureMode || transitionTrackedStepRef.current === step) return;
+    transitionTrackedStepRef.current = step;
+    trackSoulmateEvent({ name: "soulmate_transition_view", properties: { step } });
+  }, [isFixtureMode, step]);
+
   const handleContinue = async () => {
     // Note: Fixture mode (?fixture=true in dev) is an isolated static preview
     // for UI inspection only, and intentionally bypasses the backend flow state machine.
@@ -186,6 +195,7 @@ function LoadingContent() {
 
     setIsLoading(true);
     setError(null);
+    trackSoulmateEvent({ name: "soulmate_transition_continue", properties: { step } });
     try {
       const res = await continueTransition(sessionId, `transition_${step}`);
       if (res.flow_state) {
@@ -244,6 +254,10 @@ function LoadingContent() {
       const code = codeMap[activePopup];
       const val = activePopup === "warning" ? (answer ? "yes" : "no") : answer;
       await submitInterstitialAnswer(sessionId, code, val);
+      trackSoulmateEvent({
+        name: "soulmate_interstitial_answered",
+        properties: { code, value: val },
+      });
 
       const nextPopup = getNextInterstitialPopup(activePopup);
       if (nextPopup) {

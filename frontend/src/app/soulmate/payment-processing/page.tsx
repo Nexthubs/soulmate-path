@@ -4,6 +4,7 @@ import React, { Suspense, useEffect, useState, useRef, useCallback } from "react
 import { useRouter, useSearchParams } from "next/navigation";
 import { SOULMATE_ROUTES } from "@/soulmate/domain";
 import { confirmPayPalSubscription, getSubscriptionStatus } from "@/soulmate/api";
+import { trackSoulmateEvent } from "@/soulmate/analytics";
 
 function PaymentProcessingContent() {
   const router = useRouter();
@@ -25,6 +26,21 @@ function PaymentProcessingContent() {
   const confirmedRef = useRef(false);
   const mountedRef = useRef(false);
   const pollCountRef = useRef(0);
+  // §18.1 payment_failed: safe reason categories only (§9.7 — no provider raw
+  // error text), each category tracked once per page instance.
+  const failedReasonsRef = useRef<Set<string>>(new Set());
+
+  const trackPaymentFailed = useCallback((reasonCode: string) => {
+    if (failedReasonsRef.current.has(reasonCode)) return;
+    failedReasonsRef.current.add(reasonCode);
+    trackSoulmateEvent({ name: "soulmate_payment_failed", properties: { reason_code: reasonCode } });
+  }, []);
+
+  useEffect(() => {
+    if (!subscriptionId) {
+      trackPaymentFailed("missing_subscription_id");
+    }
+  }, []);
 
   // 1. Initial Confirmation Request (DEV-SPEC §9.3, §15.7, SP-403)
   // StrictMode-safe (live E2E 2026-09-26): a component-level mount ref re-armed by every
@@ -57,6 +73,7 @@ function PaymentProcessingContent() {
         if (mountedRef.current) {
           const msg = err instanceof Error ? err.message : "Failed to confirm subscription with server.";
           setConfirmError(msg);
+          trackPaymentFailed("confirmation_failed");
           // Still allow polling in case server recorded the subscription asynchronously
           setIsPolling(true);
         }
@@ -92,6 +109,7 @@ function PaymentProcessingContent() {
           setIsPolling(false);
           setIsTerminalState(true);
           setTerminalMessage(`Subscription status is ${res.status}. Payment could not be confirmed.`);
+          trackPaymentFailed(res.status.toLowerCase());
           return;
         }
 
@@ -130,6 +148,15 @@ function PaymentProcessingContent() {
 
     return () => clearInterval(timer);
   }, [isTerminalState]);
+
+  // §18.1: the 60s wall without server confirmation is a funnel failure too.
+  const timeoutTrackedRef = useRef(false);
+  useEffect(() => {
+    if (elapsedSeconds >= 60 && !isTerminalState && !timeoutTrackedRef.current) {
+      timeoutTrackedRef.current = true;
+      trackPaymentFailed("confirmation_timeout");
+    }
+  }, [elapsedSeconds, isTerminalState, trackPaymentFailed]);
 
   // Manual re-check action for recoverability (Acceptance #3)
   const handleManualRecheck = useCallback(async () => {

@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { cancelSubscription, SubscriptionCancelResponse } from "../../api/subscription";
+import { trackSoulmateEvent } from "../../analytics";
 
 export interface SubscriptionSettingsActionProps {
   status: string;
@@ -265,6 +266,11 @@ export function SubscriptionSettingsAction({
       setCancelledAt(resp.cancelled_at);
       setIsConfirming(false);
       setSuccessMessage(resp.message || "Your subscription has been cancelled. No future renewals will occur.");
+      // §18.1 cancellation funnel step, provider status from the server response.
+      trackSoulmateEvent({
+        name: "soulmate_subscription_cancelled",
+        properties: { provider_status: resp.provider_status },
+      });
       if (onCancelSuccess) {
         onCancelSuccess(resp);
       }

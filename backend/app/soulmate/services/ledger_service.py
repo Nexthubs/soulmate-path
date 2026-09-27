@@ -17,6 +17,7 @@ from app.db.base import utc_now
 from app.db.models.billing import Subscription, SubscriptionPayment
 from app.db.models.session import SoulmateSession
 from app.core.errors import ForbiddenOwnershipError
+from app.soulmate.analytics import track_funnel_event
 from app.soulmate.services.payment_consistency import payment_lock
 from app.soulmate.domain.ledger_models import (
     LedgerSearchQuery,
@@ -106,6 +107,19 @@ class PaymentLedgerService:
                 "provider_event_id": payment.provider_event_id,
             },
         )
+        # §18.1 `soulmate_payment_confirmed` fires exactly once per subscription:
+        # the first durably recorded COMPLETED payment (cycle 1). Both the webhook
+        # path and provider reconciliation converge here, so webhook retries can
+        # never duplicate the event (provider_payment_id idempotency above).
+        if payment.status == "COMPLETED" and payment.cycle_no == 1:
+            session_row = (await db.execute(
+                select(Subscription.session_id).where(Subscription.id == payment.subscription_id)
+            )).scalar_one_or_none()
+            track_funnel_event(
+                "soulmate_payment_confirmed",
+                session_id=str(session_row) if session_row is not None else None,
+                properties={"amount": str(payment.amount), "currency": payment.currency},
+            )
         return payment, True
 
     @classmethod
