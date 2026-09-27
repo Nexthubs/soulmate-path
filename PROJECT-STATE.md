@@ -6,8 +6,8 @@
 ## 1. Current milestone
 
 ```text
-Current milestone: M5 — Report Scaffold Ready (Wave 7 complete, ready for independent review)
-Status: READY_FOR_REVIEW (SP-701..705 DONE 2026-09-27; SP-706 BLOCKED on REPORT-01/02)
+Current milestone: M5 — Report Scaffold Ready (M5 review BLOCKED → remediation complete 2026-09-27, awaiting re-review)
+Status: PENDING_RE_REVIEW (H-01/M-01/M-02/R-01 fixed per docs/reviews/M5-REMEDIATION.md: page live-wired to the report API with store→API→390px render evidence; isolated-PostgreSQL suite 802/802; production generation still DISABLED, SP-706 remains BLOCKED on REPORT-01/02)
 Latest accepted review: docs/reviews/M4-SKETCH-REVIEW.md (RV-03 PASS; M4 PASS)
 ```
 
@@ -76,12 +76,12 @@ Report mock fixture (`SP-705`) completed and evidenced in `docs/handoffs/SP-705.
 | M2 Sandbox Revenue Ready | PASS (restored post-RV-remediation) | `docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md` §6 |
 | M3 Entitlement / Result Ready | CONDITIONAL_PASS | `docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md` |
 | M4 Sketch Ready | PASS — COMPLETE (RV-03, 2026-09-27) | `docs/reviews/M4-SKETCH-REVIEW.md` |
-| M5 Report Scaffold Ready | READY_FOR_REVIEW (Wave 7 complete: SP-701..705 DONE) | `docs/reviews/M5-REPORT-SCAFFOLD-REVIEW.md` |
+| M5 Report Scaffold Ready | BLOCKED → remediated 2026-09-27, pending re-review (`docs/reviews/M5-REMEDIATION.md`) | `docs/reviews/M5-REPORT-SCAFFOLD-REVIEW.md` |
 | M6 Production Ready | NOT_STARTED | `docs/reviews/M6-PRODUCTION-READINESS-REVIEW.md` |
 
 ## 3. Active / blocked work
 
-Active tasks: RV-03 and M4 PASS on the reviewed code (`docs/reviews/M4-SKETCH-REVIEW.md`). H-02 claim-budget bypass is fixed and PostgreSQL regressions pass; M-02's unavoidable response-before-commit audit gap is documented. `ASSET-ACCESS-01` is enforced in production config; the current R2 object's former public URL returns 403 and its one-hour signed URL returns 200. The prior paid flow remains the live generation evidence; a fresh reviewer-run purchase, live retry, 12-hour wait and gate-subscription webhook replay remain NOT_RUN. M2 remains PASS and M3 CONDITIONAL_PASS.
+Active gate: M5 review BLOCKED (1H/2M/1R) → remediated 2026-09-27 (`docs/reviews/M5-REMEDIATION.md`): /soulmate/report live-wired to GET /artifacts/report with the store→API→390px browser render chain evidenced; backend validation revalidates model instances, closing normalization is cross-stack, and report reads/saves/statuses pin artifact_version='v1'; isolated-PostgreSQL suite 802/802, frontend 352/352. Re-review required before M5 PASS. Wave 7 tasks remain marked DONE as implementation handoffs. M4's accepted checkpoint and its live-evidence limits remain in `docs/reviews/M4-SKETCH-REVIEW.md`. M2 remains PASS and M3 CONDITIONAL_PASS.
 
 Blocking decision IDs:
 
@@ -122,6 +122,6 @@ Report production provider: disabled / decision pending (SP-704 adapter + templa
 ## 6. Next safe tasks
 
 ```text
-1. Keep M4's signed-only storage rule for deployment; M6 must recheck the actual production bucket, DNS and old public paths. The owner should check other consumers of the now-private shared `morii` bucket (`anima/`, `rmbg/`, root objects).
-2. Follow the next task in `TASK-BREAKDOWN.md` when separately authorized. For any live PayPal webhook recheck, bind the backend on the WireGuard-reachable interface. Keep workers disabled or use the disposable PostgreSQL test runner for backend tests.
+1. Resolve the M5 findings in `docs/reviews/M5-REPORT-SCAFFOLD-REVIEW.md`, then re-review the store-to-page flow, validation contract, isolated PostgreSQL tests and 390px rendering. Keep Report production generation off while REPORT-01/02 remain OPEN.
+2. Preserve M4's signed-only storage rule for deployment; M6 must recheck the production bucket and affected consumers. Follow later tasks only when separately authorized.
 ```

@@ -194,9 +194,17 @@ export function parseSoulmateReportV1(data: unknown): SoulmateReportV1 {
 
   const report: SoulmateReportV1 = { schemaVersion, title, intro, sections };
   if (raw.closing !== undefined && raw.closing !== null) {
-    const closing = assertNonBlankString(raw.closing, "closing");
-    assertPlainText(closing, "closing");
-    report.closing = closing;
+    if (typeof raw.closing !== "string") {
+      throw new ReportValidationError("Report closing must be a string.", "closing");
+    }
+    // Cross-stack parity (M5 review M-02): a blank optional closing carries no
+    // content and normalizes to absent — exactly what the backend contract does —
+    // so backend-serialized payloads always pass the renderer gate. Markup/script
+    // rejection still applies to any non-blank closing.
+    if (raw.closing.trim()) {
+      assertPlainText(raw.closing, "closing");
+      report.closing = raw.closing;
+    }
   }
   return report;
 }

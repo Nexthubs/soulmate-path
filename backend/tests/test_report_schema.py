@@ -287,3 +287,35 @@ class TestContractBoundaries:
     def test_report_error_is_core_validation_error(self):
         # Error taxonomy: report schema failures must surface as HTTP 400 VALIDATION_ERROR.
         assert issubclass(ReportValidationError, ValidationError)
+
+
+class TestM5Remediation:
+    """M-01 (mutated-instance revalidation) and M-02 (blank closing normalization)."""
+
+    def test_parse_revalidates_serialized_copy_of_model_instances(self):
+        # A once-validated instance must not bypass the field validators: pydantic
+        # accepts same-class instances as-is by default, so the parser re-validates
+        # the serialized copy (M5 review M-01).
+        report = SoulmateReportV1.model_validate(_minimal_payload())
+        mutated = report.model_copy(deep=True)
+        object.__setattr__(mutated, "__dict__", {**mutated.__dict__, "title": "<script>alert(1)</script>"})
+        with pytest.raises(ReportValidationError) as exc_info:
+            parse_soulmate_report_v1(mutated)
+        assert exc_info.value.details["field"] == "title"
+
+        # A clean instance still parses and round-trips unchanged.
+        clean = parse_soulmate_report_v1(report)
+        assert clean == report
+
+    def test_blank_closing_normalizes_to_absent(self):
+        # Cross-stack parity (M5 review M-02): backend normalizes blank optional
+        # closing to absent exactly like the frontend contract.
+        for blank in ("", "   ", " \n\t "):
+            report = SoulmateReportV1.model_validate(_minimal_payload(closing=blank))
+            assert report.closing is None
+            dumped = report.model_dump(by_alias=True, exclude_none=True)
+            assert "closing" not in dumped
+
+    def test_non_blank_closing_is_preserved(self):
+        report = SoulmateReportV1.model_validate(_minimal_payload(closing="Trust the timing."))
+        assert report.closing == "Trust the timing."

@@ -46,7 +46,13 @@ class ArtifactStatusService:
         """
         effective_now = now or utc_now()
 
-        stmt = select(SoulmateArtifact).where(SoulmateArtifact.session_id == session_id)
+        # Pinned to artifact_version='v1': placeholders are always created as V1
+        # (SP-501), and a future V2 row must never be picked up by the status
+        # derivation (M5 review R-01).
+        stmt = select(SoulmateArtifact).where(
+            SoulmateArtifact.session_id == session_id,
+            SoulmateArtifact.artifact_version == "v1",
+        )
         artifacts = (await db.execute(stmt)).scalars().all()
         by_type = {a.artifact_type: a for a in artifacts}
 

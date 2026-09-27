@@ -27,7 +27,6 @@ from typing import Any, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 from pydantic.alias_generators import to_camel
-
 from app.core.errors import ValidationError
 
 # The only content schema version this contract accepts. An absent field defaults here;
@@ -213,6 +212,17 @@ class SoulmateReportV1(BaseModel):
     def _not_blank(cls, v: str, info: ValidationInfo) -> str:
         return _require_non_blank(v, info.field_name or "text")
 
+    @field_validator("closing")
+    @classmethod
+    def _closing_blank_normalized_to_absent(cls, v: Optional[str]) -> Optional[str]:
+        # Cross-stack parity (M5 review M-02): a blank optional closing carries no
+        # content, so it normalizes to absent instead of being stored/serialized —
+        # exactly what the frontend contract does. Markup/script rejection still
+        # applies to any non-blank closing via _plain_text.
+        if v is not None and not v.strip():
+            return None
+        return v
+
     @field_validator("sections", mode="before")
     @classmethod
     def _sections_required(cls, v: Any) -> Any:
@@ -247,10 +257,17 @@ def parse_soulmate_report_v1(data: Any) -> SoulmateReportV1:
     Validates an arbitrary payload (e.g. generator output or stored JSON) against the
     canonical SoulmateReportV1 contract.
 
+    A `SoulmateReportV1` (or any BaseModel) instance is re-validated through its
+    serialized copy: pydantic accepts instances of the target model as-is by default,
+    so a once-validated-then-mutated instance would otherwise bypass the field
+    validators and the plain-text content policy (M5 review M-01).
+
     Pydantic's own ValidationError is converted into the report error taxonomy so every
     schema failure surfaces the same way (HTTP 400 VALIDATION_ERROR with details).
     """
     try:
+        if isinstance(data, BaseModel):
+            data = data.model_dump(by_alias=True, exclude_none=True)
         return SoulmateReportV1.model_validate(data)
     except ReportValidationError:
         raise

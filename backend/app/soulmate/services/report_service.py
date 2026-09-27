@@ -37,6 +37,9 @@ from app.soulmate.domain.report import (
 logger = logging.getLogger(__name__)
 
 REPORT_ARTIFACT_TYPE = "REPORT"
+# The canonical current report version (SP-702 acceptance): every read/save is pinned
+# to V1 so a future V2 row can never be selected by accident (M5 review R-01).
+REPORT_ARTIFACT_VERSION = "v1"
 
 
 class ReportService:
@@ -46,11 +49,12 @@ class ReportService:
         The session's single canonical REPORT artifact row (any lifecycle state).
 
         Strictly session-scoped (RECOVERY-01): unlike the email-scoped sketch lookup,
-        a report is never served across sessions.
+        a report is never served across sessions. Pinned to artifact_version='v1'.
         """
         stmt = select(SoulmateArtifact).where(
             SoulmateArtifact.session_id == session_id,
             SoulmateArtifact.artifact_type == REPORT_ARTIFACT_TYPE,
+            SoulmateArtifact.artifact_version == REPORT_ARTIFACT_VERSION,
         )
         return (await db.execute(stmt)).scalars().first()
 
@@ -87,6 +91,7 @@ class ReportService:
             .where(
                 SoulmateArtifact.session_id == session_id,
                 SoulmateArtifact.artifact_type == REPORT_ARTIFACT_TYPE,
+                SoulmateArtifact.artifact_version == REPORT_ARTIFACT_VERSION,
             )
             .with_for_update()
         )

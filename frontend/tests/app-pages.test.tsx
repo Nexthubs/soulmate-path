@@ -288,18 +288,21 @@ describe("App Router Page-Level Behavioral Integration (M-3 Audit Remediation)",
   });
 
   describe("9. /soulmate/report (Report Page & H-4 Guard)", () => {
-    it("H-4: in production, blocks unentitled direct access and renders Locked screen", () => {
+    it("H-4: in production, the fixture bypass is ignored and no report content renders before a guard verdict", () => {
       const originalEnv = process.env.NODE_ENV;
       try {
         (process.env as Record<string, string | undefined>).NODE_ENV = "production";
         mockSearchParams = new URLSearchParams({ fixture: "true" });
 
         const html = renderToStaticMarkup(<SoulmateReportPage />);
-        expect(html).toContain("Soulmate Report Locked");
-        expect(html).toContain("Return to Dashboard");
-        // Must NOT render full editorial report fixture in production
-        expect(html).not.toContain("data-testid=\"soulmate-report-renderer\"");
+        // M5-H01 rewrite: the page is live-wired to GET /artifacts/report. Before the
+        // server-authoritative guard verdict arrives it shows the neutral loading
+        // state — never editorial content, and ?fixture=true is dev-only.
+        expect(html).toContain("Loading report");
+        expect(html).not.toContain('data-testid="soulmate-report-renderer"');
         expect(html).not.toContain("Releasing the Fear of Being Alone");
+        expect(html).not.toContain('data-testid="report-fixture-banner"');
+        expect(html).not.toContain('data-testid="report-fixture-toolbar"');
       } finally {
         (process.env as Record<string, string | undefined>).NODE_ENV = originalEnv;
       }

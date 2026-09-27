@@ -193,3 +193,42 @@ describe("isSoulmateReportV1", () => {
     expect(isSoulmateReportV1(null)).toBe(false);
   });
 });
+
+describe("M5 remediation: cross-stack closing parity (M-02)", () => {
+  // The exact serialization the BACKEND parser produces for a payload with a blank
+  // optional closing (model_dump(by_alias=True, exclude_none=True) — generated via
+  // app.soulmate.domain.report.parse_soulmate_report_v1). It must pass the frontend
+  // gate unchanged, with closing normalized to absent.
+  const BACKEND_SERIALIZED_BLANK_CLOSING = {
+    schemaVersion: "v1",
+    title: "Backend Serialized Report",
+    intro: "Produced by the backend parser with a blank optional closing.",
+    sections: [
+      {
+        index: "01.",
+        title: "Section One",
+        body: "Plain body.",
+        points: [{ title: "Point", body: "Point body." }],
+      },
+    ],
+  };
+
+  it("accepts the backend-serialized payload (closing already normalized away)", () => {
+    const parsed = parseSoulmateReportV1(BACKEND_SERIALIZED_BLANK_CLOSING);
+    expect(parsed.closing).toBeUndefined();
+    expect(parsed.title).toBe("Backend Serialized Report");
+  });
+
+  it("normalizes a raw blank closing to absent instead of rejecting (backend parity)", () => {
+    for (const blank of ["", "   ", " \n\t "]) {
+      const parsed = parseSoulmateReportV1(validPayload({ closing: blank }));
+      expect(parsed.closing).toBeUndefined();
+    }
+  });
+
+  it("still rejects markup-bearing closing content", () => {
+    expect(() => parseSoulmateReportV1(validPayload({ closing: "<b>x</b>" }))).toThrow(
+      ReportValidationError
+    );
+  });
+});

@@ -473,3 +473,99 @@ async def test_missing_artifact_rows_fail_closed_to_locked(async_db):
     data = resp.json()
     assert data["report"]["status"] == "LOCKED"
     assert data["content"] is None
+
+
+# ---------------------------------------------------------------------------
+# M5 review remediation: M-01 save-boundary revalidation + R-01 version pinning
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_save_revalidates_mutated_model_instance_without_partial_write(async_db):
+    """M-01 at the save boundary: a validated-then-mutated instance is rejected."""
+    from app.soulmate.domain.report import ReportValidationError, SoulmateReportV1
+
+    sess = await _seed_entitled_session(async_db)
+    report = SoulmateReportV1.model_validate(_report_payload())
+    mutated = report.model_copy(deep=True)
+    object.__setattr__(mutated, "__dict__", {**mutated.__dict__, "title": "<script>alert(1)</script>"})
+
+    with pytest.raises(ReportValidationError):
+        await ReportService.save_completed_report(async_db, sess.id, mutated)
+
+    row = await ReportService.get_report_artifact(async_db, sess.id)
+    assert row.generation_status == "NOT_STARTED"
+    assert row.content_json is None
+
+    # The clean instance still saves (instance inputs remain supported).
+    artifact, saved = await ReportService.save_completed_report(async_db, sess.id, report)
+    assert saved is True
+    assert artifact.content_json["title"] == "Your Soulmate Report"
+
+
+def _report_version_rows(db, sess):
+    from app.db.models.artifact import SoulmateArtifact as A
+
+    return (
+        select(A)
+        .where(A.session_id == sess.id, A.artifact_type == "REPORT")
+        .order_by(A.artifact_version)
+    )
+
+
+@pytest.mark.asyncio
+async def test_version_predicates_pin_reads_saves_and_statuses_to_v1(async_db):
+    """R-01: a future V2 row can never be selected by read/save/status paths."""
+    from app.core.errors import NotFoundError
+    from app.soulmate.services.status_service import ArtifactStatusService
+
+    sess = await _seed_entitled_session(async_db)
+    v1_row = await ReportService.get_report_artifact(async_db, sess.id)
+    # A hypothetical V2 row for the same session (allowed by the DB constraint).
+    async_db.add(
+        SoulmateArtifact(
+            session_id=sess.id,
+            email_normalized=v1_row.email_normalized,
+            artifact_type="REPORT",
+            artifact_version="v2",
+            unlock_at=v1_row.unlock_at,
+            generation_status="COMPLETED",
+            content_json={"schemaVersion": "v2", "title": "Future V2"},
+        )
+    )
+    await async_db.commit()
+
+    # Read: returns the V1 row.
+    row = await ReportService.get_report_artifact(async_db, sess.id)
+    assert row.artifact_version == "v1"
+
+    # Save: targets V1, never V2 (the NOT_STARTED V1 row is written; V2 untouched).
+    _, saved = await ReportService.save_completed_report(
+        async_db, sess.id, _report_payload(), provider="mock", model="mock"
+    )
+    assert saved is True
+
+    # Statuses: derived from the V1 row only (V2 content never leaks).
+    statuses = await ArtifactStatusService.get_artifact_statuses(async_db, sess.id)
+    assert statuses.report.status == "COMPLETED"
+
+    rows = (await async_db.execute(_report_version_rows(async_db, sess))).scalars().all()
+    assert {r.artifact_version for r in rows} == {"v1", "v2"}
+    v2 = next(r for r in rows if r.artifact_version == "v2")
+    assert v2.content_json["title"] == "Future V2"  # untouched by V1 save
+    v1 = next(r for r in rows if r.artifact_version == "v1")
+    assert v1.content_json["title"] == "Your Soulmate Report"
+
+
+@pytest.mark.asyncio
+async def test_save_fails_closed_when_only_non_v1_row_exists(async_db):
+    """A session without the canonical V1 row cannot be written via a V2 lookup."""
+    from app.core.errors import NotFoundError
+
+    sess = await _seed_entitled_session(async_db)
+    v1_row = await ReportService.get_report_artifact(async_db, sess.id)
+    v1_row.artifact_version = "v2"
+    await async_db.commit()
+
+    with pytest.raises(NotFoundError):
+        await ReportService.save_completed_report(async_db, sess.id, _report_payload())
