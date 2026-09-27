@@ -49,6 +49,7 @@ class GuardService:
         is_paid = False
         first_payment_at: Optional[datetime] = None
         paid_through_at: Optional[datetime] = None
+        provider_status: Optional[str] = None
 
         if session:
             # 1. Quiz completed evaluation (DEV-SPEC §3, H-1 remediation)
@@ -93,8 +94,10 @@ class GuardService:
                 first_payment_at = sub.first_payment_at
                 # PAID-THROUGH-01 (resolved 2026-09-27): paid entitlement runs to
                 # the end of the already-paid cycle; the guard denies paid routes
-                # only when this date is known and has passed (server clock).
+                # only when this date is known and has passed on the server clock
+                # and the provider does not report an ACTIVE subscription.
                 paid_through_at = sub.paid_through_at
+                provider_status = sub.provider_status
             else:
                 is_paid = False
                 first_payment_at = None
@@ -109,6 +112,7 @@ class GuardService:
             is_paid=is_paid,
             first_payment_at=first_payment_at,
             paid_through_at=paid_through_at,
+            provider_status=provider_status,
             server_time=server_time,
             sketch_hours=settings.soulmate_sketch_unlock_hours,
             report_hours=settings.soulmate_report_unlock_hours,

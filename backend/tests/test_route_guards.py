@@ -499,16 +499,29 @@ def test_guard_paid_through_window_matrix():
     )
     assert r["allowed"] is True
 
-    # 2. Paid + passed paid_through -> denied on ALL paid routes, redirect to subscribe
+    # 2. Paid + passed paid_through (non-ACTIVE provider state) -> denied on ALL
+    # paid routes, redirect to subscribe
     for route in ("/soulmate/result", "/soulmate/sketch", "/soulmate/report"):
         r = evaluate_route_guard(
             route, session_exists=True, is_paid=True,
             first_payment_at=paid_at, paid_through_at=past_end, server_time=now,
+            provider_status="CANCELLED",
         )
         assert r["allowed"] is False, route
         assert r["redirect_to"] == "/soulmate/subscribe", route
         assert "PAID-THROUGH-01" in r["reason"]
         assert r["paid_through_ended"] is True
+
+    # 2b. Wave 8 audit H-2 (round 3): an ACTIVE subscription crossing its
+    # recorded cycle end is NOT denied — renewal payment or webhook may simply
+    # be in flight; the provider currently reports it as entitled.
+    r = evaluate_route_guard(
+        "/soulmate/result", session_exists=True, is_paid=True,
+        first_payment_at=paid_at, paid_through_at=past_end, server_time=now,
+        provider_status="ACTIVE",
+    )
+    assert r["allowed"] is True
+    assert r["paid_through_ended"] is False
 
     # 3. Boundary: access ends exactly at paid_through_at (server clock, >=)
     r = evaluate_route_guard(
@@ -537,6 +550,7 @@ def test_guard_paid_through_window_matrix():
     r = evaluate_route_guard(
         "/soulmate/sketch", session_exists=True, is_paid=True,
         first_payment_at=paid_at, paid_through_at=past_end, server_time=now,
+        provider_status="EXPIRED",
     )
     assert r["allowed"] is False
     assert r["redirect_to"] == "/soulmate/subscribe"

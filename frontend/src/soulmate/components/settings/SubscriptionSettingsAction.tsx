@@ -345,6 +345,12 @@ export function SubscriptionSettingsAction({
               <p className="text-xs text-amber-800" data-testid="paid-access-detail">
                 {accessCopy.detail}
               </p>
+              {isPaid && (
+                <p className="text-xs text-amber-800" data-testid="refund-policy-note">
+                  Payments for billing cycles you had access to are non-refundable; billing
+                  disputes go through our support team or PayPal.
+                </p>
+              )}
               <div className="pt-2 border-t border-amber-200/50 text-xs text-amber-900 flex items-center gap-1.5" data-testid="artifact-retention-notice">
                 <svg className="w-4 h-4 text-emerald-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -434,11 +440,12 @@ export interface CancelConfirmationDialogProps {
 /**
  * Confirmation state for the cancel action (SP-804, DEV-SPEC §9.8, §15.9).
  * Presentational so all safety/messaging criteria are directly renderable in
- * static tests. Copy discipline (Wave 8 audit H-3/M-2): quotes only a
- * provider-verified renewal price, promises paid-cycle access only when the
- * access end date is known, makes no refund claims (refund policy is an open
- * owner decision — REFUND-01), and always carries the artifact-retention
- * guarantee; both actions disable while in flight.
+ * static tests. Copy discipline (Wave 8 audits): quotes only a provider-verified
+ * renewal price AND only for ACTIVE subscriptions, promises paid-cycle access
+ * only when the access end date is known, carries the artifact-retention
+ * guarantee, and states the owner-approved REFUND-01 policy (non-refundable
+ * paid cycles, PayPal/support dispute route) for paid subscriptions only;
+ * both actions disable while in flight.
  */
 export function CancelConfirmationDialog({
   paidThroughDisplay,
@@ -475,6 +482,14 @@ export function CancelConfirmationDialog({
             : "Any remaining access after cancellation depends on your billing state and will be confirmed afterwards. "
           : null}
         Your previously generated Sketch and Report will <strong>never be deleted</strong>.
+        {isPaid && (
+          <>
+            {" "}Refund policy: cancelling stops all future billing, and you keep the access
+            you&apos;ve already paid for. Payments for billing cycles you had access to are
+            non-refundable. If a charge looks wrong, contact our support team or raise it
+            with PayPal.
+          </>
+        )}
       </p>
       <div className="flex gap-2">
         <button

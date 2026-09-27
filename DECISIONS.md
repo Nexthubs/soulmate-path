@@ -153,16 +153,16 @@
 
 ### REFUND-01 — Refund policy and cancellation copy
 
-- **Status:** OPEN — provisional draft proposed 2026-09-27 by implementer at owner's request; **awaiting owner approval. No refund statement ships in the UI until approved.**
+- **Status:** RESOLVED
 - **Date:** 2026-09-27
-- **Context:** Wave 8 audit (H-3): the SP-804 cancel confirmation asserted "no refund is issued for the current cycle", but §9.8 only mandates stopping future renewals, retaining the paid cycle until `paid_through_at`, and permanently retaining generated content. Those rules do not by themselves authorize a blanket no-refund statement; refunds are handled out-of-band via PayPal dispute/support (SP-409).
-- **Decision (approved so far):** the cancel UI makes NO refund claim until the owner approves the policy and final wording below.
-- **Provisional draft (NOT approved for shipping) — cancel confirmation dialog, appended after the artifact-retention sentence:**
-  > Refund policy: cancelling stops all future billing, and you keep the access you've already paid for. Payments for billing cycles you had access to are non-refundable. If a charge looks wrong, contact our support team or raise it with PayPal.
-- **Provisional draft — cancelled-state card (settings), one-liner variant:**
-  > Payments for billing cycles you had access to are non-refundable; billing disputes go through our support team or PayPal.
-- **Drafting notes for the owner:** (1) the non-refundable phrasing assumes `PAID-THROUGH-01` semantics (users keep what they paid for through `paid_through_at`) — if a prorated/partial-refund policy is ever wanted, this draft must be rewritten; (2) in the dialog, the sentence must render only in the paid branch (unpaid subscriptions have nothing to refund); (3) final wording needs owner sign-off, and the support contact must match the real support channel before shipping.
-- **Affected:** SP-804 (`CancelConfirmationDialog`), SP-805 copy, customer support flow, M6 release QA.
+- **Owner/approver:** product owner (this session directive — approved the provisional draft verbatim)
+- **Context:** Wave 8 audit (H-3): the SP-804 cancel confirmation asserted "no refund is issued for the current cycle", but §9.8 only mandates stopping future renewals, retaining the paid cycle until `paid_through_at`, and permanently retaining generated content. Those rules do not by themselves authorize a blanket no-refund statement; refunds are handled out-of-band via PayPal dispute/support (SP-409). A provisional draft was authored at the owner's request and shipped only after approval.
+- **Decision (approved policy):** cancelling stops all future billing; the user keeps the access already paid for (through the `paid_through_at` semantics per `PAID-THROUGH-01`); payments for billing cycles the user had access to are non-refundable; billing disputes go through the support team or PayPal.
+- **Shipped copy (verbatim):**
+  - Cancel confirmation dialog (paid subscriptions only): "Refund policy: cancelling stops all future billing, and you keep the access you've already paid for. Payments for billing cycles you had access to are non-refundable. If a charge looks wrong, contact our support team or raise it with PayPal."
+  - Cancelled-state card (settings, paid subscriptions only): "Payments for billing cycles you had access to are non-refundable; billing disputes go through our support team or PayPal."
+- **Rationale:** aligns the refund statement with `PAID-THROUGH-01` (users keep what they paid for through the cycle end, so no prorated refunds); unpaid subscriptions render no refund sentence (nothing to refund).
+- **Affected:** SP-804 (`CancelConfirmationDialog` + cancelled card), SP-805 copy, customer support flow, M6 release QA. Test evidence: dialog/cancelled-card refund rendering tests (frontend suite).
 
 ### PAID-THROUGH-01 — Guard enforcement vs paid-through access window
 

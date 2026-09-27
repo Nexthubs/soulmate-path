@@ -28,6 +28,7 @@ from app.db.models.artifact import SoulmateArtifact
 from app.db.models.billing import Subscription, SubscriptionPayment
 from app.db.models.session import SoulmateSession
 from app.soulmate.domain.ledger_models import PaymentRecordCreate
+from app.soulmate.domain.guard import is_paid_access_ended
 from app.soulmate.domain.session_state import SessionStatus
 from app.soulmate.schema import (
     PayPalConfirmResponse,
@@ -599,6 +600,37 @@ class SubscriptionService:
             auto_reconcile=False,
             paypal_client=paypal_client,
         )
+
+    @classmethod
+    async def get_latest_subscription(cls, db: AsyncSession, session: SoulmateSession) -> Optional[Subscription]:
+        """Latest subscription row for the session (same selection semantics as get_subscription_status)."""
+        stmt = (
+            select(Subscription)
+            .where(Subscription.session_id == session.id)
+            .order_by(Subscription.created_at.desc())
+        )
+        return (await db.execute(stmt)).scalars().first()
+
+    @classmethod
+    async def assert_paid_access_window(
+        cls, db: AsyncSession, session: SoulmateSession, now: Optional[datetime] = None
+    ) -> None:
+        """
+        PAID-THROUGH-01 (resolved 2026-09-27): uniform API-layer enforcement of
+        the paid access window. Raises `ForbiddenOwnershipError` when the known
+        paid window (`paid_through_at`) has ended on the server clock and the
+        provider does not report an ACTIVE subscription (renewal/webhook lag
+        tolerance for ACTIVE). Callers remain responsible for their PAY-AUTH-01
+        first-payment gates; generated (COMPLETED) artifacts stay retrievable
+        under the §9.8 retention promise — see the artifact read endpoints.
+        """
+        sub = await cls.get_latest_subscription(db, session)
+        if sub is not None and is_paid_access_ended(
+            sub.provider_status, sub.paid_through_at, now or utc_now()
+        ):
+            raise ForbiddenOwnershipError(
+                "Paid access period has ended (PAID-THROUGH-01). Re-subscribe to regain access."
+            )
 
     @classmethod
     async def get_subscription_status(

@@ -357,16 +357,27 @@ describe("SP-409: Subscription Cancellation & Settings Action", () => {
       expect(html).toContain("never be deleted");
     });
 
-    it("never asserts a refund policy (Wave 8 audit H-3: REFUND-01 open)", () => {
-      const withPrice = renderToStaticMarkup(
+    it("renders the owner-approved REFUND-01 policy for paid subscriptions only", () => {
+      const paid = renderToStaticMarkup(
         <CancelConfirmationDialog {...baseDialogProps} priceText="$29.00" />
       );
-      const withoutPrice = renderToStaticMarkup(
-        <CancelConfirmationDialog {...baseDialogProps} priceText={null} />
+      expect(paid).toContain("Refund policy:");
+      expect(paid).toContain("non-refundable");
+      expect(paid).toContain("raise it with PayPal");
+
+      // Unpaid subscriptions have nothing to refund — no refund sentence at all.
+      const unpaid = renderToStaticMarkup(
+        <CancelConfirmationDialog
+          paidThroughDisplay={null}
+          isPaid={false}
+          willRenew={false}
+          priceText={null}
+          isLoading={false}
+          onConfirm={() => {}}
+          onKeep={() => {}}
+        />
       );
-      for (const html of [withPrice, withoutPrice]) {
-        expect(html.toLowerCase()).not.toContain("refund");
-      }
+      expect(unpaid.toLowerCase()).not.toContain("refund");
     });
 
     it("makes no access-until promise when the paid-cycle end date is unknown (Wave 8 audit M-2)", () => {

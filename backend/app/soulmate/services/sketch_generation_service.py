@@ -239,6 +239,10 @@ class SketchGenerationService:
                 "Sketch generation is available only after a confirmed first payment (PAY-AUTH-01)."
             )
 
+        # PAID-THROUGH-01: a known-and-passed paid window cannot start new
+        # generations (uniform API-layer enforcement).
+        await SubscriptionService.assert_paid_access_window(db, session, effective_now)
+
         email = (session.email_normalized or session.email or "").strip().lower()
         if not email:
             raise ValidationError(

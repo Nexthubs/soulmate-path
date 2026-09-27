@@ -17,6 +17,7 @@ from app.core.errors import ForbiddenOwnershipError
 from app.db.base import utc_now
 from app.db.models.billing import Subscription
 from app.db.models.session import SoulmateSession
+from app.soulmate.domain.guard import is_paid_access_ended
 from app.soulmate.schema import ResultAggregateResponse, ResultSubscriptionView
 from app.soulmate.services.status_service import ArtifactStatusService
 from app.soulmate.services.subscription_service import SubscriptionService
@@ -57,6 +58,17 @@ class ResultService:
             .order_by(Subscription.created_at.desc())
         )
         sub = (await db.execute(stmt)).scalars().first()
+
+        # PAID-THROUGH-01 (resolved 2026-09-27): uniform API-layer enforcement —
+        # a known-and-passed paid window ends the aggregate read as well (the
+        # route guard already redirects the page). ACTIVE subscriptions are
+        # exempt (renewal/webhook lag tolerance).
+        if sub is not None and is_paid_access_ended(
+            sub.provider_status, sub.paid_through_at, effective_now
+        ):
+            raise ForbiddenOwnershipError(
+                "Paid access period has ended (PAID-THROUGH-01). Re-subscribe to regain access."
+            )
 
         statuses = await ArtifactStatusService.get_artifact_statuses(
             db,

@@ -148,6 +148,10 @@ class ReportGenerationService:
                 "Report generation is available only after a confirmed first payment (PAY-AUTH-01)."
             )
 
+        # PAID-THROUGH-01: a known-and-passed paid window cannot start new
+        # generations (uniform API-layer enforcement).
+        await SubscriptionService.assert_paid_access_window(db, session, effective_now)
+
         if not settings.is_report_generation_enabled:
             raise ReportGenerationDisabledError(
                 "Report generation is not enabled on this deployment (REPORT-01/02)."

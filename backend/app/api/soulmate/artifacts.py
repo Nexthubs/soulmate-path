@@ -20,6 +20,7 @@ from app.core.errors import ForbiddenOwnershipError, NotFoundError
 from app.db.models.artifact import AIGenerationJob, SoulmateArtifact
 from app.db.models.session import SoulmateSession
 from app.db.session import get_db
+from app.soulmate.domain.guard import is_paid_access_ended
 from app.soulmate.schema import (
     ReportGenerationResponse,
     ReportResponse,
@@ -42,8 +43,17 @@ from app.soulmate.services.sketch_generation_service import (
     hard_attempt_cap,
 )
 from app.soulmate.services.status_service import ArtifactStatusService
+from app.soulmate.services.subscription_service import SubscriptionService
 
 router = APIRouter()
+
+
+async def _paid_window_ended(db: AsyncSession, session: SoulmateSession) -> bool:
+    """PAID-THROUGH-01: True when the session's known paid window has ended."""
+    sub = await SubscriptionService.get_latest_subscription(db, session)
+    return sub is not None and is_paid_access_ended(
+        sub.provider_status, sub.paid_through_at
+    )
 
 
 async def _resolve_authorized_session(
@@ -117,10 +127,19 @@ async def get_sketch_asset_endpoint(
     when COMPLETED, the display URL of the persisted durable asset. Reads never
     cross sessions (Decision RECOVERY-01); the display URL is derived from the
     project-owned storage key (ASSET-01) and never from a provider temporary URL.
+
+    PAID-THROUGH-01: after a known-and-passed paid window, only a COMPLETED
+    sketch remains retrievable (§9.8 retention promise — "keep what you
+    received"); every other state is refused.
     """
     session = await _resolve_authorized_session(request, session_id, db)
 
     statuses = await ArtifactStatusService.get_artifact_statuses(db, session.id)
+
+    if await _paid_window_ended(db, session) and statuses.sketch.status != "COMPLETED":
+        raise ForbiddenOwnershipError(
+            "Paid access period has ended (PAID-THROUGH-01). Re-subscribe to regain access."
+        )
 
     image_url: Optional[str] = None
     storage_key: Optional[str] = None
@@ -182,10 +201,19 @@ async def get_report_endpoint(
     re-validated on every read (SP-701 contract) and the read fails closed: content
     is never served for LOCKED/READY/GENERATING/FAILED rows. REPORT is strictly
     session-scoped (Decision RECOVERY-01) — no email-scoped fallback.
+
+    PAID-THROUGH-01: after a known-and-passed paid window, only a COMPLETED
+    report remains retrievable (§9.8 retention promise — "keep what you
+    received"); every other state is refused.
     """
     session = await _resolve_authorized_session(request, session_id, db)
 
     statuses = await ArtifactStatusService.get_artifact_statuses(db, session.id)
+
+    if await _paid_window_ended(db, session) and statuses.report.status != "COMPLETED":
+        raise ForbiddenOwnershipError(
+            "Paid access period has ended (PAID-THROUGH-01). Re-subscribe to regain access."
+        )
 
     content = None
     if statuses.report.status == "COMPLETED":
