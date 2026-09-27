@@ -1299,10 +1299,12 @@ Copy is derived from actual access date/state and does not promise an unsupporte
 
 ## SP-902 — Generation metrics
 
-**Priority:** P1  
-**Depends:** SP-603/604  
-**Status:** REVIEW (2026-09-28 — `generation_metric` stream + `GenerationMetricsService.summary` shipped for the sketch pipeline; report-pipeline adoption noted before SP-904; evidence in `docs/handoffs/SP-902.md`)
-**Context refs:** DEV-SPEC §18–19 | Decisions: ASSET-01 | Dependency handoffs: SP-603
+**Priority:** P1
+
+**Depends:** SP-603/604/706
+
+**Status:** DONE (2026-09-28 — `generation_metric` stream + `GenerationMetricsService.summary` cover sketch and report generation job types; evidence in `docs/handoffs/SP-902.md`)
+**Context refs:** DEV-SPEC §18–19 | Decisions: ASSET-01 | Dependency handoffs: SP-603, SP-604, SP-706
 
 
 ### Metrics
