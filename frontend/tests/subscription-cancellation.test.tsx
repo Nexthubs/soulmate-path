@@ -20,6 +20,7 @@ import {
 import {
   SubscriptionSettingsAction,
   formatDate,
+  formatSubscriptionPrice,
 } from "../src/soulmate/components/settings";
 
 vi.mock("next/navigation", () => ({
@@ -142,6 +143,63 @@ describe("SP-409: Subscription Cancellation & Settings Action", () => {
       expect(formatDate("2026-10-25T00:00:00Z")).toBe("Oct 25, 2026");
       expect(formatDate(null)).toBe("N/A");
       expect(formatDate(undefined)).toBe("N/A");
+    });
+  });
+
+  describe("4. SP-803: plan and regular monthly price from provider-reconciled state", () => {
+    it("formats backend price data and never fabricates one", () => {
+      expect(formatSubscriptionPrice("29.00", "USD")).toBe("$29.00");
+      expect(formatSubscriptionPrice("29", "EUR")).toBe("€29.00");
+      expect(formatSubscriptionPrice("0.99", "GBP")).toBe("£0.99");
+      // no/invalid price -> null so the UI omits the row instead of inventing one
+      expect(formatSubscriptionPrice(null, "USD")).toBeNull();
+      expect(formatSubscriptionPrice(undefined)).toBeNull();
+      expect(formatSubscriptionPrice("abc", "USD")).toBeNull();
+      expect(formatSubscriptionPrice("-5.00", "USD")).toBeNull();
+    });
+
+    it("shows the plan row with the backend regular monthly price", () => {
+      const html = renderToStaticMarkup(
+        <SubscriptionSettingsAction
+          status="ACTIVE"
+          isPaid={true}
+          subscriptionId="I-SUB-PRICE-1"
+          currency="USD"
+          regularPrice="29.00"
+          nextBillingAt="2026-10-25T00:00:00Z"
+        />
+      );
+
+      expect(html).toContain('data-testid="subscription-plan-info"');
+      expect(html).toContain("Monthly — $29.00/month");
+      // Price comes from backend state; no hard-coded frontend price exists
+      expect(html).toContain("$29.00");
+    });
+
+    it("omits the price portion when the backend provides no price", () => {
+      const html = renderToStaticMarkup(
+        <SubscriptionSettingsAction status="ACTIVE" isPaid={true} subscriptionId="I-SUB-NOPRICE" />
+      );
+
+      expect(html).toContain('data-testid="subscription-plan-info"');
+      expect(html).toContain("Monthly");
+      expect(html).not.toContain("/month");
+    });
+
+    it("keeps showing plan and price on the cancelled (paid-through) state", () => {
+      const html = renderToStaticMarkup(
+        <SubscriptionSettingsAction
+          status="CANCELLED"
+          isPaid={true}
+          currency="EUR"
+          regularPrice="29.00"
+          paidThroughAt="2026-10-25T00:00:00Z"
+          cancelledAt="2026-09-25T12:00:00Z"
+        />
+      );
+
+      expect(html).toContain("Monthly — €29.00/month");
+      expect(html).toContain("Active through Oct 25, 2026");
     });
   });
 

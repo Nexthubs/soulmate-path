@@ -320,6 +320,41 @@ async def test_predictable_state_mapping_for_all_provider_statuses(async_db: Asy
 
 
 @pytest.mark.asyncio
+async def test_status_response_surfaces_plan_price_for_settings(async_db: AsyncSession):
+    """SP-803: settings displays plan price from provider-reconciled backend state.
+
+    The status response must surface the subscription row's currency and regular
+    monthly price (persisted from the server-configured offer at confirm time);
+    NONE responses carry no price data.
+    """
+    # 1. Active paid subscription -> currency/regular_price from the reconciled row
+    sub_id = f"I-PRICE-{uuid.uuid4().hex[:8].upper()}"
+    sess, sub = await create_test_session_and_sub(
+        async_db, sub_id, status="ACTIVE", first_payment_at=datetime.now(timezone.utc)
+    )
+    st = await SubscriptionService.get_subscription_status(async_db, sess)
+    assert st.status == "ACTIVE"
+    assert st.currency == "USD"
+    assert st.regular_price == "29.00"
+    assert st.plan_id == "P-SOULMATE-INTRO"
+
+    # 2. Session without any subscription -> no price data, no fabrication
+    empty_sess = SoulmateSession(
+        public_id=f"test_sess_{uuid.uuid4().hex[:10]}",
+        quiz_version="soulmate-quiz-v1",
+        status="email_captured",
+        current_step="subscribe",
+    )
+    async_db.add(empty_sess)
+    await async_db.commit()
+    await async_db.refresh(empty_sess)
+    st_none = await SubscriptionService.get_subscription_status(async_db, empty_sess)
+    assert st_none.status == "NONE"
+    assert st_none.currency is None
+    assert st_none.regular_price is None
+
+
+@pytest.mark.asyncio
 async def test_reconciliation_preserves_terminal_cancelled_and_expired_states(async_db: AsyncSession):
     """Verify reconciliation will never regress local CANCELLED or EXPIRED status even if PayPal returns ACTIVE."""
     sub_id = f"I-TERMINAL-{uuid.uuid4().hex[:8].upper()}"

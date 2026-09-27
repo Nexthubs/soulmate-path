@@ -1216,7 +1216,7 @@ Destination comes from server-authoritative status, not local membership flag on
 
 **Priority:** P1  
 **Depends:** SP-408  
-**Status:** TODO
+**Status:** DONE (docs/handoffs/SP-803.md)  
 **Context refs:** DEV-SPEC §2, §9.8 | Decisions: PAY-AUTH-01 | Dependency handoffs: SP-408
 
 

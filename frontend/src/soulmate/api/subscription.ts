@@ -62,6 +62,10 @@ export interface SubscriptionStatusResponse {
   subscription_id?: string | null;
   plan_id?: string | null;
   provider_status?: string | null;
+  /** Plan currency of the reconciled subscription (SP-803). */
+  currency?: string | null;
+  /** Regular monthly renewal price, decimal string from backend state (SP-803). */
+  regular_price?: string | null;
   first_payment_at?: string | null;
   next_billing_at?: string | null;
   paid_through_at?: string | null;

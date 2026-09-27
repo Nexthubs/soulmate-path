@@ -335,6 +335,11 @@ class SubscriptionStatusResponse(BaseModel):
     subscription_id: Optional[str] = Field(default=None, description="PayPal subscription ID")
     plan_id: Optional[str] = Field(default=None, description="PayPal plan ID")
     provider_status: Optional[str] = Field(default=None, description="Provider status string")
+    currency: Optional[str] = Field(default=None, description="Plan currency of the reconciled subscription (SP-803)")
+    regular_price: Optional[str] = Field(
+        default=None,
+        description="Regular monthly renewal price of the reconciled subscription, decimal string (SP-803)",
+    )
     first_payment_at: Optional[datetime] = Field(default=None, description="Confirmed payment UTC timestamp")
     next_billing_at: Optional[datetime] = Field(default=None, description="Next billing UTC timestamp")
     paid_through_at: Optional[datetime] = Field(default=None, description="Paid-through expiration UTC timestamp")

@@ -8,6 +8,10 @@ export interface SubscriptionSettingsActionProps {
   isPaid: boolean;
   subscriptionId?: string | null;
   planId?: string | null;
+  /** Plan currency of the reconciled subscription, e.g. "USD" (SP-803). */
+  currency?: string | null;
+  /** Regular monthly renewal price, decimal string from backend state (SP-803). */
+  regularPrice?: string | null;
   nextBillingAt?: string | null;
   paidThroughAt?: string | null;
   cancelledAt?: string | null;
@@ -33,6 +37,29 @@ export function formatDate(dateStr?: string | null): string {
 }
 
 /**
+ * Formats the provider-reconciled regular monthly price for display (SP-803).
+ * Returns null when no valid price is available so callers can omit the row
+ * instead of fabricating one.
+ */
+export function formatSubscriptionPrice(
+  price?: string | null,
+  currency?: string | null
+): string | null {
+  if (!price) return null;
+  const value = Number(price);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: currency && currency.length === 3 ? currency : "USD",
+      minimumFractionDigits: 2,
+    }).format(value);
+  } catch {
+    return `${currency ?? "USD"} ${price}`.trim();
+  }
+}
+
+/**
  * Subscription settings action component (DEV-SPEC §9.8, §15.9, SP-409).
  * Provides clear cancellation confirmation, server-side cancellation call,
  * accurate paid-through access semantics, repeated cancellation safety,
@@ -43,6 +70,8 @@ export function SubscriptionSettingsAction({
   isPaid,
   subscriptionId,
   planId,
+  currency,
+  regularPrice,
   nextBillingAt: initialNextBilling,
   paidThroughAt: initialPaidThrough,
   cancelledAt: initialCancelledAt,
@@ -129,6 +158,18 @@ export function SubscriptionSettingsAction({
               </span>
             )}
           </div>
+        </div>
+
+        {/* Plan and price — provider-reconciled backend state (SP-803).
+            V1 has exactly one monthly plan (DEV-SPEC §9.1); the price comes
+            from the backend subscription row, never a frontend constant. */}
+        <div className="flex justify-between text-sm text-slate-600" data-testid="subscription-plan-info">
+          <span>Plan:</span>
+          <span className="font-medium text-slate-800">
+            {formatSubscriptionPrice(regularPrice, currency)
+              ? `Monthly — ${formatSubscriptionPrice(regularPrice, currency)}/month`
+              : "Monthly"}
+          </span>
         </div>
 
         {/* Status messages and dates */}

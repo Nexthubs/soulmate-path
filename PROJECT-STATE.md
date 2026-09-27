@@ -69,7 +69,8 @@ Report mock fixture (`SP-705`) completed and evidenced in `docs/handoffs/SP-705.
 *(Note: WAVE 7 is 100% complete — SP-701..705 DONE, 2026-09-27. M5 scaffold re-review PASS; SP-706 stays BLOCKED on REPORT-01/02.)*
 Drawer Soulmate entry (`SP-801`) completed and evidenced in `docs/handoffs/SP-801.md` (global AccountDrawer mounted once in the soulmate layout, `Soulmate Sketch` entry first with injectable sanitized destination defaulting to `/soulmate`; status-aware routing deferred to SP-802).
 Status-aware Drawer destination (`SP-802`) completed and evidenced in `docs/handoffs/SP-802.md` (destination resolved per open from the SP-503 aggregate — 403→`/soulmate`, LOCKED→`/soulmate/result`, unlocked→`/soulmate/sketch`; cookie-only identity, real-backend E2E for all routing rows).
-*(Note: WAVE 8 is in progress — SP-801..802 DONE, 2026-09-27; SP-803..804 TODO.)*
+Subscription details in Settings (`SP-803`) completed and evidenced in `docs/handoffs/SP-803.md` (status response now carries `currency`/`regular_price` from the reconciled row; settings card shows plan/status/regular monthly price/next-billing-or-paid-through; full Figma page-chrome parity flagged for M6 QA).
+*(Note: WAVE 8 is in progress — SP-801..803 DONE, 2026-09-27; SP-804 TODO.)*
 
 ## 2. Milestone status
 
@@ -125,6 +126,6 @@ Report production provider: ENABLED in dev (REPORT-01/02 RESOLVED; on_demand via
 
 ```text
 1. Report generation is live in dev (SP-706 DONE). M6 must verify production provider configuration, run a real paid-flow acceptance, reword-review READY/FAILED copy if needed, and re-check exact 390px visual parity. M6 must independently verify release configuration, exact 390px visual parity and a real paid flow. Release QA must also reword the Report page READY-state copy (it currently says the report is being prepared although generation is off — M5 re-review Low note).
-2. WAVE 8 (authorized): SP-801..802 DONE — next safe tasks are SP-803 (subscription details in Settings from provider-reconciled backend state) and SP-804 (cancel action UI, after SP-803).
+2. WAVE 8 (authorized): SP-801..803 DONE — next safe task is SP-804 (cancel action UI refinement on the SP-803 settings card). M6 release QA should also decide on full Figma parity for the Settings page chrome (see docs/handoffs/SP-803.md §9).
 3. Preserve M4's signed-only storage rule for deployment; M6 must recheck the production bucket and affected consumers. Follow later tasks only when separately authorized.
 ```

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { getSubscriptionStatus, SubscriptionStatusResponse } from "@/soulmate/api/subscription";
 import { SubscriptionSettingsAction } from "@/soulmate/components/settings";
+import { DrawerMenuButton } from "@/soulmate/components/drawer";
 import { SOULMATE_ROUTES } from "@/soulmate/domain";
 
 function SettingsContent() {
@@ -57,9 +58,13 @@ function SettingsContent() {
         >
           <span>&larr;</span> Back to Result
         </Link>
-        <span className="font-serif italic font-bold text-[22px] tracking-tight text-[#2c1e4a]">
-          Hint
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="font-serif italic font-bold text-[22px] tracking-tight text-[#2c1e4a]">
+            Hint
+          </span>
+          {/* Shared trigger for the global AccountDrawer (SP-801/803; Figma 102:1423 places the trigger here) */}
+          <DrawerMenuButton />
+        </div>
       </header>
 
       <div className="flex-1 w-full space-y-6">
@@ -112,6 +117,8 @@ function SettingsContent() {
             isPaid={subData.is_paid}
             subscriptionId={subData.subscription_id}
             planId={subData.plan_id}
+            currency={subData.currency}
+            regularPrice={subData.regular_price}
             nextBillingAt={subData.next_billing_at}
             paidThroughAt={subData.paid_through_at}
             cancelledAt={subData.cancelled_at}

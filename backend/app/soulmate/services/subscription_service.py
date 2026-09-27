@@ -573,6 +573,8 @@ class SubscriptionService:
             subscription_id=sub.provider_subscription_id,
             plan_id=sub.provider_plan_id,
             provider_status=sub.provider_status,
+            currency=sub.currency,
+            regular_price=str(sub.regular_price) if sub.regular_price is not None else None,
             first_payment_at=sub.first_payment_at,
             next_billing_at=sub.next_billing_at,
             paid_through_at=sub.paid_through_at,
