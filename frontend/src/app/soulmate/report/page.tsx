@@ -42,12 +42,14 @@ function ReportPageContent() {
     enabled: guardEnabled,
   });
 
-  // Live mode (M5 review H-01): authoritative session-scoped report state and
-  // validated content from GET /api/soulmate/artifacts/report (SP-702). The stored,
-  // server-validated ReportV1 is the only thing ever rendered — no generation exists
-  // client-side (REPORT-01/02 keep production generation off; SP-706 owns the trigger).
+  // Live mode (M5-H01 + SP-706): authoritative session-scoped report state and
+  // validated content from GET /api/soulmate/artifacts/report. The stored,
+  // server-validated ReportV1 is the only thing ever rendered; on_demand
+  // generation is enqueued server-side (idempotent — the server decides), with
+  // bounded polling while GENERATING (SP-505 pattern).
   const report = useReportStatus({
     enabled: isLive && guard.allowed !== false,
+    polling: isLive,
   });
 
   const viewState = isFixture
@@ -131,20 +133,15 @@ function ReportPageContent() {
   }
 
   // Live non-completed states (READY / GENERATING / FAILED): status cards. LOCKED is
-  // redirected to Result above; the server decides when generation may run, so these
-  // states never offer a client-side generation action (REPORT-01/02, SP-706).
+  // redirected to Result above. READY offers the on_demand create CTA (idempotent —
+  // the server decides, REPORT-01) and FAILED offers the same idempotent retry,
+  // which the server honors only for a FAILED_RETRYABLE job under the attempt cap.
   if (
     isLive &&
     (effectiveViewState === "ready" ||
       effectiveViewState === "loading" ||
       effectiveViewState === "failed")
   ) {
-    const copy =
-      effectiveViewState === "ready"
-        ? "Your detailed report is being prepared. Please check back shortly."
-        : effectiveViewState === "loading"
-          ? "Your detailed report is being written right now. This page will show it as soon as it is ready."
-          : "Your report could not be generated automatically. Please contact support if this persists.";
     const icon = effectiveViewState === "failed" ? "⚠️" : "⏳";
     const iconBg =
       effectiveViewState === "failed" ? "bg-red-100 text-red-600" : "bg-amber-100 text-amber-600";
@@ -159,10 +156,31 @@ function ReportPageContent() {
         <h2 className="text-xl font-bold text-neutral-900">
           {effectiveViewState === "failed" ? "Report Unavailable" : "Soulmate Report"}
         </h2>
-        <p className="text-sm text-neutral-600 leading-relaxed">{copy}</p>
+        <p className="text-sm text-neutral-600 leading-relaxed">
+          {effectiveViewState === "ready"
+            ? "Your detailed report is ready to be written — a few minutes of quiet focus is all it takes."
+            : effectiveViewState === "loading"
+              ? "Your detailed report is being written right now. This page will show it as soon as it is ready."
+              : "Your report could not be generated automatically. You can try again or contact support if this persists."}
+        </p>
+        {effectiveViewState !== "loading" && (
+          <button
+            type="button"
+            data-testid={`report-${effectiveViewState}-cta`}
+            onClick={() => void report.triggerGeneration()}
+            disabled={report.isTriggering}
+            className="w-full py-3 px-4 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-60 text-white font-semibold text-sm transition-colors"
+          >
+            {report.isTriggering
+              ? "Working…"
+              : effectiveViewState === "ready"
+                ? "Create My Report"
+                : "Try Again"}
+          </button>
+        )}
         <Link
           href={backUrl}
-          className="inline-block w-full py-3 px-4 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-semibold text-sm transition-colors"
+          className="inline-block w-full py-3 px-4 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-semibold text-sm transition-colors"
         >
           Return to Dashboard
         </Link>

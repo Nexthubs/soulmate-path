@@ -435,6 +435,23 @@ class SketchGenerationResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True, extra="ignore")
 
 
+class ReportGenerationResponse(BaseModel):
+    """
+    Response for POST /artifacts/report/generate (DEV-SPEC §15.11, SP-706).
+    Returns the authoritative report status after enqueue (READY stays READY only
+    when the switch is off — generation-enabled deployments move to GENERATING/
+    COMPLETED/FAILED) plus the durable job state when a job is attached.
+    """
+    server_time: datetime = Field(..., description="Server clock UTC instant used for this derivation")
+    report: ArtifactStatusView = Field(..., description="Report countdown/status view after enqueue")
+    job_status: Optional[str] = Field(
+        default=None,
+        description="Durable job state (QUEUED/PROCESSING/COMPLETED/FAILED_RETRYABLE/FAILED_PERMANENT); None when no job is attached (e.g. already completed)",
+    )
+
+    model_config = ConfigDict(from_attributes=True, extra="ignore")
+
+
 class SketchAssetResponse(BaseModel):
     """
     Response for GET /artifacts/sketch (DEV-SPEC §15.10, SP-607).

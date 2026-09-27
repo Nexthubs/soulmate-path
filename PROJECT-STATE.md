@@ -7,7 +7,7 @@
 
 ```text
 Current milestone: M5 — Report Scaffold Ready (remediation re-reviewed 2026-09-27)
-Status: PASS for the scaffold at 6e49409; REPORT-01 RESOLVED 2026-09-27 (on_demand, gemma-4-26b via OpenAI-compatible adapter) — SP-706 implementation authorized, go-live still gated on REPORT-02 (owner to supply the production prompt text); generation switch stays OFF
+Status: M5 PASS at 6e49409; REPORT-01/02 RESOLVED and SP-706 DONE (2026-09-27) — on_demand report generation LIVE in dev on gemma-4-26b with real-provider E2E evidence (docs/handoffs/SP-706.md)
 Latest accepted review: docs/reviews/M5-REPORT-SCAFFOLD-REVIEW.md (M5 PASS; evidence limits recorded)
 ```
 
@@ -92,7 +92,7 @@ Blocking decision IDs:
 | AGE-01 | final DOB/legal rule |
 | COPY-02 | complete Transition-2 production copy |
 | COPY-03 | final Transition-4 dynamic behavior |
-| REPORT-02 — owner to supply the production prompt text (REPORT-01 RESOLVED 2026-09-27: on_demand + gemma-4-26b) | SP-706 go-live / M6 |
+| (REPORT-01/02 RESOLVED 2026-09-27; SP-706 DONE — remaining M6 gates: production provider config, real paid flow, PAY-01, DOMAIN-01) | M6 |
 | RECOVERY-01 | same-email second paid session Sketch recovery path; 2026-09-27 owner ruling: session-scoped read isolation is INTENTIONAL (`不得恢复裸邮箱跨会话读取`), verified-identity recovery deferred to a future iteration; still gates PAY-02 resolution away from `blocked` |
 | PROMPT-01 | future Sketch input-quality change |
 | DOMAIN-01 | canonical production URLs |
@@ -110,18 +110,17 @@ API checkpoint: DEV-SPEC v1.2 baseline; error taxonomy, correlation middleware, 
 Payment provider: PayPal monthly subscription with intro first month + regular monthly renewal
 Sketch target model: gpt-image-2 via provider adapter
 Sketch production asset access: ASSET-ACCESS-01 chooses one-hour presigned URLs; current dev R2 origin private-read smoke PASS; future production bucket requires M6 verification
-Report production provider: disabled / REPORT-01 RESOLVED 2026-09-27 (on_demand, gemma-4-26b via SP-704 adapter); v1 prompt draft authored and pending owner approval (REPORT-02); SP-706 go-live after approval = set SOULMATE_REPORT_PROMPT_VERSION + switch SOULMATE_REPORT_PROVIDER=openai_compatible + real provider E2E
+Report production provider: ENABLED in dev (REPORT-01/02 RESOLVED; on_demand via SP-706 trigger/queue; v1 owner-approved prompt ba6e6e7e…; model gemma-4-26b); production deployment verification = M6
 ```
 
 ## 5. Production-disabled
 
 - PayPal production checkout until required pricing/config/provider verification is complete.
-- Production Report AI generation until `REPORT-01/02` are RESOLVED.
 - Unapproved/fake testimonials or unsubstantiated statistics.
 
 ## 6. Next safe tasks
 
 ```text
-1. Keep Report production generation off while REPORT-02 remains OPEN; a v1 prompt draft now exists at config/prompts/soulmate-report/v1.txt and is PENDING OWNER APPROVAL (DECISIONS.md REPORT-02). On approval: set SOULMATE_REPORT_PROMPT_VERSION=v1, implement SP-706 (on_demand trigger), enable the provider switch, and run a real generation E2E. M6 must independently verify release configuration, exact 390px visual parity and a real paid flow. Release QA must also reword the Report page READY-state copy (it currently says the report is being prepared although generation is off — M5 re-review Low note).
+1. Report generation is live in dev (SP-706 DONE). M6 must verify production provider configuration, run a real paid-flow acceptance, reword-review READY/FAILED copy if needed, and re-check exact 390px visual parity. M6 must independently verify release configuration, exact 390px visual parity and a real paid flow. Release QA must also reword the Report page READY-state copy (it currently says the report is being prepared although generation is off — M5 re-review Low note).
 2. Preserve M4's signed-only storage rule for deployment; M6 must recheck the production bucket and affected consumers. Follow later tasks only when separately authorized.
 ```

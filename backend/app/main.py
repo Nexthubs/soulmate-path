@@ -10,6 +10,10 @@ from app.api.soulmate.router import api_router
 from app.api.soulmate.subscription import cancel_subscription_endpoint
 from app.api.soulmate.webhooks import router as webhooks_router
 from app.soulmate.schema import SubscriptionCancelResponse
+from app.soulmate.services.report_generation_service import (
+    start_report_workers,
+    stop_report_workers,
+)
 from app.soulmate.services.sketch_generation_service import (
     start_sketch_workers,
     stop_sketch_workers,
@@ -23,12 +27,14 @@ setup_structured_logging(level=logging.DEBUG if settings.debug else logging.INFO
 async def lifespan(app: FastAPI):
     # Validate mandatory configuration in production fail-fast (SP-004 Acceptance #3)
     settings.validate_production_config()
-    # In-process sketch generation workers (DB-backed queue, §11.6; SP-603)
-    worker_tasks = start_sketch_workers()
+    # In-process generation workers over the DB-backed queue (§11.6; SP-603, SP-706)
+    sketch_tasks = start_sketch_workers()
+    report_tasks = start_report_workers()
     try:
         yield
     finally:
-        await stop_sketch_workers(worker_tasks)
+        await stop_sketch_workers(sketch_tasks)
+        await stop_report_workers(report_tasks)
 
 
 app = FastAPI(

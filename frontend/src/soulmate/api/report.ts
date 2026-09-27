@@ -36,3 +36,26 @@ export async function getReportStatus(
   }
   return res.json();
 }
+
+/**
+ * Trigger the (idempotent) on_demand report generation (§13.4/§15.11, SP-706).
+ * Safe to call repeatedly: COMPLETED reports are never regenerated and concurrent
+ * triggers converge on one durable job. Requires the production switch to be
+ * enabled server-side (REPORT-01/02); disabled deployments answer 503.
+ */
+export async function triggerReportGeneration(
+  sessionId?: string,
+  config: ClientConfig = clientConfig
+): Promise<ReportStatusResponse> {
+  const queryParam = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : "";
+  const res = await fetch(`${config.apiBaseUrl}/artifacts/report/generate${queryParam}`, {
+    method: "POST",
+    headers: { Accept: "application/json" },
+    credentials: "include",
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw parseApiError(res.status, errorData);
+  }
+  return res.json();
+}

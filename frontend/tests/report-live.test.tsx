@@ -150,7 +150,7 @@ describe("M5-H01: live report page state machine", () => {
     expect(html).not.toContain("[MOCK]");
   });
 
-  it("live READY: shows the preparing card without any generation action", () => {
+  it("live READY: shows the create CTA (on_demand, SP-706)", () => {
     reportHookMock.current = {
       data: {
         server_time: "2026-09-27T00:00:00Z",
@@ -164,10 +164,11 @@ describe("M5-H01: live report page state machine", () => {
     };
     const html = renderToStaticMarkup(<SoulmateReportPage />);
     expect(html).toContain('data-testid="report-ready-state"');
-    expect(html).toContain("being prepared");
+    expect(html).toContain('data-testid="report-ready-cta"');
+    expect(html).toContain("Create My Report");
   });
 
-  it("live FAILED: shows the support state", () => {
+  it("live FAILED: shows the retry CTA and support copy", () => {
     reportHookMock.current = {
       data: {
         server_time: "2026-09-27T00:00:00Z",
@@ -181,6 +182,7 @@ describe("M5-H01: live report page state machine", () => {
     };
     const html = renderToStaticMarkup(<SoulmateReportPage />);
     expect(html).toContain('data-testid="report-failed-state"');
+    expect(html).toContain('data-testid="report-failed-cta"');
     expect(html).toContain("Report Unavailable");
   });
 

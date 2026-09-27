@@ -1164,7 +1164,7 @@ Create a provider interface without choosing unspecced production content.
 
 **Priority:** P1  
 **Depends:** SP-704 + `REPORT-01` + `REPORT-02`  
-**Status:** BLOCKED
+**Status:** DONE (docs/handoffs/SP-706.md; decisions resolved 2026-09-27)
 **Context refs:** DEV-SPEC §13.3–13.4 | Decisions: REPORT-01, REPORT-02 | Dependency handoffs: SP-704
 
 

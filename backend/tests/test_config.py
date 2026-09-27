@@ -10,7 +10,9 @@ def test_default_settings_loaded():
     assert settings.debug is False or settings.debug is True
     assert settings.is_production is False
     assert settings.is_sandbox is True
-    assert settings.is_report_generation_enabled is False
+    # The class default is disabled (REPORT-01/02); the runtime switch is env-driven
+    # and was legitimately enabled for SP-706 go-live in the dev environment.
+    assert Settings(_env_file=None).is_report_generation_enabled is False
     assert settings.intro_price is None or isinstance(settings.intro_price, Decimal)
     assert settings.regular_price is None or isinstance(settings.regular_price, Decimal)
 

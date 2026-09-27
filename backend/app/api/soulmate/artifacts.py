@@ -5,8 +5,9 @@ POST /artifacts/sketch/generate — on_demand trigger (§11.4): enqueues one log
 idempotent generation job that the worker processes independently of the request
 lifecycle. Auth and ownership follow the Result aggregate pattern (SP-503).
 GET /artifacts/report — authorized, unlocked retrieval of the persisted
-SoulmateReportV1 content (§15.11; SP-702). Generation trigger for reports is
-owned by SP-704 and stays disabled until REPORT-01/02 close.
+SoulmateReportV1 content (§15.11; SP-702). POST /artifacts/report/generate —
+on_demand trigger for the entitled, unlocked session (§13.4/§15.11; SP-706),
+refused while the production switch is off (REPORT-01/02).
 """
 
 from typing import Optional
@@ -19,7 +20,12 @@ from app.core.errors import ForbiddenOwnershipError, NotFoundError
 from app.db.models.artifact import AIGenerationJob, SoulmateArtifact
 from app.db.models.session import SoulmateSession
 from app.db.session import get_db
-from app.soulmate.schema import ReportResponse, SketchAssetResponse, SketchGenerationResponse
+from app.soulmate.schema import (
+    ReportGenerationResponse,
+    ReportResponse,
+    SketchAssetResponse,
+    SketchGenerationResponse,
+)
 from app.soulmate.security import (
     extract_session_token,
     get_authenticated_session_public_id,
@@ -27,6 +33,7 @@ from app.soulmate.security import (
     verify_session_token,
 )
 from app.soulmate.services.object_storage_sink import build_sketch_image_url
+from app.soulmate.services.report_generation_service import ReportGenerationService
 from app.soulmate.services.report_service import ReportService
 from app.soulmate.services.session_service import SessionService
 from app.soulmate.services.sketch_generation_service import (
@@ -190,4 +197,33 @@ async def get_report_endpoint(
         server_time=statuses.server_time,
         report=statuses.report,
         content=content,
+    )
+
+
+@router.post(
+    "/report/generate",
+    response_model=ReportGenerationResponse,
+    summary="Trigger on_demand report generation (DEV-SPEC §13.4, §15.11, SP-706)",
+)
+async def generate_report_endpoint(
+    request: Request,
+    session_id: Optional[str] = Query(default=None, description="Optional public session ID"),
+    db: AsyncSession = Depends(get_db),
+) -> ReportGenerationResponse:
+    """
+    Enqueue one logical V1 report generation for the authenticated entitled,
+    unlocked session (on_demand, REPORT-01). Idempotent: a completed report is
+    returned as-is and concurrent triggers converge on one durable job; the
+    provider switch (REPORT-01/02) must be enabled or the request fails with 503.
+    The worker processes the job after this request ends.
+    """
+    session = await _resolve_authorized_session(request, session_id, db)
+    outcome = await ReportGenerationService.enqueue_report_generation(db, session)
+
+    statuses = await ArtifactStatusService.get_artifact_statuses(db, session.id)
+
+    return ReportGenerationResponse(
+        server_time=statuses.server_time,
+        report=statuses.report,
+        job_status=outcome.job.status if outcome.job is not None else None,
     )

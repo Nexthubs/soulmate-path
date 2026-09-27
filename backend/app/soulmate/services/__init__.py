@@ -22,6 +22,14 @@ from app.soulmate.services.report_fixture import (
     MOCK_REPORT_TITLE,
     build_mock_report,
 )
+from app.soulmate.services.report_generation_service import (
+    ReportEnqueueOutcome,
+    ReportGenerationService,
+    ReportGenerationWorker,
+    report_idempotency_key,
+    start_report_workers,
+    stop_report_workers,
+)
 from app.soulmate.services.report_providers import (
     ALLOWED_REPORT_PROMPT_VARIABLES,
     REPORT_PROVIDER_MOCK,
@@ -63,6 +71,12 @@ __all__ = [
     "MOCK_REPORT_INTRO",
     "MOCK_REPORT_TITLE",
     "build_mock_report",
+    "ReportEnqueueOutcome",
+    "ReportGenerationService",
+    "ReportGenerationWorker",
+    "report_idempotency_key",
+    "start_report_workers",
+    "stop_report_workers",
     "ALLOWED_REPORT_PROMPT_VARIABLES",
     "REPORT_PROVIDER_MOCK",
     "REPORT_PROVIDER_OPENAI_COMPATIBLE",
