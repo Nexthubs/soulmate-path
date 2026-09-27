@@ -161,7 +161,7 @@ describe("SP-409: Subscription Cancellation & Settings Action", () => {
       expect(formatSubscriptionPrice("-5.00", "USD")).toBeNull();
     });
 
-    it("shows the plan row with the backend regular monthly price", () => {
+    it("shows the plan row with the verified backend regular monthly price", () => {
       const html = renderToStaticMarkup(
         <SubscriptionSettingsAction
           status="ACTIVE"
@@ -169,6 +169,7 @@ describe("SP-409: Subscription Cancellation & Settings Action", () => {
           subscriptionId="I-SUB-PRICE-1"
           currency="USD"
           regularPrice="29.00"
+          priceVerified={true}
           nextBillingAt="2026-10-25T00:00:00Z"
         />
       );
@@ -177,6 +178,24 @@ describe("SP-409: Subscription Cancellation & Settings Action", () => {
       expect(html).toContain("Monthly — $29.00/month");
       // Price comes from backend state; no hard-coded frontend price exists
       expect(html).toContain("$29.00");
+    });
+
+    it("shows the plan row WITHOUT an amount when the price is unverified (Wave 8 re-audit H)", () => {
+      const html = renderToStaticMarkup(
+        <SubscriptionSettingsAction
+          status="ACTIVE"
+          isPaid={true}
+          subscriptionId="I-SUB-UNVERIFIED"
+          currency="USD"
+          regularPrice="29.00"
+          nextBillingAt="2026-10-25T00:00:00Z"
+        />
+      );
+
+      expect(html).toContain('data-testid="subscription-plan-info"');
+      expect(html).toContain("Monthly");
+      expect(html).not.toContain("/month");
+      expect(html).not.toContain("$29.00");
     });
 
     it("omits the price portion when the backend provides no price", () => {
@@ -196,6 +215,7 @@ describe("SP-409: Subscription Cancellation & Settings Action", () => {
           isPaid={true}
           currency="EUR"
           regularPrice="29.00"
+          priceVerified={true}
           paidThroughAt="2026-10-25T00:00:00Z"
           cancelledAt="2026-09-25T12:00:00Z"
         />
@@ -243,6 +263,7 @@ describe("SP-409: Subscription Cancellation & Settings Action", () => {
   describe("5. SP-804: cancel action confirmation state and safety", () => {
     const baseDialogProps = {
       paidThroughDisplay: "Oct 25, 2026",
+      isPaid: true,
       isLoading: false,
       onConfirm: () => {},
       onKeep: () => {},
@@ -267,6 +288,27 @@ describe("SP-409: Subscription Cancellation & Settings Action", () => {
       // Both exits available
       expect(html).toContain('data-testid="confirm-cancel-button"');
       expect(html).toContain('data-testid="keep-subscription-button"');
+    });
+
+    it("makes NO access promise for unpaid subscriptions even when a next-billing date exists (Wave 8 re-audit M-2)", () => {
+      // Binding stores PayPal's next_billing_time for APPROVAL_PENDING
+      // subscriptions, but without a confirmed first payment there is no paid
+      // access window to promise.
+      const html = renderToStaticMarkup(
+        <CancelConfirmationDialog
+          paidThroughDisplay={null}
+          isPaid={false}
+          priceText={null}
+          isLoading={false}
+          onConfirm={() => {}}
+          onKeep={() => {}}
+        />
+      );
+
+      expect(html).not.toContain("keep access until");
+      expect(html).not.toContain("depends on your billing state");
+      expect(html).toContain("Cancelling stops all future charges");
+      expect(html).toContain("never be deleted");
     });
 
     it("omits the price sentence when the backend provides no price", () => {
@@ -458,6 +500,26 @@ describe("SP-409: Subscription Cancellation & Settings Action", () => {
       expect(html).toContain("Your paid access period has ended");
       // Retention guarantee remains regardless of the access window (§9.8)
       expect(html).toContain("never be deleted");
+    });
+
+    it("claims no paid access for UNPAID terminal states even with stored billing dates (Wave 8 re-audit M-2)", () => {
+      // A binding without a confirmed first payment may still carry PayPal's
+      // next_billing_time (the scheduled first charge) — it is not an access
+      // window, so neither "Active through" nor "Paid access ended" applies.
+      for (const status of ["CANCELLED", "EXPIRED"] as const) {
+        const copy = derivePaidAccessCopy({
+          status,
+          isPaid: false,
+          cancelledAt: status === "CANCELLED" ? "2026-09-15T00:00:00Z" : null,
+          paidThroughAt: PAST,
+          nextBillingAt: FUTURE,
+          now: NOW,
+        });
+        expect(copy.state).toBe("none");
+        expect(copy.headline).toBe("No paid access");
+        expect(copy.detail).toBe("No future renewal charges will be made.");
+        expect(copy.detail).not.toContain("access");
+      }
     });
   });
 });

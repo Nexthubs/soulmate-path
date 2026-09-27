@@ -79,7 +79,14 @@ export function resolveQuotedCancelPrice(
   return formatSubscriptionPrice(price, currency);
 }
 
-export type PaidAccessState = "active" | "ended" | "retained" | "suspended" | "processing" | "renewing";
+export type PaidAccessState =
+  | "active"
+  | "ended"
+  | "retained"
+  | "none"
+  | "suspended"
+  | "processing"
+  | "renewing";
 
 export interface PaidAccessCopy {
   state: PaidAccessState;
@@ -132,6 +139,16 @@ export function derivePaidAccessCopy(params: {
   // Cancelled (or provider-expired): future renewals are stopped; the access
   // claim must match whether the paid cycle is still running.
   if (status === "CANCELLED" || status === "EXPIRED" || Boolean(cancelledAt)) {
+    // Wave 8 re-audit M-2: an unpaid terminal subscription never had a paid
+    // access window — stored next_billing_at (the scheduled first charge) is
+    // NOT an access end date, so no date-based access claim is made.
+    if (!isPaid) {
+      return {
+        state: "none",
+        headline: "No paid access",
+        detail: "No future renewal charges will be made.",
+      };
+    }
     if (dateKnown && dateIsPast) {
       return {
         state: "ended",
@@ -204,9 +221,9 @@ export function SubscriptionSettingsAction({
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const isCancelled = status === "CANCELLED" || Boolean(cancelledAt);
-  // SP-803 + Wave 8 audit H-2: the cancel confirmation quotes the renewal
-  // price ONLY when it is a verified PayPal plan snapshot. The settings plan
-  // row keeps showing the backend value as plan information.
+  // SP-803 + Wave 8 audit H-2 (re-audit confirmed): BOTH the plan row and the
+  // cancel confirmation render the amount only when it is a verified PayPal
+  // plan snapshot; unverified prices are shown as plan shape without a rate.
   const quotedPriceText = resolveQuotedCancelPrice(priceVerified, regularPrice, currency);
   // SP-805: access copy derives from the actual reconciled state and dates.
   const accessCopy = derivePaidAccessCopy({
@@ -292,14 +309,13 @@ export function SubscriptionSettingsAction({
         </div>
 
         {/* Plan and price — provider-reconciled backend state (SP-803).
-            V1 has exactly one monthly plan (DEV-SPEC §9.1); the price comes
-            from the backend subscription row, never a frontend constant. */}
+            V1 has exactly one monthly plan (DEV-SPEC §9.1); the amount renders
+            only when it is a verified PayPal plan snapshot (Wave 8 re-audit
+            H: unverified prices are not presented as the monthly rate). */}
         <div className="flex justify-between text-sm text-slate-600" data-testid="subscription-plan-info">
           <span>Plan:</span>
           <span className="font-medium text-slate-800">
-            {formatSubscriptionPrice(regularPrice, currency)
-              ? `Monthly — ${formatSubscriptionPrice(regularPrice, currency)}/month`
-              : "Monthly"}
+            {quotedPriceText ? `Monthly — ${quotedPriceText}/month` : "Monthly"}
           </span>
         </div>
 
@@ -361,7 +377,8 @@ export function SubscriptionSettingsAction({
               </button>
             ) : (
               <CancelConfirmationDialog
-                paidThroughDisplay={paidThrough ? formatDate(paidThrough) : null}
+                paidThroughDisplay={isPaid && paidThrough ? formatDate(paidThrough) : null}
+                isPaid={isPaid}
                 priceText={quotedPriceText}
                 isLoading={isLoading}
                 onConfirm={handleConfirmCancel}
@@ -381,6 +398,12 @@ export interface CancelConfirmationDialogProps {
    * unknown (Wave 8 audit M-2: never render an "access until N/A" promise).
    */
   paidThroughDisplay: string | null;
+  /**
+   * Wave 8 re-audit M-2: a paid-cycle access promise requires a confirmed
+   * first payment. Unpaid subscriptions render no access sentence at all —
+   * a stored next-billing date is a scheduled charge, not an access window.
+   */
+  isPaid: boolean;
   /**
    * Formatted renewal price (e.g. "$29.00") or null when the backend price is
    * not a verified provider snapshot (Wave 8 audit H-2: never quote an
@@ -403,6 +426,7 @@ export interface CancelConfirmationDialogProps {
  */
 export function CancelConfirmationDialog({
   paidThroughDisplay,
+  isPaid,
   priceText,
   isLoading,
   onConfirm,
@@ -426,13 +450,13 @@ export function CancelConfirmationDialog({
         ) : (
           "Cancelling stops all future charges. "
         )}
-        {paidThroughDisplay ? (
-          <>
-            You will keep access until <strong>{paidThroughDisplay}</strong>.{" "}
-          </>
-        ) : (
-          "Any remaining access after cancellation depends on your billing state and will be confirmed afterwards. "
-        )}
+        {isPaid
+          ? paidThroughDisplay
+            ? <>
+                You will keep access until <strong>{paidThroughDisplay}</strong>.{" "}
+              </>
+            : "Any remaining access after cancellation depends on your billing state and will be confirmed afterwards. "
+          : null}
         Your previously generated Sketch and Report will <strong>never be deleted</strong>.
       </p>
       <div className="flex gap-2">
