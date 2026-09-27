@@ -1248,7 +1248,7 @@ Shows current plan/status/regular monthly price/next billing or paid-through inf
 
 **Priority:** P1  
 **Depends:** SP-408, SP-803  
-**Status:** PARTIAL (copy implemented; "access ended" wording contradicts first-payment-only server guards — blocked on owner decision `PAID-THROUGH-01`)  
+**Status:** DONE (docs/handoffs/SP-805.md; copy/guard contract aligned via `PAID-THROUGH-01` RESOLVED 2026-09-27)  
 **Context refs:** DEV-SPEC §9.8, §10 | Decisions: PAY-AUTH-01 | Dependency handoffs: SP-408, SP-803
 
 

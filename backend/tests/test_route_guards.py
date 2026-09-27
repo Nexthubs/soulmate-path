@@ -468,3 +468,136 @@ async def test_guard_service_rejects_active_subscription_without_first_payment_a
     assert verdict_paid.allowed is True
     assert verdict_paid.is_paid is True
     assert verdict_paid.redirect_to is None
+
+
+# ==============================================================================
+# 4. PAID-THROUGH-01 (resolved 2026-09-27): paid entitlement survives
+#    cancellation until the known paid-cycle end. HIGH-RISK evidence — denial
+#    requires positive evidence (a passed paid_through_at on the server clock);
+#    NULL means unknown and never denies.
+# ==============================================================================
+
+
+def test_guard_paid_through_window_matrix():
+    """Domain matrix: paid routes honor the paid-through access window."""
+    now = datetime(2026, 9, 27, 12, 0, 0, tzinfo=timezone.utc)
+    paid_at = datetime(2026, 9, 20, 12, 0, 0, tzinfo=timezone.utc)
+    future_end = datetime(2026, 10, 25, 12, 0, 0, tzinfo=timezone.utc)
+    past_end = datetime(2026, 9, 25, 12, 0, 0, tzinfo=timezone.utc)
+
+    # 1. Paid + future paid_through (cancelled mid-cycle) -> access continues
+    r = evaluate_route_guard(
+        "/soulmate/result", session_exists=True, is_paid=True,
+        first_payment_at=paid_at, paid_through_at=future_end, server_time=now,
+    )
+    assert r["allowed"] is True
+    assert r["paid_through_ended"] is False
+    # sketch unlocked (13h > 12h) and still inside the paid window
+    r = evaluate_route_guard(
+        "/soulmate/sketch", session_exists=True, is_paid=True,
+        first_payment_at=paid_at, paid_through_at=future_end, server_time=now,
+    )
+    assert r["allowed"] is True
+
+    # 2. Paid + passed paid_through -> denied on ALL paid routes, redirect to subscribe
+    for route in ("/soulmate/result", "/soulmate/sketch", "/soulmate/report"):
+        r = evaluate_route_guard(
+            route, session_exists=True, is_paid=True,
+            first_payment_at=paid_at, paid_through_at=past_end, server_time=now,
+        )
+        assert r["allowed"] is False, route
+        assert r["redirect_to"] == "/soulmate/subscribe", route
+        assert "PAID-THROUGH-01" in r["reason"]
+        assert r["paid_through_ended"] is True
+
+    # 3. Boundary: access ends exactly at paid_through_at (server clock, >=)
+    r = evaluate_route_guard(
+        "/soulmate/result", session_exists=True, is_paid=True,
+        first_payment_at=paid_at, paid_through_at=now, server_time=now,
+    )
+    assert r["allowed"] is False
+
+    # 4. NULL paid_through -> unknown, never "ended" (ACTIVE subs normally have none)
+    r = evaluate_route_guard(
+        "/soulmate/result", session_exists=True, is_paid=True,
+        first_payment_at=paid_at, paid_through_at=None, server_time=now,
+    )
+    assert r["allowed"] is True
+    assert r["paid_through_ended"] is False
+
+    # 5. Unpaid stays denied first (PAY-AUTH-01 unchanged), even with a date present
+    r = evaluate_route_guard(
+        "/soulmate/result", session_exists=True, is_paid=False,
+        first_payment_at=None, paid_through_at=future_end, server_time=now,
+    )
+    assert r["allowed"] is False
+    assert "PAY-AUTH-01" in r["reason"]
+
+    # 6. Paid-through denial wins over unlock: sketch 12h-unlocked but window over
+    r = evaluate_route_guard(
+        "/soulmate/sketch", session_exists=True, is_paid=True,
+        first_payment_at=paid_at, paid_through_at=past_end, server_time=now,
+    )
+    assert r["allowed"] is False
+    assert r["redirect_to"] == "/soulmate/subscribe"
+
+
+@pytest.mark.asyncio
+async def test_guard_service_enforces_cancelled_paid_through_window(async_db, db_session: Session):
+    """Service-level evidence: a CANCELLED subscription keeps paid-route access
+    until paid_through_at, then loses it — server-persisted data only."""
+    public_id = f"test_guard_pt_{uuid.uuid4().hex[:12]}"
+    sess = SoulmateSession(
+        public_id=public_id,
+        quiz_version="soulmate-quiz-v1",
+        status=SessionStatus.SUBSCRIBED.value,
+        current_step="result",
+        quiz_completed_at=datetime.now(timezone.utc),
+        email=f"{public_id}@example.com",
+        email_normalized=f"{public_id}@example.com",
+        subscription_success_at=datetime.now(timezone.utc) - timedelta(days=40),
+    )
+    db_session.add(sess)
+    db_session.commit()
+    db_session.refresh(sess)
+
+    # Cancelled 5 days ago, paid through 25 more days -> still inside the window
+    sub = Subscription(
+        session_id=sess.id,
+        provider="paypal",
+        provider_subscription_id=f"I-GUARDPT-{uuid.uuid4().hex[:8]}",
+        provider_plan_id="P-INTRO-GUARD",
+        provider_status="CANCELLED",
+        currency="USD",
+        regular_price=Decimal("29.00"),
+        first_payment_at=datetime.now(timezone.utc) - timedelta(days=40),
+        cancelled_at=datetime.now(timezone.utc) - timedelta(days=5),
+        paid_through_at=datetime.now(timezone.utc) + timedelta(days=25),
+    )
+    db_session.add(sub)
+    db_session.commit()
+
+    v_inside = await GuardService.evaluate_guard(db=async_db, target_route="/soulmate/result", session=sess)
+    assert v_inside.allowed is True
+
+    # The paid cycle ends -> access is denied on the same persisted row
+    sub.paid_through_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+    db_session.commit()
+
+    v_after = await GuardService.evaluate_guard(db=async_db, target_route="/soulmate/result", session=sess)
+    assert v_after.allowed is False
+    assert v_after.redirect_to == "/soulmate/subscribe"
+    assert "PAID-THROUGH-01" in v_after.reason
+
+    # Sketch: unlocked (40 days > 12h) yet denied — the window rule wins
+    v_sketch = await GuardService.evaluate_guard(db=async_db, target_route="/soulmate/sketch", session=sess)
+    assert v_sketch.allowed is False
+    assert v_sketch.sketch_unlocked is True
+    assert v_sketch.redirect_to == "/soulmate/subscribe"
+
+    # ACTIVE subscription without any paid_through_at keeps access (unknown != ended)
+    sub.provider_status = "ACTIVE"
+    sub.paid_through_at = None
+    db_session.commit()
+    v_active = await GuardService.evaluate_guard(db=async_db, target_route="/soulmate/result", session=sess)
+    assert v_active.allowed is True

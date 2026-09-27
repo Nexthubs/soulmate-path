@@ -161,11 +161,15 @@
 
 ### PAID-THROUGH-01 — Guard enforcement vs paid-through access window
 
-- **Status:** OPEN
+- **Status:** RESOLVED
 - **Date:** 2026-09-27
-- **Context:** Wave 8 audit (risk verification): §9.8 DEV DECISION keeps paid entitlement until `paid_through_at`, and the SP-805 settings copy derives "paid access ended" from that date. However, the server route guards (`guard_service` / `domain/guard.py`) grant `/soulmate/result`, `/soulmate/sketch`, `/soulmate/report` based on a confirmed first payment only — they never check `paid_through_at`. Copy and server behavior can therefore disagree after the paid window ends (copy is stricter than enforcement; generated artifacts remain permanently retained in both readings).
-- **Decision:** TBD by owner: either (a) extend the route guards/entitlement derivation to honor `paid_through_at` (high-risk entitlement change requiring dedicated review evidence), or (b) amend the spec/copy to describe first-payment-based access. Unilateral guard change is forbidden.
-- **Affected:** SP-805, SP-304-era guards, SP-408, M6 review.
+- **Owner/approver:** product owner (this session directive)
+- **Context:** Wave 8 audit (risk verification): §9.8 DEV DECISION keeps paid entitlement until `paid_through_at`, and the SP-805 settings copy derives "paid access ended" from that date. However, the server route guards granted paid routes based on a confirmed first payment only — they never checked `paid_through_at`, so copy and server behavior could disagree after the paid window ended.
+- **Decision:** adopt `paid_through_at` semantics. After cancellation (or any terminal state), paid entitlement remains usable until the end of the current paid cycle (`paid_through_at`), instead of terminating immediately — immediate termination would imply partial-refund logic that the product does not offer. Route guards now deny paid routes (`/result`, `/sketch`, `/report`) only when `paid_through_at` is **known and has passed** on the server clock (TIME-01); a NULL date is "unknown" and never denies (ACTIVE subscriptions normally carry none). Unpaid sessions remain denied via PAY-AUTH-01 regardless of any stored dates. Generated artifacts stay permanently retained (§9.8 + ASSET-01, unchanged).
+- **Rationale:** decouples "stop future renewals" from "revoke paid access" exactly as §9.8 intended; avoids implicit partial-refund commitments (refund policy remains `REFUND-01`, OPEN).
+- **Affected:** `domain/guard.py`, `guard_service.py`, SP-805 copy consistency, SP-304 guards, M6 review. High-risk evidence: `test_guard_paid_through_window_matrix` + `test_guard_service_enforces_cancelled_paid_through_window` (backend 827/827).
+- **Source/evidence:** owner directive 2026-09-27; docs/handoffs/SP-805.md.
+- **Supersedes / superseded by:** —
 
 ## Decision entry template
 

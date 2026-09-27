@@ -50,6 +50,7 @@ def evaluate_route_guard(
     email_captured: bool = False,
     is_paid: bool = False,
     first_payment_at: Optional[datetime] = None,
+    paid_through_at: Optional[datetime] = None,
     server_time: Optional[datetime] = None,
     sketch_hours: int = 12,
     report_hours: int = 24,
@@ -57,6 +58,13 @@ def evaluate_route_guard(
     """
     Evaluates whether the requested target route is accessible per DEV-SPEC §3 table.
     Enforces PAY-AUTH-01 (server payment authority) and TIME-01 (server unlock clock authority).
+
+    PAID-THROUGH-01 (resolved 2026-09-27): paid entitlement survives cancellation
+    until the end of the already-paid cycle — when `paid_through_at` is known and
+    has passed (server clock), paid routes are denied even for previously paid
+    sessions. A NULL `paid_through_at` is "unknown", never "ended": no denial is
+    made without positive evidence (ACTIVE subscriptions normally have no
+    paid_through_at until reconciliation records their cycle end).
     """
     if server_time is None:
         server_time = datetime.now(timezone.utc)
@@ -68,6 +76,7 @@ def evaluate_route_guard(
 
     sketch_unlocked = bool(is_paid and sketch_unlock_at and server_time >= sketch_unlock_at)
     report_unlocked = bool(is_paid and report_unlock_at and server_time >= report_unlock_at)
+    paid_through_ended = bool(paid_through_at and server_time >= paid_through_at)
 
     base_context = {
         "target_route": route_clean,
@@ -75,11 +84,20 @@ def evaluate_route_guard(
         "quiz_completed": quiz_completed,
         "email_captured": email_captured,
         "is_paid": is_paid,
+        "paid_through_ended": paid_through_ended,
         "sketch_unlocked": sketch_unlocked,
         "report_unlocked": report_unlocked,
         "sketch_unlock_at": sketch_unlock_at,
         "report_unlock_at": report_unlock_at,
     }
+
+    def _paid_access_ended() -> Dict[str, Any]:
+        return {
+            **base_context,
+            "allowed": False,
+            "redirect_to": "/soulmate/subscribe",
+            "reason": "Paid access period has ended (PAID-THROUGH-01). Re-subscribe to regain access.",
+        }
 
     # 1. /soulmate/quiz: requires active session. If missing -> /soulmate (new session)
     if route_clean == GuardedRoute.QUIZ.value:
@@ -146,6 +164,8 @@ def evaluate_route_guard(
                 "redirect_to": "/soulmate/subscribe",
                 "reason": "First payment must be confirmed to access result dashboard (PAY-AUTH-01).",
             }
+        if paid_through_ended:
+            return _paid_access_ended()
         return {**base_context, "allowed": True, "redirect_to": None, "reason": None}
 
     # 5. /soulmate/sketch: requires first payment confirmed and 12h unlocked. If not met -> /soulmate/result
@@ -157,6 +177,8 @@ def evaluate_route_guard(
                 "redirect_to": "/soulmate/subscribe",
                 "reason": "Payment required before viewing sketch.",
             }
+        if paid_through_ended:
+            return _paid_access_ended()
         if not sketch_unlocked:
             return {
                 **base_context,
@@ -175,6 +197,8 @@ def evaluate_route_guard(
                 "redirect_to": "/soulmate/subscribe",
                 "reason": "Payment required before viewing report.",
             }
+        if paid_through_ended:
+            return _paid_access_ended()
         if not report_unlocked:
             return {
                 **base_context,
