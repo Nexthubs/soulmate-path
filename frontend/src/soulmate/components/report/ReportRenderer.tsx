@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { SOULMATE_ROUTES, sanitizeInternalRoute } from "@/soulmate/domain";
+import { SOULMATE_ROUTES, parseSoulmateReportV1, sanitizeInternalRoute } from "@/soulmate/domain";
 import {
   ReportRendererProps,
   SoulmateReportV1,
@@ -12,6 +12,13 @@ import {
 /**
  * Editorial Report Renderer Component (Figma Node 102:1358; DEV-SPEC §2, §13, §16; DECISIONS REPORT-01, REPORT-02).
  * Renders structured SoulmateReportV1 JSON with safe wrapping, prop reactivity (M-3), and sanitized routing (M-2).
+ *
+ * SP-703: the renderer consumes ONLY validated ReportV1. Every active payload passes
+ * through the domain guard `parseSoulmateReportV1` (structure + schema version +
+ * plain-text content policy, mirroring backend/app/soulmate/domain/report.py) before
+ * rendering; a payload that fails validation renders a safe fallback state instead —
+ * no unvalidated field ever reaches a text node, and no raw Markdown/HTML is ever
+ * interpreted (all content renders as React text nodes).
  */
 export function ReportRenderer({
   report: initialReport = DEFAULT_REPORT_FIXTURE,
@@ -27,6 +34,21 @@ export function ReportRenderer({
   React.useEffect(() => {
     setActiveReport(initialReport);
   }, [initialReport]);
+
+  // SP-703 validation gate: validated report or a fail-safe fallback.
+  const validated = useMemo(() => {
+    try {
+      return { report: parseSoulmateReportV1(activeReport), error: null as string | null };
+    } catch (error) {
+      return {
+        report: null,
+        error: error instanceof Error ? error.message : "Invalid report payload.",
+      };
+    }
+  }, [activeReport]);
+
+  // TS narrowing alias: inside the article branch below, `report` is the validated payload.
+  const report = validated.report;
 
   const handleBack = () => {
     if (onBack) {
@@ -115,7 +137,8 @@ export function ReportRenderer({
         </span>
       </header>
 
-      {/* Main Editorial Article Content */}
+      {/* Main Editorial Article Content — rendered only from the validated payload (SP-703) */}
+      {report ? (
       <main className="w-full flex-1 space-y-6">
         {/* Editorial Headline (H1) - Figma 102:1363 */}
         <div className="space-y-3.5">
@@ -123,7 +146,7 @@ export function ReportRenderer({
             data-testid="report-title"
             className="font-sans font-bold text-[26px] leading-[33.5px] tracking-[-0.65px] text-[#2d2926] break-words"
           >
-            {activeReport.title}
+            {report.title}
           </h1>
 
           {/* Lead Intro Paragraph - Figma 102:1365 */}
@@ -131,13 +154,13 @@ export function ReportRenderer({
             data-testid="report-intro"
             className="font-sans font-normal text-[15px] leading-[24.75px] text-[#44403c] break-words whitespace-pre-line"
           >
-            {activeReport.intro}
+            {report.intro}
           </p>
         </div>
 
         {/* Numbered Sections List - Figma 102:1366, 102:1379, 102:1406 */}
         <div data-testid="report-sections-container" className="space-y-6 pt-1">
-          {activeReport.sections.map((section, sIdx) => (
+          {report.sections.map((section, sIdx) => (
             <section
               key={section.index || sIdx}
               data-testid={`report-section-${section.index.replace(/[^a-zA-Z0-9]/g, "")}`}
@@ -203,15 +226,36 @@ export function ReportRenderer({
         </div>
 
         {/* Optional Closing Section (DEV-SPEC §13.2) */}
-        {activeReport.closing && (
+        {report.closing && (
           <div
             data-testid="report-closing"
             className="pt-4 pb-2 text-center italic font-sans text-[14px] leading-[22px] text-[#78350f] break-words"
           >
-            &ldquo;{activeReport.closing}&rdquo;
+            &ldquo;{report.closing}&rdquo;
           </div>
         )}
       </main>
+      ) : (
+        /* SP-703 fail-safe: unvalidated payloads never render their fields. */
+        <main
+          data-testid="report-invalid-fallback"
+          className="w-full flex-1 flex flex-col items-center justify-center text-center space-y-3 py-16"
+        >
+          <div
+            aria-hidden="true"
+            className="w-12 h-12 rounded-full bg-amber-100/70 text-amber-800 flex items-center justify-center text-xl"
+          >
+            ✦
+          </div>
+          <h2 className="font-sans font-semibold text-[17px] text-[#2d2926]">
+            Report Unavailable
+          </h2>
+          <p className="font-sans font-light text-[13.5px] leading-[22px] text-[#57534e] max-w-[280px]">
+            This report could not be verified, so it was not rendered. Please try again
+            later or contact support if the problem persists.
+          </p>
+        </main>
+      )}
 
       {/* Celestial End Mark - Figma 102:1417 */}
       <footer

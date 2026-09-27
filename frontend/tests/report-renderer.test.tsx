@@ -199,8 +199,7 @@ describe("SP-108: Report Renderer Fixture UI (DEV-SPEC §2, §13, §16; DECISION
   });
 
   describe("Prop Reactivity & Route Sanitization (M-2 & M-3)", () => {
-    it("M-3: renders updated report data when report prop is updated", () => {
-      const reportA: SoulmateReportV1 = {
+    it("M-3: renders updated report data when report prop is updated", () => {      const reportA: SoulmateReportV1 = {
         schemaVersion: "v1",
         title: "Initial Report A",
         intro: "Intro A",
@@ -234,6 +233,84 @@ describe("SP-108: Report Renderer Fixture UI (DEV-SPEC §2, §13, §16; DECISION
       expect(sanitizeInternalRoute("/soulmate/result")).toBe("/soulmate/result");
       expect(sanitizeInternalRoute("/soulmate/result?tab=report")).toBe("/soulmate/result?tab=report");
       expect(sanitizeInternalRoute("/login")).toBe("/login");
+    });
+  });
+
+  describe("Validated-Input Gate & Injection Safety (SP-703)", () => {
+    it("renders the fail-safe fallback for an unvalidated payload and never renders its fields", () => {
+      // Runtime-invalid despite the TS type: markup-bearing title must never render.
+      const malicious = {
+        schemaVersion: "v1",
+        title: "<script>alert(1)</script>",
+        intro: "Intro text",
+        sections: [{ index: "01.", title: "Section", body: "Body" }],
+      } as unknown as SoulmateReportV1;
+
+      const html = renderToStaticMarkup(<ReportRenderer report={malicious} />);
+
+      expect(html).toContain('data-testid="report-invalid-fallback"');
+      expect(html).toContain("Report Unavailable");
+      expect(html).not.toContain("alert(1)");
+      expect(html).not.toContain("<script>");
+      expect(html).not.toContain('data-testid="report-title"');
+    });
+
+    it("renders the fail-safe fallback for structurally invalid payloads (empty sections)", () => {
+      const broken = {
+        schemaVersion: "v1",
+        title: "Some Title",
+        intro: "Intro",
+        sections: [],
+      } as unknown as SoulmateReportV1;
+
+      const html = renderToStaticMarkup(<ReportRenderer report={broken} />);
+
+      expect(html).toContain('data-testid="report-invalid-fallback"');
+      expect(html).not.toContain("Some Title");
+    });
+
+    it("renders the fail-safe fallback for an unsupported schemaVersion", () => {
+      const future = {
+        schemaVersion: "v2",
+        title: "Future Report",
+        intro: "Intro",
+        sections: [{ index: "01.", title: "S", body: "B" }],
+      } as unknown as SoulmateReportV1;
+
+      const html = renderToStaticMarkup(<ReportRenderer report={future} />);
+
+      expect(html).toContain('data-testid="report-invalid-fallback"');
+      expect(html).not.toContain("Future Report");
+    });
+
+    it("keeps the back navigation functional in the fallback state", () => {
+      const broken = { schemaVersion: "v1", title: "x", intro: "y", sections: [] } as unknown as SoulmateReportV1;
+      const html = renderToStaticMarkup(<ReportRenderer report={broken} />);
+      expect(html).toContain('data-testid="report-back-button"');
+      expect(html).toContain('data-testid="report-celestial-end-mark"');
+    });
+
+    it("renders entity-encoded text inertly as plain text (no HTML interpretation)", () => {
+      const entity = {
+        schemaVersion: "v1",
+        title: "Safe Report",
+        intro: "&lt;script&gt;alert(1)&lt;/script&gt;",
+        sections: [{ index: "01.", title: "S", body: "B" }],
+      };
+
+      const html = renderToStaticMarkup(<ReportRenderer report={entity} />);
+
+      expect(html).toContain("Safe Report");
+      // React text-node rendering escapes the entities: present as text, never as markup.
+      expect(html).toContain("&amp;lt;script&amp;gt;");
+      expect(html).not.toContain("<script>alert(1)</script>");
+    });
+
+    it("still renders the canonical fixture (validation passes for valid payloads)", () => {
+      const html = renderToStaticMarkup(<ReportRenderer />);
+      expect(html).toContain('data-testid="report-title"');
+      expect(html).toContain("Your Soulmate Report");
+      expect(html).not.toContain('data-testid="report-invalid-fallback"');
     });
   });
 });

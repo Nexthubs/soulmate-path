@@ -1,30 +1,28 @@
 /**
- * Domain types and fixtures for Soulmate Report (DEV-SPEC §2, §13, §16; DECISIONS REPORT-01, REPORT-02).
+ * Report component view types and fixtures (DEV-SPEC §2, §13, §16; DECISIONS REPORT-01, REPORT-02).
+ *
+ * The canonical SoulmateReportV1 contract lives in the domain layer
+ * (`@/soulmate/domain/report`, the TS mirror of backend SP-701) and is re-exported
+ * here for component consumers. Runtime validation is provided by
+ * `parseSoulmateReportV1` in the same domain module (SP-703).
  */
 
-export interface SoulmateReportSectionPoint {
-  title?: string;
-  body: string;
-}
+export type {
+  SoulmateReportSection,
+  SoulmateReportSectionPoint,
+  SoulmateReportV1,
+} from "@/soulmate/domain/report";
+export {
+  REPORT_SCHEMA_VERSION,
+  ReportValidationError,
+  isSoulmateReportV1,
+  parseSoulmateReportV1,
+} from "@/soulmate/domain/report";
 
-export interface SoulmateReportSection {
-  index: string;
-  title: string;
-  body: string;
-  points?: SoulmateReportSectionPoint[];
-}
-
-export interface SoulmateReportV1 {
-  /**
-   * Content schema version. Only "v1" is produced/accepted by the backend contract
-   * (backend/app/soulmate/domain/report.py, DEV-SPEC §13.2; SP-701).
-   */
-  schemaVersion: string;
-  title: string;
-  intro: string;
-  sections: SoulmateReportSection[];
-  closing?: string;
-}
+import type {
+  SoulmateReportSection,
+  SoulmateReportV1,
+} from "@/soulmate/domain/report";
 
 export interface ReportRendererProps {
   /**
