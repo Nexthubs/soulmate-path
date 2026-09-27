@@ -118,14 +118,15 @@
 
 ### REPORT-02 — Production report prompt/content specification
 
-- **Status:** OPEN — awaiting owner-supplied prompt text (owner decision 2026-09-27: the owner provides the prompt content; the implementation must not author the reading content).
-- **Context:** no supported production prompt or report-content mapping exists in supplied requirements (PRD confirms: report page layout + "reading within 24 hours" FAQ only).
+- **Status:** OPEN — v1 draft authored and PENDING OWNER APPROVAL.
+- **Context:** no supported production prompt or report-content mapping exists in supplied requirements (PRD confirms: report page layout + "reading within 24 hours" FAQ only). Owner initially supplied `PRD/Soulmate-Report-Prompt.md`, which on inspection is the Sketch pencil-portrait image prompt (mirror of `config/prompts/soulmate-sketch/v1.txt`), not a report reading prompt — surfaced to the owner, who then authorized the implementer to draft v1 for approval (2026-09-27).
 - **Required to close (owner to supply):**
   1. The production prompt text (English editorial instruction defining the personalized reading: tone, structure, personalization depth, any prohibited-claim rules).
   2. Any output constraints beyond the `ReportV1` schema (section count, length, forbidden content).
   3. Any safety/compliance framing requirements (e.g. entertainment-purpose wording) — none exists in the PRD.
 - **Integration format (fixed by SP-704 machinery):** the supplied text becomes the body of `config/prompts/soulmate-report/<version>.txt` with exactly two whitelisted placeholders — `{profile_json}` (normalized camelCase profile) and `{report_schema_json}` (the ReportV1 JSON schema); no other braces are permitted; template version must match `SOULMATE_REPORT_PROMPT_VERSION`.
-- **Until closed:** `SOULMATE_REPORT_PROVIDER` stays empty (generation disabled). Once the owner text is received and acknowledged, this entry flips to RESOLVED with the approved template version recorded, the provider switch may be enabled, and SP-706 goes live.
+- **Draft (2026-09-27, pending approval):** `config/prompts/soulmate-report/v1.txt` (sha256 prefix 3c2eca7a6c647933) — editorial reading instructions over `{profile_json}`/`{report_schema_json}`; fixes title to the Figma H1, 3-5 numbered sections with one actionable-points section, closing line; boundaries: no guaranteed outcomes/dates, no medical/financial/legal claims, plain prose only. Template loads and renders through the SP-704 machinery (test_report_provider.py::test_v1_draft_template_loads_and_renders).
+- **Until closed:** `SOULMATE_REPORT_PROVIDER` stays empty (generation disabled). On owner approval (or requested edits + re-approval) this entry flips to RESOLVED with the approved template version recorded, `SOULMATE_REPORT_PROMPT_VERSION` is set, the provider switch may be enabled, and SP-706 goes live with a real provider E2E as gate evidence.
 - **Affected:** SP-704/706, M6.
 
 ### PROMPT-01 — Q7 as Sketch `features` input

@@ -110,7 +110,7 @@ API checkpoint: DEV-SPEC v1.2 baseline; error taxonomy, correlation middleware, 
 Payment provider: PayPal monthly subscription with intro first month + regular monthly renewal
 Sketch target model: gpt-image-2 via provider adapter
 Sketch production asset access: ASSET-ACCESS-01 chooses one-hour presigned URLs; current dev R2 origin private-read smoke PASS; future production bucket requires M6 verification
-Report production provider: disabled / REPORT-01 RESOLVED 2026-09-27 (on_demand, gemma-4-26b via SP-704 adapter); SP-706 go-live gated on REPORT-02 (owner prompt text → config/prompts/soulmate-report/<version>.txt + SOULMATE_REPORT_PROMPT_VERSION, then switch SOULMATE_REPORT_PROVIDER=openai_compatible)
+Report production provider: disabled / REPORT-01 RESOLVED 2026-09-27 (on_demand, gemma-4-26b via SP-704 adapter); v1 prompt draft authored and pending owner approval (REPORT-02); SP-706 go-live after approval = set SOULMATE_REPORT_PROMPT_VERSION + switch SOULMATE_REPORT_PROVIDER=openai_compatible + real provider E2E
 ```
 
 ## 5. Production-disabled
@@ -122,6 +122,6 @@ Report production provider: disabled / REPORT-01 RESOLVED 2026-09-27 (on_demand,
 ## 6. Next safe tasks
 
 ```text
-1. Keep Report production generation off while REPORT-02 remains OPEN; supply the owner prompt text to close it (format fixed in DECISIONS.md REPORT-02), then SP-706 implements the on_demand trigger and go-live. M6 must independently verify release configuration, exact 390px visual parity and a real paid flow. Release QA must also reword the Report page READY-state copy (it currently says the report is being prepared although generation is off — M5 re-review Low note).
+1. Keep Report production generation off while REPORT-02 remains OPEN; a v1 prompt draft now exists at config/prompts/soulmate-report/v1.txt and is PENDING OWNER APPROVAL (DECISIONS.md REPORT-02). On approval: set SOULMATE_REPORT_PROMPT_VERSION=v1, implement SP-706 (on_demand trigger), enable the provider switch, and run a real generation E2E. M6 must independently verify release configuration, exact 390px visual parity and a real paid flow. Release QA must also reword the Report page READY-state copy (it currently says the report is being prepared although generation is off — M5 re-review Low note).
 2. Preserve M4's signed-only storage rule for deployment; M6 must recheck the production bucket and affected consumers. Follow later tasks only when separately authorized.
 ```

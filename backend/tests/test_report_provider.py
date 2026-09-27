@@ -481,3 +481,17 @@ def test_factory_rejects_unknown_provider_code(monkeypatch):
     with pytest.raises(ReportProviderError) as exc_info:
         build_report_provider()
     assert exc_info.value.retryable is False
+
+
+def test_v1_draft_template_loads_and_renders(profile):
+    """The v1 draft (REPORT-02, PENDING OWNER APPROVAL) loads through the real machinery."""
+    tpl = load_report_prompt_template("v1")
+    assert sorted(tpl.placeholders) == ["profile_json", "report_schema_json"]
+    rendered, used = render_report_prompt(
+        ReportGenerationInput(profile=profile, prompt_version="v1")
+    )
+    assert used is tpl
+    assert '"preferredPartnerGender": "male"' in rendered  # QUIZ-01: Q03, not Q02
+    assert '"zodiacSign": "Virgo"' in rendered  # 1994-08-25
+    assert '"keySoulmateQuality": "loyalty"' in rendered
+    assert "{profile_json}" not in rendered and "{report_schema_json}" not in rendered
