@@ -1,6 +1,8 @@
 # M5 — Report Scaffold Ready independent review
 
-- **Result:** BLOCKED
+> **Current verdict:** M5 **PASS** after the 2026-09-27 re-review of `6e49409`. The BLOCKED verdict below documents the original `78f1dbe` target and is historical; see the final section for the current decision and evidence limits.
+
+- **Original result at `78f1dbe`:** BLOCKED (superseded by the final re-review below)
 - **Reviewer/date:** Codex, 2026-09-27
 - **Target:** `main` HEAD `78f1dbeacd456597055f49be7aa2890566ef9b58`; review-start `git status --short --branch` was `## main`, with no staged or unstaged diff.
 - **Scope:** SP-701–705, their handoffs, the M5 gate, report code/tests, existing artifact migration, and the production-disabled boundary. This review changes no application code or migration.
@@ -84,3 +86,22 @@ Next milestone may start: NO on this M5 gate
 ```
 
 Re-review H-01 with a stored fixture→authenticated API→browser render case; fix and retest M-01/M-02; independently verify the database tests in an isolated PostgreSQL instance and capture a current 390px comparison. Do not start SP-706 until REPORT-01/02 resolve. No DB rollback is needed for this review; no migration or application behavior changed.
+
+## M5 remediation re-review — 2026-09-27, HEAD `6e49409`
+
+**Target and scope.** `git status --short --branch` was clean (`## main`); HEAD was `6e49409c285ff7cf386de2dfaf31dd6cb508ed3f`. I inspected the complete `78f1dbe..6e49409` code/test/document diff, `docs/reviews/M5-REMEDIATION.md`, the existing migration/ORM constraint, the archived Report screenshots, and the production-disabled decision/config boundary. This re-review changes no application code or migration.
+
+| Prior item | Re-review result | Evidence |
+|---|---|---|
+| H-01 High — stored Report disconnected from page | **Closed for the M5 scaffold.** The page reads `GET /artifacts/report` with credentials, uses the server status, and passes only returned content to `ReportRenderer`; absent content cannot fall back to the Figma fixture. Mocked page tests cover states and the stored-content branch. The remediation records a real dev-stack fixture save → cookie-authenticated API read → browser render and archives a screenshot. | `frontend/src/app/soulmate/report/page.tsx:33-62,133-203`; `frontend/src/soulmate/api/report.ts:23-38`; `frontend/src/soulmate/hooks/useReportStatus.ts:32-80`; `frontend/tests/report-live.test.tsx:1-276`; `docs/reviews/M5-REMEDIATION.md` live-integration section; `docs/artifacts/m5_h01_live_report_390px.png` |
+| M-01 Medium — mutated model bypass | **Closed.** Existing `BaseModel` inputs are serialized then parsed again. I independently mutated a valid title to `<script>` and confirmed `ReportValidationError`; regression tests cover parser and save boundary. | `backend/app/soulmate/domain/report.py:257-270`; `backend/tests/test_report_schema.py:290-321`; `backend/tests/test_report_persistence.py:479-499` |
+| M-02 Medium — blank closing mismatch | **Closed.** Both validators normalize blank optional `closing` to absent; I independently verified the backend serialization. Frontend tests cover the matching behavior and retain markup rejection. | `backend/app/soulmate/domain/report.py:212-225`; `frontend/src/soulmate/domain/report.ts:195-209`; `backend/tests/test_report_schema.py:307-320`; `frontend/tests/report-domain.test.ts:196-234` |
+| R-01 Medium risk — version ambiguity | **Closed for V1.** Report read/save and artifact-status queries now select V1. PostgreSQL regression tests cover coexistence with a V2 row and missing V1. No migration changed. | `backend/app/soulmate/services/report_service.py:39-60,89-100`; `backend/app/soulmate/services/status_service.py:47-60`; `backend/tests/test_report_persistence.py:510-571` |
+
+**Checks personally run on `6e49409`:** `backend/.venv/bin/pytest backend/tests/test_report_schema.py backend/tests/test_report_provider.py -q` PASS **132/132**; `npm --prefix frontend test -- --run` PASS **352/352**; frontend typecheck, lint and build PASS; `git diff 78f1dbe..6e49409 --check` PASS; read-only parser reproductions PASS. No PostgreSQL test or paid-provider call was made by this reviewer. The remediation's exact command/result for its disposable PostgreSQL migration round-trip and suite is **802/802 PASS** (`docs/reviews/M5-REMEDIATION.md`); its seed script and screenshot were inspected, but its cleaned-up DB session cannot be independently re-queried now.
+
+**Evidence limits:** The archived live Report PNG shows the `[MOCK]` title, intro, ordered sections, points, closing and end mark without visible overflow. Its file dimensions are **375×859**, while the remediation says the browser viewport was 390×844; the PNG alone does not establish the exact viewport or a current pixel comparison against Figma `102:1358`. The renderer's styles are unchanged from SP-108 and M5 requires structured fixture rendering; exact 390px visual sign-off remains for release QA. A real PayPal purchase, 24-hour wait and live OpenAI-compatible Report generation were **NOT_RUN**; they are not claimed as M5 acceptance. `REPORT-01/02` remain `OPEN`, local report generation is disabled, no production prompt template or trigger is shipped, and SP-706 remains blocked. The live READY page says the report is being prepared although generation is off; verify user-facing copy before production release.
+
+**Current findings:** Critical 0; High 0; Medium 0 confirmed within the M5 scaffold gate. Low evidence limitation: the archived PNG does not itself prove the stated 390×844 viewport. The READY-state copy is a release risk, not evidence that production generation is active.
+
+**Current gate decision:** **PASS for M5 Report Scaffold Ready.** The required SP-701–705 handoffs are `DONE`, the structured fixture can be validated, persisted, retrieved with session ownership and server unlock gating, and rendered through the live page. The provider boundary remains pluggable with a disabled default and clearly marked mock content. No confirmed Critical/High issue remains within this M5 scaffold gate. This decision accepts the remediation's documented isolated-PostgreSQL and seeded-browser evidence as submitted evidence; it does not elevate that work to an independently replayed real payment or provider acceptance. M6 and SP-706 remain gated by their own requirements and `REPORT-01/02`.

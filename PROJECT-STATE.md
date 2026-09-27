@@ -6,9 +6,9 @@
 ## 1. Current milestone
 
 ```text
-Current milestone: M5 — Report Scaffold Ready (M5 review BLOCKED → remediation complete 2026-09-27, awaiting re-review)
-Status: PENDING_RE_REVIEW (H-01/M-01/M-02/R-01 fixed per docs/reviews/M5-REMEDIATION.md: page live-wired to the report API with store→API→390px render evidence; isolated-PostgreSQL suite 802/802; production generation still DISABLED, SP-706 remains BLOCKED on REPORT-01/02)
-Latest accepted review: docs/reviews/M4-SKETCH-REVIEW.md (RV-03 PASS; M4 PASS)
+Current milestone: M5 — Report Scaffold Ready (remediation re-reviewed 2026-09-27)
+Status: PASS for the scaffold at 6e49409; production Report generation remains DISABLED and SP-706 BLOCKED on REPORT-01/02
+Latest accepted review: docs/reviews/M5-REPORT-SCAFFOLD-REVIEW.md (M5 PASS; evidence limits recorded)
 ```
 
 Repository architecture & boundary (`SP-001`) completed and evidenced in `docs/handoffs/SP-001.md`.
@@ -66,7 +66,7 @@ Report persistence (`SP-702`) completed and evidenced in `docs/handoffs/SP-702.m
 Report renderer parity (`SP-703`) completed and evidenced in `docs/handoffs/SP-703.md` (canonical contract moved to frontend domain layer with runtime validation mirroring the backend policy; ReportRenderer consumes only validated ReportV1 with a fail-safe fallback state; Figma 102:1358 parity styles untouched).
 Report generation provider interface (`SP-704`) completed and evidenced in `docs/handoffs/SP-704.md` (pluggable `SoulmateReportGenerator` protocol; mock provider + owner-directed OpenAI-compatible adapter over §13.3 config; versioned prompt-template machinery with NO production template shipped — missing template fails closed; factory default disabled).
 Report mock fixture (`SP-705`) completed and evidenced in `docs/handoffs/SP-705.md` (canonical `[MOCK]`-labeled fixture as single source of truth for the mock provider + backend E2E + frontend renderer tests; store→retrieve chain proven; dev env configured with OpenAI-compatible endpoint and gemma-4-26b, switch stays off).
-*(Note: WAVE 7 is 100% complete — SP-701..705 DONE, 2026-09-27. M5 is ready for its independent review; SP-706 stays BLOCKED on REPORT-01/02.)*
+*(Note: WAVE 7 is 100% complete — SP-701..705 DONE, 2026-09-27. M5 scaffold re-review PASS; SP-706 stays BLOCKED on REPORT-01/02.)*
 
 ## 2. Milestone status
 
@@ -76,12 +76,12 @@ Report mock fixture (`SP-705`) completed and evidenced in `docs/handoffs/SP-705.
 | M2 Sandbox Revenue Ready | PASS (restored post-RV-remediation) | `docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md` §6 |
 | M3 Entitlement / Result Ready | CONDITIONAL_PASS | `docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md` |
 | M4 Sketch Ready | PASS — COMPLETE (RV-03, 2026-09-27) | `docs/reviews/M4-SKETCH-REVIEW.md` |
-| M5 Report Scaffold Ready | BLOCKED → remediated 2026-09-27, pending re-review (`docs/reviews/M5-REMEDIATION.md`) | `docs/reviews/M5-REPORT-SCAFFOLD-REVIEW.md` |
+| M5 Report Scaffold Ready | PASS — scaffold only (2026-09-27 re-review at `6e49409`) | `docs/reviews/M5-REPORT-SCAFFOLD-REVIEW.md` |
 | M6 Production Ready | NOT_STARTED | `docs/reviews/M6-PRODUCTION-READINESS-REVIEW.md` |
 
 ## 3. Active / blocked work
 
-Active gate: M5 review BLOCKED (1H/2M/1R) → remediated 2026-09-27 (`docs/reviews/M5-REMEDIATION.md`): /soulmate/report live-wired to GET /artifacts/report with the store→API→390px browser render chain evidenced; backend validation revalidates model instances, closing normalization is cross-stack, and report reads/saves/statuses pin artifact_version='v1'; isolated-PostgreSQL suite 802/802, frontend 352/352. Re-review required before M5 PASS. Wave 7 tasks remain marked DONE as implementation handoffs. M4's accepted checkpoint and its live-evidence limits remain in `docs/reviews/M4-SKETCH-REVIEW.md`. M2 remains PASS and M3 CONDITIONAL_PASS.
+Active gate: M5 scaffold PASS on the reviewed `6e49409` code (`docs/reviews/M5-REPORT-SCAFFOLD-REVIEW.md`); its browser, database and provider evidence limits are recorded there. Report production generation and SP-706 remain blocked on REPORT-01/02. M4 PASS, M2 PASS and M3 CONDITIONAL_PASS remain unchanged.
 
 Blocking decision IDs:
 
@@ -122,6 +122,6 @@ Report production provider: disabled / decision pending (SP-704 adapter + templa
 ## 6. Next safe tasks
 
 ```text
-1. Resolve the M5 findings in `docs/reviews/M5-REPORT-SCAFFOLD-REVIEW.md`, then re-review the store-to-page flow, validation contract, isolated PostgreSQL tests and 390px rendering. Keep Report production generation off while REPORT-01/02 remain OPEN.
+1. Keep Report production generation off while REPORT-01/02 remain OPEN; SP-706 requires their resolution and separate authorization. M6 must independently verify release configuration, exact 390px visual parity and a real paid flow. Release QA must also reword the Report page READY-state copy (it currently says the report is being prepared although generation is off — M5 re-review Low note).
 2. Preserve M4's signed-only storage rule for deployment; M6 must recheck the production bucket and affected consumers. Follow later tasks only when separately authorized.
 ```
