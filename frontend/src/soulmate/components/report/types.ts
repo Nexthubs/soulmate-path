@@ -15,6 +15,11 @@ export interface SoulmateReportSection {
 }
 
 export interface SoulmateReportV1 {
+  /**
+   * Content schema version. Only "v1" is produced/accepted by the backend contract
+   * (backend/app/soulmate/domain/report.py, DEV-SPEC §13.2; SP-701).
+   */
+  schemaVersion: string;
   title: string;
   intro: string;
   sections: SoulmateReportSection[];
@@ -52,6 +57,7 @@ export interface ReportRendererProps {
  * Canonical editorial report fixture from Figma node 102:1358.
  */
 export const DEFAULT_REPORT_FIXTURE: SoulmateReportV1 = {
+  schemaVersion: "v1",
   title: "Your Soulmate Report",
   intro:
     "Before two souls cross paths in the physical realm, they rendezvous energetically. When you elevate your inner vibration to match love, longing ceases and recognition begins.",

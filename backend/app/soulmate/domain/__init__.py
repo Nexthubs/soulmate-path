@@ -102,6 +102,14 @@ from app.soulmate.domain.sketch_models import (
     is_retryable_provider_status,
     provider_code_for_status,
 )
+from app.soulmate.domain.report import (
+    REPORT_SCHEMA_VERSION,
+    ReportValidationError,
+    SoulmateReportSection,
+    SoulmateReportSectionPoint,
+    SoulmateReportV1,
+    parse_soulmate_report_v1,
+)
 
 
 # Canonical immutable quiz version
@@ -211,5 +219,11 @@ __all__ = [
     "SketchProviderError",
     "is_retryable_provider_status",
     "provider_code_for_status",
+    "REPORT_SCHEMA_VERSION",
+    "ReportValidationError",
+    "SoulmateReportSection",
+    "SoulmateReportSectionPoint",
+    "SoulmateReportV1",
+    "parse_soulmate_report_v1",
 ]
 

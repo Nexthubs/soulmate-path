@@ -62,6 +62,7 @@ export function ReportRenderer({
               data-testid="fixture-btn-minimal"
               onClick={() =>
                 setActiveReport({
+                  schemaVersion: "v1",
                   title: "Minimal Soulmate Reading",
                   intro: "A concise overview of soul connection.",
                   sections: [

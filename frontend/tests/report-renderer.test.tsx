@@ -59,6 +59,7 @@ describe("SP-108: Report Renderer Fixture UI (DEV-SPEC §2, §13, §16; DECISION
 
     it("renders optional closing text when provided in schema", () => {
       const customReport: SoulmateReportV1 = {
+        schemaVersion: "v1",
         title: "Test Report",
         intro: "Intro text",
         sections: [
@@ -84,6 +85,7 @@ describe("SP-108: Report Renderer Fixture UI (DEV-SPEC §2, §13, §16; DECISION
     it("applies break-words and whitespace-pre-line to prevent viewport overflow", () => {
       const longUnbrokenWord = "SupercalifragilisticexpialidociousEnergeticSoulmateVibrationalResonanceAlignment";
       const customReport: SoulmateReportV1 = {
+        schemaVersion: "v1",
         title: longUnbrokenWord,
         intro: `First line of intro\nSecond line after newline with ${longUnbrokenWord}`,
         sections: [
@@ -140,6 +142,7 @@ describe("SP-108: Report Renderer Fixture UI (DEV-SPEC §2, §13, §16; DECISION
   describe("Zero Production AI Dependency (Acceptance #4 & REPORT-01/02)", () => {
     it("renders pure structured JSON data without invoking external AI services", () => {
       const customPureJson: SoulmateReportV1 = {
+        schemaVersion: "v1",
         title: "Deterministic Report V1",
         intro: "Purely structured content without runtime AI prompt synthesis.",
         sections: [
@@ -198,11 +201,13 @@ describe("SP-108: Report Renderer Fixture UI (DEV-SPEC §2, §13, §16; DECISION
   describe("Prop Reactivity & Route Sanitization (M-2 & M-3)", () => {
     it("M-3: renders updated report data when report prop is updated", () => {
       const reportA: SoulmateReportV1 = {
+        schemaVersion: "v1",
         title: "Initial Report A",
         intro: "Intro A",
         sections: [{ index: "01.", title: "Sec A", body: "Body A" }],
       };
       const reportB: SoulmateReportV1 = {
+        schemaVersion: "v1",
         title: "Updated Report B",
         intro: "Intro B",
         sections: [{ index: "01.", title: "Sec B", body: "Body B" }],
