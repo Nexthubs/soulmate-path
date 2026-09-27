@@ -111,6 +111,7 @@
 - **Status:** OPEN
 - **Context:** Figma provides report layout, but source requirements do not define a production generator/model.
 - **Decision:** TBD. Implement structured schema/persistence/renderer/provider boundary and fixture only.
+- **Current handling (2026-09-27):** owner direction — the production generator will target an OpenAI-compatible endpoint; the §13.3 provider config surface now includes dedicated report keys (`SOULMATE_REPORT_PROVIDER`, `SOULMATE_REPORT_API_BASE_URL`, `SOULMATE_REPORT_API_KEY`, `SOULMATE_REPORT_MODEL`, `SOULMATE_REPORT_PROMPT_VERSION`), falling back to the shared `OPENAI_*` settings. Generation itself remains disabled until this decision and REPORT-02 close (SP-704 owns the provider/trigger).
 - **Affected:** SP-701..706, M5/M6.
 
 ### REPORT-02 — Production report prompt/content specification

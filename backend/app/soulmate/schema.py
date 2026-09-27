@@ -399,6 +399,26 @@ class ResultAggregateResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True, extra="ignore")
 
 
+class ReportResponse(BaseModel):
+    """
+    Response for GET /api/soulmate/report (DEV-SPEC §15.11, SP-702).
+    Session-scoped report status plus, when the combined §10.3 state is COMPLETED
+    (unlocked + generation finished), the persisted `SoulmateReportV1` content as
+    validated camelCase JSON (SP-701 contract; schemaVersion included). The read
+    path re-validates stored content and fails closed — `content` is None unless
+    the stored payload conforms to the V1 schema/content policy. REPORT is strictly
+    session-scoped (Decision RECOVERY-01).
+    """
+    server_time: datetime = Field(..., description="Server clock UTC instant used for this derivation")
+    report: ArtifactStatusView = Field(..., description="Report countdown/status view (session-scoped)")
+    content: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Validated SoulmateReportV1 content (camelCase); present only when status is COMPLETED",
+    )
+
+    model_config = ConfigDict(from_attributes=True, extra="ignore")
+
+
 class SketchGenerationResponse(BaseModel):
     """
     Response for POST /artifacts/sketch/generate (DEV-SPEC §15.10, SP-603).

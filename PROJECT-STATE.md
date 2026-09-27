@@ -6,8 +6,8 @@
 ## 1. Current milestone
 
 ```text
-Current milestone: M4 — Sketch Ready COMPLETE (Wave 6 implementation and RV-03 review complete)
-Status: PASS (RV-03 final follow-up in docs/reviews/M4-SKETCH-REVIEW.md)
+Current milestone: M5 — Report Scaffold Ready (Wave 7 in progress)
+Status: IN_PROGRESS (SP-701 DONE 2026-09-27)
 Latest accepted review: docs/reviews/M4-SKETCH-REVIEW.md (RV-03 PASS; M4 PASS)
 ```
 
@@ -61,6 +61,8 @@ Durable object storage (`SP-605`) completed and evidenced in `docs/handoffs/SP-6
 One-email-one-sketch constraint (`SP-606`) completed and evidenced in `docs/handoffs/SP-606.md` (identity-level generation convergence on email_normalized; DB constraint proven; cross-session read isolation preserved per RECOVERY-01).
 Live Sketch page states (`SP-607`) completed and evidenced in `docs/handoffs/SP-607.md` (GET /artifacts/sketch asset URL, frontend live state machine, bounded polling, locked→Result routing; current private signed-URL policy is `ASSET-ACCESS-01`).
 *(Note: WAVE 6 is 100% complete — SP-601..607 DONE, 2026-09-26.)*
+`ReportV1` schema (`SP-701`) completed and evidenced in `docs/handoffs/SP-701.md` (canonical versioned content contract + plain-text content policy; REPORT-01/02 remain OPEN, production Report generation still disabled).
+Report persistence (`SP-702`) completed and evidenced in `docs/handoffs/SP-702.md` (validated content_json on the session-scoped REPORT artifact row, no-clobber canonical save, GET /api/soulmate/artifacts/report with ownership + unlock gating; §13.3 OpenAI-compatible provider env keys added per owner direction, generation still disabled).
 
 ## 2. Milestone status
 
@@ -70,7 +72,7 @@ Live Sketch page states (`SP-607`) completed and evidenced in `docs/handoffs/SP-
 | M2 Sandbox Revenue Ready | PASS (restored post-RV-remediation) | `docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md` §6 |
 | M3 Entitlement / Result Ready | CONDITIONAL_PASS | `docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md` |
 | M4 Sketch Ready | PASS — COMPLETE (RV-03, 2026-09-27) | `docs/reviews/M4-SKETCH-REVIEW.md` |
-| M5 Report Scaffold Ready | NOT_STARTED | `docs/reviews/M5-REPORT-SCAFFOLD-REVIEW.md` |
+| M5 Report Scaffold Ready | IN_PROGRESS (SP-701..702 DONE; SP-703..705 TODO) | `docs/reviews/M5-REPORT-SCAFFOLD-REVIEW.md` |
 | M6 Production Ready | NOT_STARTED | `docs/reviews/M6-PRODUCTION-READINESS-REVIEW.md` |
 
 ## 3. Active / blocked work

@@ -142,9 +142,16 @@ class Settings(BaseSettings):
     # --------------------------------------------------------------------------
     # 6. Report Generation Feature Flag (Spec §13, REPORT-01, REPORT-02)
     # --------------------------------------------------------------------------
+    # SOULMATE_REPORT_PROVIDER stays unset by default: production Report generation
+    # remains disabled until REPORT-01/REPORT-02 are resolved. The endpoint/key/model
+    # keys below are the §13.3 provider-config surface for the owner-directed
+    # OpenAI-compatible generator (2026-09-27): when the report-specific values are
+    # unset they fall back to the shared OPENAI_* configuration.
     soulmate_report_provider: Optional[str] = None
     soulmate_report_model: Optional[str] = None
     soulmate_report_prompt_version: Optional[str] = None
+    soulmate_report_api_base_url: Optional[str] = None
+    soulmate_report_api_key: Optional[str] = None
 
     # --------------------------------------------------------------------------
     # 7. Durable Object Storage / S3 / CDN (Spec §11.6, ASSET-01)
@@ -181,6 +188,18 @@ class Settings(BaseSettings):
     def is_report_generation_enabled(self) -> bool:
         """Report generation remains disabled until REPORT-01/02 are resolved."""
         return bool(self.soulmate_report_provider and self.soulmate_report_provider.strip())
+
+    @property
+    def report_api_base_url(self) -> Optional[str]:
+        """OpenAI-compatible endpoint for Report generation (§13.3); falls back to OPENAI_BASE_URL."""
+        base = (self.soulmate_report_api_base_url or "").strip() or None
+        return base or self.openai_base_url
+
+    @property
+    def report_api_key(self) -> Optional[str]:
+        """Report provider credential; falls back to the shared OPENAI_API_KEY."""
+        key = (self.soulmate_report_api_key or "").strip() or None
+        return key or self.openai_api_key
 
     @property
     def intro_price(self) -> Optional[Decimal]:

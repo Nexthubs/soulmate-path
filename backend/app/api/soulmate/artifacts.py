@@ -1,9 +1,12 @@
 """
-Sketch artifact endpoints (DEV-SPEC §15.10; Decisions: ASSET-01, TIME-01, PAY-AUTH-01; SP-603).
+Sketch & report artifact endpoints (DEV-SPEC §15.10, §15.11; Decisions: ASSET-01, TIME-01, PAY-AUTH-01, RECOVERY-01; SP-603, SP-702).
 
 POST /artifacts/sketch/generate — on_demand trigger (§11.4): enqueues one logical,
 idempotent generation job that the worker processes independently of the request
 lifecycle. Auth and ownership follow the Result aggregate pattern (SP-503).
+GET /artifacts/report — authorized, unlocked retrieval of the persisted
+SoulmateReportV1 content (§15.11; SP-702). Generation trigger for reports is
+owned by SP-704 and stays disabled until REPORT-01/02 close.
 """
 
 from typing import Optional
@@ -16,7 +19,7 @@ from app.core.errors import ForbiddenOwnershipError, NotFoundError
 from app.db.models.artifact import AIGenerationJob, SoulmateArtifact
 from app.db.models.session import SoulmateSession
 from app.db.session import get_db
-from app.soulmate.schema import SketchAssetResponse, SketchGenerationResponse
+from app.soulmate.schema import ReportResponse, SketchAssetResponse, SketchGenerationResponse
 from app.soulmate.security import (
     extract_session_token,
     get_authenticated_session_public_id,
@@ -24,6 +27,7 @@ from app.soulmate.security import (
     verify_session_token,
 )
 from app.soulmate.services.object_storage_sink import build_sketch_image_url
+from app.soulmate.services.report_service import ReportService
 from app.soulmate.services.session_service import SessionService
 from app.soulmate.services.sketch_generation_service import (
     JOB_FAILED_RETRYABLE,
@@ -151,4 +155,39 @@ async def get_sketch_asset_endpoint(
         image_url=image_url,
         storage_key=storage_key,
         retry_available=retry_available,
+    )
+
+
+@router.get(
+    "/report",
+    response_model=ReportResponse,
+    summary="Authorized report retrieval (DEV-SPEC §15.11, SP-702)",
+)
+async def get_report_endpoint(
+    request: Request,
+    session_id: Optional[str] = Query(default=None, description="Optional public session ID"),
+    db: AsyncSession = Depends(get_db),
+) -> ReportResponse:
+    """
+    Authoritative session-scoped report state plus, when the combined §10.3 state is
+    COMPLETED (unlocked past report_unlock_at AND generation finished), the persisted
+    SoulmateReportV1 content as validated camelCase JSON. The stored payload is
+    re-validated on every read (SP-701 contract) and the read fails closed: content
+    is never served for LOCKED/READY/GENERATING/FAILED rows. REPORT is strictly
+    session-scoped (Decision RECOVERY-01) — no email-scoped fallback.
+    """
+    session = await _resolve_authorized_session(request, session_id, db)
+
+    statuses = await ArtifactStatusService.get_artifact_statuses(db, session.id)
+
+    content = None
+    if statuses.report.status == "COMPLETED":
+        artifact = await ReportService.get_report_artifact(db, session.id)
+        if artifact is not None:
+            content = ReportService.get_report_content(artifact)
+
+    return ReportResponse(
+        server_time=statuses.server_time,
+        report=statuses.report,
+        content=content,
     )

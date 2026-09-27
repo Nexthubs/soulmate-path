@@ -1075,7 +1075,7 @@ If existing account semantics make user-ID uniqueness safer than email uniquenes
 
 **Priority:** P1  
 **Depends:** SP-205  
-**Status:** TODO
+**Status:** DONE (docs/handoffs/SP-701.md)  
 **Context refs:** DEV-SPEC §13.2 | Decisions: REPORT-01, REPORT-02 | Dependency handoffs: SP-205
 
 
@@ -1096,7 +1096,7 @@ Validation rejects arbitrary executable HTML/script content.
 
 **Priority:** P1  
 **Depends:** SP-701, SP-501  
-**Status:** TODO
+**Status:** DONE (docs/handoffs/SP-702.md)  
 **Context refs:** DEV-SPEC §13.2, §14, §15.11 | Decisions: REPORT-01, REPORT-02 | Dependency handoffs: SP-701, SP-501
 
 
