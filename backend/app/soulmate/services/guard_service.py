@@ -10,9 +10,16 @@ from app.core.config import settings
 from app.db.base import utc_now
 from app.db.models.billing import Subscription
 from app.db.models.session import SoulmateSession
-from app.soulmate.domain.guard import evaluate_route_guard, normalize_route_path
+from app.soulmate.domain.guard import (
+    GuardedRoute,
+    evaluate_route_guard,
+    is_paid_access_ended,
+    normalize_route_path,
+)
 from app.soulmate.domain.session_state import SessionStatus
 from app.soulmate.schema import RouteGuardResponse
+from app.soulmate.services.status_service import ArtifactStatusService
+from app.soulmate.services.subscription_service import SubscriptionService
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +57,8 @@ class GuardService:
         first_payment_at: Optional[datetime] = None
         paid_through_at: Optional[datetime] = None
         provider_status: Optional[str] = None
+        retained_sketch = False
+        retained_report = False
 
         if session:
             # 1. Quiz completed evaluation (DEV-SPEC §3, H-1 remediation)
@@ -92,10 +101,28 @@ class GuardService:
             if sub is not None and sub.first_payment_at is not None:
                 is_paid = True
                 first_payment_at = sub.first_payment_at
-                # PAID-THROUGH-01 (resolved 2026-09-27): paid entitlement runs to
-                # the end of the already-paid cycle; the guard denies paid routes
-                # only when this date is known and has passed on the server clock
-                # and the provider does not report an ACTIVE subscription.
+                route = normalize_route_path(target_route)
+                # Completed content is retained even after the paid window;
+                # its route remains usable without a provider round trip.
+                if route in (GuardedRoute.SKETCH.value, GuardedRoute.REPORT.value) and is_paid_access_ended(
+                    sub.paid_through_at, server_time
+                ):
+                    statuses = await ArtifactStatusService.get_artifact_statuses(
+                        db, session.id, now=server_time
+                    )
+                    retained_sketch = statuses.sketch.status == "COMPLETED"
+                    retained_report = statuses.report.status == "COMPLETED"
+                if not (
+                    (route == GuardedRoute.SKETCH.value and retained_sketch)
+                    or (route == GuardedRoute.REPORT.value and retained_report)
+                ) and route in (
+                    GuardedRoute.RESULT.value,
+                    GuardedRoute.SKETCH.value,
+                    GuardedRoute.REPORT.value,
+                ):
+                    sub = await SubscriptionService.refresh_paid_access_at_boundary(
+                        db, sub, server_time
+                    )
                 paid_through_at = sub.paid_through_at
                 provider_status = sub.provider_status
             else:
@@ -116,6 +143,8 @@ class GuardService:
             server_time=server_time,
             sketch_hours=settings.soulmate_sketch_unlock_hours,
             report_hours=settings.soulmate_report_unlock_hours,
+            retained_sketch=retained_sketch,
+            retained_report=retained_report,
         )
 
         return RouteGuardResponse(

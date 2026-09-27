@@ -36,7 +36,7 @@ from app.soulmate.schema import (
     SubscriptionStatusResponse,
 )
 from app.soulmate.services.ledger_service import PaymentLedgerService
-from app.soulmate.services.paypal_client import PayPalClient
+from app.soulmate.services.paypal_client import PayPalAPIError, PayPalClient
 from app.soulmate.services.offer_service import OfferService
 from app.soulmate.services.payment_consistency import payment_lock, apply_provider_status, apply_billing_count
 
@@ -478,6 +478,7 @@ class SubscriptionService:
         cls, db: AsyncSession, provider_subscription_id: str,
         paypal_client: Optional[PayPalClient] = None,
         verify_price: bool = False,
+        require_status: bool = False,
     ) -> Optional[Subscription]:
         """Restore only a trustworthy binding and transaction-backed payment state.
 
@@ -496,8 +497,12 @@ class SubscriptionService:
             raise ProviderUnavailableError("PayPal subscription reconciliation is temporarily unavailable.") from exc
         if not remote:
             return None
-        billing = remote.get("billing_info", {})
+        billing = remote.get("billing_info") or {}
+        if require_status and not isinstance(billing, dict):
+            raise ProviderUnavailableError("PayPal subscription billing details are unavailable.")
         remote_status = str(remote.get("status", "")).upper()
+        if require_status and remote_status not in {"ACTIVE", "CANCELLED", "EXPIRED", "SUSPENDED"}:
+            raise ProviderUnavailableError("PayPal subscription status is unavailable.")
         if sub is None:
             custom_id = str(remote.get("custom_id") or "").strip()
             if not custom_id:
@@ -612,21 +617,58 @@ class SubscriptionService:
         return (await db.execute(stmt)).scalars().first()
 
     @classmethod
+    async def refresh_paid_access_at_boundary(
+        cls,
+        db: AsyncSession,
+        sub: Subscription,
+        now: datetime,
+        paypal_client: Optional[PayPalClient] = None,
+    ) -> Subscription:
+        """Verify cached ACTIVE state when its recorded paid cycle has elapsed.
+
+        Only a provider-confirmed later paid-through date can extend benefits.
+        An unavailable or incomplete provider response fails closed as 503.
+        """
+        if (
+            sub.provider_status != "ACTIVE"
+            or sub.paid_through_at is None
+            or now < sub.paid_through_at
+        ):
+            return sub
+        try:
+            refreshed = await cls.reconcile_subscription(
+                db,
+                sub.provider_subscription_id,
+                paypal_client=paypal_client,
+                require_status=True,
+            )
+        except PayPalAPIError as exc:
+            raise ProviderUnavailableError(
+                "PayPal subscription reconciliation is temporarily unavailable."
+            ) from exc
+        if refreshed is None:
+            raise ProviderUnavailableError("PayPal subscription status is unavailable.")
+        return refreshed
+
+    @classmethod
     async def assert_paid_access_window(
         cls, db: AsyncSession, session: SoulmateSession, now: Optional[datetime] = None
     ) -> None:
         """
         PAID-THROUGH-01 (resolved 2026-09-27): uniform API-layer enforcement of
         the paid access window. Raises `ForbiddenOwnershipError` when the known
-        paid window (`paid_through_at`) has ended on the server clock and the
-        provider does not report an ACTIVE subscription (renewal/webhook lag
-        tolerance for ACTIVE). Callers remain responsible for their PAY-AUTH-01
+        paid window (`paid_through_at`) has ended on the server clock. A cached
+        ACTIVE row is reconciled at that boundary before access is decided.
+        Callers remain responsible for their PAY-AUTH-01
         first-payment gates; generated (COMPLETED) artifacts stay retrievable
         under the §9.8 retention promise — see the artifact read endpoints.
         """
         sub = await cls.get_latest_subscription(db, session)
+        effective_now = now or utc_now()
+        if sub is not None:
+            sub = await cls.refresh_paid_access_at_boundary(db, sub, effective_now)
         if sub is not None and is_paid_access_ended(
-            sub.provider_status, sub.paid_through_at, now or utc_now()
+            sub.paid_through_at, effective_now
         ):
             raise ForbiddenOwnershipError(
                 "Paid access period has ended (PAID-THROUGH-01). Re-subscribe to regain access."

@@ -4,7 +4,9 @@ import React, { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { getSubscriptionStatus, SubscriptionStatusResponse } from "@/soulmate/api/subscription";
-import { SubscriptionSettingsAction } from "@/soulmate/components/settings";
+import { getSketchStatus } from "@/soulmate/api/sketch";
+import { getReportStatus } from "@/soulmate/api/report";
+import { SavedArtifactLinks, SubscriptionSettingsAction } from "@/soulmate/components/settings";
 import { DrawerMenuButton } from "@/soulmate/components/drawer";
 import { SOULMATE_ROUTES } from "@/soulmate/domain";
 
@@ -14,6 +16,7 @@ function SettingsContent() {
   const [subData, setSubData] = useState<SubscriptionStatusResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [savedArtifacts, setSavedArtifacts] = useState({ sketch: false, report: false });
 
   useEffect(() => {
     let isMounted = true;
@@ -40,6 +43,22 @@ function SettingsContent() {
 
     loadStatus();
 
+    return () => {
+      isMounted = false;
+    };
+  }, [sessionIdParam]);
+
+  useEffect(() => {
+    let isMounted = true;
+    // Fetch independently of subscription-status reconciliation: a PayPal
+    // outage must not hide already-owned, completed content. These reads are
+    // session-authenticated; after expiry only completed artifacts are served.
+    Promise.all([
+      getSketchStatus(sessionIdParam).then((value) => value.sketch.status === "COMPLETED" && Boolean(value.image_url)).catch(() => false),
+      getReportStatus(sessionIdParam).then((value) => value.report.status === "COMPLETED" && Boolean(value.content)).catch(() => false),
+    ]).then(([sketch, report]) => {
+      if (isMounted) setSavedArtifacts({ sketch, report });
+    });
     return () => {
       isMounted = false;
     };
@@ -133,6 +152,7 @@ function SettingsContent() {
             Even if you cancel your subscription, all your generated Soulmate Sketches and Personality Reports
             remain permanently saved and accessible in your account.
           </p>
+          <SavedArtifactLinks sketch={savedArtifacts.sketch} report={savedArtifacts.report} />
         </div>
       </div>
 

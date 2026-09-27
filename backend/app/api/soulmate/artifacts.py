@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ForbiddenOwnershipError, NotFoundError
+from app.db.base import utc_now
 from app.db.models.artifact import AIGenerationJob, SoulmateArtifact
 from app.db.models.session import SoulmateSession
 from app.db.session import get_db
@@ -51,8 +52,10 @@ router = APIRouter()
 async def _paid_window_ended(db: AsyncSession, session: SoulmateSession) -> bool:
     """PAID-THROUGH-01: True when the session's known paid window has ended."""
     sub = await SubscriptionService.get_latest_subscription(db, session)
+    if sub is not None:
+        sub = await SubscriptionService.refresh_paid_access_at_boundary(db, sub, utc_now())
     return sub is not None and is_paid_access_ended(
-        sub.provider_status, sub.paid_through_at
+        sub.paid_through_at
     )
 
 
@@ -136,7 +139,7 @@ async def get_sketch_asset_endpoint(
 
     statuses = await ArtifactStatusService.get_artifact_statuses(db, session.id)
 
-    if await _paid_window_ended(db, session) and statuses.sketch.status != "COMPLETED":
+    if statuses.sketch.status != "COMPLETED" and await _paid_window_ended(db, session):
         raise ForbiddenOwnershipError(
             "Paid access period has ended (PAID-THROUGH-01). Re-subscribe to regain access."
         )
@@ -210,7 +213,7 @@ async def get_report_endpoint(
 
     statuses = await ArtifactStatusService.get_artifact_statuses(db, session.id)
 
-    if await _paid_window_ended(db, session) and statuses.report.status != "COMPLETED":
+    if statuses.report.status != "COMPLETED" and await _paid_window_ended(db, session):
         raise ForbiddenOwnershipError(
             "Paid access period has ended (PAID-THROUGH-01). Re-subscribe to regain access."
         )

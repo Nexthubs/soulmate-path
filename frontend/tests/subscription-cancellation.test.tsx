@@ -12,6 +12,7 @@
 
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { SavedArtifactLinks } from "../src/soulmate/components/settings";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   cancelSubscription,
@@ -618,3 +619,13 @@ describe("SP-409: Subscription Cancellation & Settings Action", () => {
   });
 });
 
+describe("SP-805: saved artifact navigation", () => {
+  it("links only to verified completed artifacts", () => {
+    const sketch = renderToStaticMarkup(<SavedArtifactLinks sketch report={false} />);
+    expect(sketch).toContain('href="/soulmate/sketch"');
+    expect(sketch).not.toContain('href="/soulmate/report"');
+    const report = renderToStaticMarkup(<SavedArtifactLinks sketch={false} report />);
+    expect(report).toContain('href="/soulmate/report"');
+    expect(renderToStaticMarkup(<SavedArtifactLinks sketch={false} report={false} />)).toBe("");
+  });
+});

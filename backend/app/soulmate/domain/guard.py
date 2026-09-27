@@ -43,18 +43,14 @@ def calculate_unlock_times(
 
 
 def is_paid_access_ended(
-    provider_status: Optional[str],
     paid_through_at: Optional[datetime],
     now: Optional[datetime] = None,
 ) -> bool:
     """
-    PAID-THROUGH-01 (resolved 2026-09-27): the paid access window has ended only
-    when a known `paid_through_at` has passed on the server clock AND the
-    provider does not report an ACTIVE subscription.
-
-    - ACTIVE is exempt: crossing the recorded cycle end with an ACTIVE provider
-      status means a renewal payment or webhook is in flight (data lag) — the
-      provider currently reports the subscription as entitled, so access stays.
+    A known paid window ends at `paid_through_at` on the server clock. The
+    persisted ACTIVE status is only a cache: callers refresh it with the
+    provider at this boundary before applying this predicate. An ACTIVE
+    snapshot alone cannot extend a past paid-through date.
     - NULL `paid_through_at` is "unknown", never "ended": no denial without
       positive evidence.
     - Unpaid sessions carry no entitlement at all and are rejected separately
@@ -65,7 +61,7 @@ def is_paid_access_ended(
     effective_now = now or datetime.now(timezone.utc)
     if effective_now < paid_through_at:
         return False
-    return str(provider_status or "").upper() != "ACTIVE"
+    return True
 
 
 def evaluate_route_guard(
@@ -81,6 +77,8 @@ def evaluate_route_guard(
     server_time: Optional[datetime] = None,
     sketch_hours: int = 12,
     report_hours: int = 24,
+    retained_sketch: bool = False,
+    retained_report: bool = False,
 ) -> Dict[str, Any]:
     """
     Evaluates whether the requested target route is accessible per DEV-SPEC §3 table.
@@ -88,10 +86,10 @@ def evaluate_route_guard(
 
     PAID-THROUGH-01 (resolved 2026-09-27): paid entitlement survives cancellation
     until the end of the already-paid cycle — when `paid_through_at` is known and
-    has passed (server clock) and the provider does not report an ACTIVE
-    subscription, paid routes are denied even for previously paid sessions. A
+    has passed (server clock), paid routes are denied even for previously paid
+    sessions. A provider-confirmed renewal must first advance that date. A
     NULL `paid_through_at` is "unknown", never "ended": no denial is made
-    without positive evidence.
+    without positive evidence. Completed, persisted artifacts remain readable.
     """
     if server_time is None:
         server_time = datetime.now(timezone.utc)
@@ -103,7 +101,7 @@ def evaluate_route_guard(
 
     sketch_unlocked = bool(is_paid and sketch_unlock_at and server_time >= sketch_unlock_at)
     report_unlocked = bool(is_paid and report_unlock_at and server_time >= report_unlock_at)
-    paid_through_ended = is_paid_access_ended(provider_status, paid_through_at, server_time)
+    paid_through_ended = is_paid_access_ended(paid_through_at, server_time)
 
     base_context = {
         "target_route": route_clean,
@@ -204,7 +202,7 @@ def evaluate_route_guard(
                 "redirect_to": "/soulmate/subscribe",
                 "reason": "Payment required before viewing sketch.",
             }
-        if paid_through_ended:
+        if paid_through_ended and not retained_sketch:
             return _paid_access_ended()
         if not sketch_unlocked:
             return {
@@ -224,7 +222,7 @@ def evaluate_route_guard(
                 "redirect_to": "/soulmate/subscribe",
                 "reason": "Payment required before viewing report.",
             }
-        if paid_through_ended:
+        if paid_through_ended and not retained_report:
             return _paid_access_ended()
         if not report_unlocked:
             return {

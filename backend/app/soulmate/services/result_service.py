@@ -59,12 +59,14 @@ class ResultService:
         )
         sub = (await db.execute(stmt)).scalars().first()
 
-        # PAID-THROUGH-01 (resolved 2026-09-27): uniform API-layer enforcement —
-        # a known-and-passed paid window ends the aggregate read as well (the
-        # route guard already redirects the page). ACTIVE subscriptions are
-        # exempt (renewal/webhook lag tolerance).
+        # Reconcile a cached ACTIVE subscription at the cycle boundary. A
+        # provider-confirmed later date preserves legitimate renewed access.
+        if sub is not None:
+            sub = await SubscriptionService.refresh_paid_access_at_boundary(
+                db, sub, effective_now
+            )
         if sub is not None and is_paid_access_ended(
-            sub.provider_status, sub.paid_through_at, effective_now
+            sub.paid_through_at, effective_now
         ):
             raise ForbiddenOwnershipError(
                 "Paid access period has ended (PAID-THROUGH-01). Re-subscribe to regain access."
