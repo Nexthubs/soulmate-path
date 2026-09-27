@@ -16,6 +16,19 @@ from app.soulmate.services.openai_image_provider import OpenAIImageProvider
 from app.soulmate.services.paypal_client import PayPalAPIError, PayPalAuthError, PayPalClient
 from app.soulmate.services.paypal_provisioning import PayPalProvisioningService
 from app.soulmate.services.profile_service import ProfileService
+from app.soulmate.services.report_providers import (
+    ALLOWED_REPORT_PROMPT_VARIABLES,
+    REPORT_PROVIDER_MOCK,
+    REPORT_PROVIDER_OPENAI_COMPATIBLE,
+    MockReportProvider,
+    OpenAICompatibleReportProvider,
+    ReportPromptTemplate,
+    ReportPromptTemplateError,
+    build_report_provider,
+    chat_completions_url,
+    load_report_prompt_template,
+    render_report_prompt,
+)
 from app.soulmate.services.report_service import ReportService
 from app.soulmate.services.session_service import SessionService
 from app.soulmate.services.sketch_generation_service import (
@@ -40,6 +53,17 @@ __all__ = [
     "InterstitialService",
     "ProfileService",
     "ReportService",
+    "ALLOWED_REPORT_PROMPT_VARIABLES",
+    "REPORT_PROVIDER_MOCK",
+    "REPORT_PROVIDER_OPENAI_COMPATIBLE",
+    "MockReportProvider",
+    "OpenAICompatibleReportProvider",
+    "ReportPromptTemplate",
+    "ReportPromptTemplateError",
+    "build_report_provider",
+    "chat_completions_url",
+    "load_report_prompt_template",
+    "render_report_prompt",
     "IdentityService",
     "SummaryService",
     "OfferService",

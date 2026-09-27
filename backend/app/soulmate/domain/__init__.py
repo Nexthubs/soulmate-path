@@ -110,6 +110,13 @@ from app.soulmate.domain.report import (
     SoulmateReportV1,
     parse_soulmate_report_v1,
 )
+from app.soulmate.domain.report_models import (
+    ReportGenerationDisabledError,
+    ReportGenerationInput,
+    ReportGenerationResult,
+    ReportProviderError,
+    SoulmateReportGenerator,
+)
 
 
 # Canonical immutable quiz version
@@ -225,5 +232,10 @@ __all__ = [
     "SoulmateReportSectionPoint",
     "SoulmateReportV1",
     "parse_soulmate_report_v1",
+    "ReportGenerationDisabledError",
+    "ReportGenerationInput",
+    "ReportGenerationResult",
+    "ReportProviderError",
+    "SoulmateReportGenerator",
 ]
 

@@ -1130,7 +1130,7 @@ Validation rejects arbitrary executable HTML/script content.
 
 **Priority:** P1  
 **Depends:** SP-701  
-**Status:** TODO
+**Status:** DONE (docs/handoffs/SP-704.md)  
 **Context refs:** DEV-SPEC §13.3–13.4 | Decisions: REPORT-01, REPORT-02 | Dependency handoffs: SP-701
 
 

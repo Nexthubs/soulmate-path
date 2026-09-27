@@ -64,6 +64,7 @@ Live Sketch page states (`SP-607`) completed and evidenced in `docs/handoffs/SP-
 `ReportV1` schema (`SP-701`) completed and evidenced in `docs/handoffs/SP-701.md` (canonical versioned content contract + plain-text content policy; REPORT-01/02 remain OPEN, production Report generation still disabled).
 Report persistence (`SP-702`) completed and evidenced in `docs/handoffs/SP-702.md` (validated content_json on the session-scoped REPORT artifact row, no-clobber canonical save, GET /api/soulmate/artifacts/report with ownership + unlock gating; §13.3 OpenAI-compatible provider env keys added per owner direction, generation still disabled).
 Report renderer parity (`SP-703`) completed and evidenced in `docs/handoffs/SP-703.md` (canonical contract moved to frontend domain layer with runtime validation mirroring the backend policy; ReportRenderer consumes only validated ReportV1 with a fail-safe fallback state; Figma 102:1358 parity styles untouched).
+Report generation provider interface (`SP-704`) completed and evidenced in `docs/handoffs/SP-704.md` (pluggable `SoulmateReportGenerator` protocol; mock provider + owner-directed OpenAI-compatible adapter over §13.3 config; versioned prompt-template machinery with NO production template shipped — missing template fails closed; factory default disabled).
 
 ## 2. Milestone status
 
@@ -73,7 +74,7 @@ Report renderer parity (`SP-703`) completed and evidenced in `docs/handoffs/SP-7
 | M2 Sandbox Revenue Ready | PASS (restored post-RV-remediation) | `docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md` §6 |
 | M3 Entitlement / Result Ready | CONDITIONAL_PASS | `docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md` |
 | M4 Sketch Ready | PASS — COMPLETE (RV-03, 2026-09-27) | `docs/reviews/M4-SKETCH-REVIEW.md` |
-| M5 Report Scaffold Ready | IN_PROGRESS (SP-701..703 DONE; SP-704..705 TODO) | `docs/reviews/M5-REPORT-SCAFFOLD-REVIEW.md` |
+| M5 Report Scaffold Ready | IN_PROGRESS (SP-701..704 DONE; SP-705 TODO) | `docs/reviews/M5-REPORT-SCAFFOLD-REVIEW.md` |
 | M6 Production Ready | NOT_STARTED | `docs/reviews/M6-PRODUCTION-READINESS-REVIEW.md` |
 
 ## 3. Active / blocked work
