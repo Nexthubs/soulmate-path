@@ -119,6 +119,7 @@ function SettingsContent() {
             planId={subData.plan_id}
             currency={subData.currency}
             regularPrice={subData.regular_price}
+            priceVerified={subData.price_verified}
             nextBillingAt={subData.next_billing_at}
             paidThroughAt={subData.paid_through_at}
             cancelledAt={subData.cancelled_at}

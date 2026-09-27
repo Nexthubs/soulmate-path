@@ -48,20 +48,22 @@ export function buildDrawerNavLinks(
  * SP-802 routing: map the server-derived §10.3 combined sketch status to the
  * Soulmate Sketch destination.
  *
- * - LOCKED (or unknown/not-yet-loaded) -> /soulmate/result: the paying user's
- *   home base, where the countdown and report state live.
- * - Any unlocked combined state (READY / GENERATING / COMPLETED / FAILED) ->
- *   /soulmate/sketch: the sketch page natively renders the ready / loading /
- *   completed / failed states per §10.3 and SP-607, and satisfies the §3 guard
- *   (first payment confirmed + 12h unlocked) in all of them.
+ * Only the known §10.2/§10.3 combined states are interpreted:
+ * - LOCKED (or unknown / not-yet-loaded / unrecognized values) ->
+ *   /soulmate/result, the paying user's conservative home base;
+ * - the unlocked states READY / GENERATING / COMPLETED / FAILED ->
+ *   /soulmate/sketch, which natively renders the ready / loading / completed /
+ *   failed states per §10.3 and SP-607 and satisfies the §3 guard in all of
+ *   them (Wave 8 audit M-1: unknown statuses no longer map to Sketch).
  */
 export function resolveSketchDestinationFromStatus(
   sketchStatus: string | null | undefined
 ): string {
-  if (sketchStatus === "LOCKED" || sketchStatus == null) {
-    return SOULMATE_ROUTES.RESULT;
+  const KNOWN_UNLOCKED_STATUSES = new Set(["READY", "GENERATING", "COMPLETED", "FAILED"]);
+  if (sketchStatus != null && KNOWN_UNLOCKED_STATUSES.has(sketchStatus)) {
+    return SOULMATE_ROUTES.SKETCH;
   }
-  return SOULMATE_ROUTES.SKETCH;
+  return SOULMATE_ROUTES.RESULT;
 }
 
 /**

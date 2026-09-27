@@ -66,6 +66,8 @@ export interface SubscriptionStatusResponse {
   currency?: string | null;
   /** Regular monthly renewal price, decimal string from backend state (SP-803). */
   regular_price?: string | null;
+  /** True when the price is a verified PayPal plan snapshot (Wave 8 audit H-2). */
+  price_verified?: boolean;
   first_payment_at?: string | null;
   next_billing_at?: string | null;
   paid_through_at?: string | null;

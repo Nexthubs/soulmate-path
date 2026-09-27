@@ -151,6 +151,22 @@
 - **Decision:** production must use truthful approved material or omit it.
 - **Affected:** Landing, Subscribe, M6.
 
+### REFUND-01 — Refund policy and cancellation copy
+
+- **Status:** OPEN
+- **Date:** 2026-09-27
+- **Context:** Wave 8 audit (H-3): the SP-804 cancel confirmation asserted "no refund is issued for the current cycle", but §9.8 only mandates stopping future renewals, retaining the paid cycle until `paid_through_at`, and permanently retaining generated content. Those rules do not by themselves authorize a blanket no-refund statement; refunds are handled out-of-band via PayPal dispute/support (SP-409).
+- **Decision:** TBD by product/payment policy owner. Until approved, the cancel UI makes NO refund claim of any kind (assertion removed 2026-09-27). Approved policy and wording must be supplied before any refund statement re-appears in user-facing copy.
+- **Affected:** SP-804 (`CancelConfirmationDialog`), SP-805 copy, customer support flow, M6 release QA.
+
+### PAID-THROUGH-01 — Guard enforcement vs paid-through access window
+
+- **Status:** OPEN
+- **Date:** 2026-09-27
+- **Context:** Wave 8 audit (risk verification): §9.8 DEV DECISION keeps paid entitlement until `paid_through_at`, and the SP-805 settings copy derives "paid access ended" from that date. However, the server route guards (`guard_service` / `domain/guard.py`) grant `/soulmate/result`, `/soulmate/sketch`, `/soulmate/report` based on a confirmed first payment only — they never check `paid_through_at`. Copy and server behavior can therefore disagree after the paid window ends (copy is stricter than enforcement; generated artifacts remain permanently retained in both readings).
+- **Decision:** TBD by owner: either (a) extend the route guards/entitlement derivation to honor `paid_through_at` (high-risk entitlement change requiring dedicated review evidence), or (b) amend the spec/copy to describe first-payment-based access. Unilateral guard change is forbidden.
+- **Affected:** SP-805, SP-304-era guards, SP-408, M6 review.
+
 ## Decision entry template
 
 ```md

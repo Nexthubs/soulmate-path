@@ -66,8 +66,16 @@ export function SoulmateDrawerProvider({
   // Server-authoritative destination resolution (SP-802): one aggregate fetch
   // per open. No session_id argument — the HttpOnly session cookie is the
   // identity, so no local session flag can influence the outcome.
+  // Wave 8 audit M-1: a closed drawer drops the previously resolved
+  // destination so a quick reopen can never briefly navigate using stale
+  // status; the safe default shows until the fresh fetch lands.
   useEffect(() => {
-    if (sketchDestination || !isOpen) return;
+    if (sketchDestination) return;
+
+    if (!isOpen) {
+      setResolvedDestination(null);
+      return;
+    }
 
     let cancelled = false;
     getResultAggregate()

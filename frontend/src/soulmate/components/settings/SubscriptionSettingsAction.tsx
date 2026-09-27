@@ -12,6 +12,12 @@ export interface SubscriptionSettingsActionProps {
   currency?: string | null;
   /** Regular monthly renewal price, decimal string from backend state (SP-803). */
   regularPrice?: string | null;
+  /**
+   * True when the backend price is a verified PayPal plan snapshot (Wave 8
+   * audit H-2). The cancel confirmation quotes the price only when this is
+   * true; unverified prices are never asserted as the renewal amount.
+   */
+  priceVerified?: boolean;
   nextBillingAt?: string | null;
   paidThroughAt?: string | null;
   cancelledAt?: string | null;
@@ -57,6 +63,20 @@ export function formatSubscriptionPrice(
   } catch {
     return `${currency ?? "USD"} ${price}`.trim();
   }
+}
+
+/**
+ * Wave 8 audit H-2: the cancel confirmation may quote the renewal price only
+ * when it is a verified PayPal plan snapshot. Unverified/provisional prices
+ * resolve to null so the dialog renders no amount at all.
+ */
+export function resolveQuotedCancelPrice(
+  priceVerified?: boolean | null,
+  price?: string | null,
+  currency?: string | null
+): string | null {
+  if (!priceVerified) return null;
+  return formatSubscriptionPrice(price, currency);
 }
 
 export type PaidAccessState = "active" | "ended" | "retained" | "suspended" | "processing" | "renewing";
@@ -167,6 +187,7 @@ export function SubscriptionSettingsAction({
   planId,
   currency,
   regularPrice,
+  priceVerified,
   nextBillingAt: initialNextBilling,
   paidThroughAt: initialPaidThrough,
   cancelledAt: initialCancelledAt,
@@ -183,9 +204,10 @@ export function SubscriptionSettingsAction({
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const isCancelled = status === "CANCELLED" || Boolean(cancelledAt);
-  // SP-803: renewal price quoted in the confirmation dialog comes exclusively
-  // from provider-reconciled backend state; null omits the price sentence.
-  const priceText = formatSubscriptionPrice(regularPrice, currency);
+  // SP-803 + Wave 8 audit H-2: the cancel confirmation quotes the renewal
+  // price ONLY when it is a verified PayPal plan snapshot. The settings plan
+  // row keeps showing the backend value as plan information.
+  const quotedPriceText = resolveQuotedCancelPrice(priceVerified, regularPrice, currency);
   // SP-805: access copy derives from the actual reconciled state and dates.
   const accessCopy = derivePaidAccessCopy({
     status,
@@ -339,8 +361,8 @@ export function SubscriptionSettingsAction({
               </button>
             ) : (
               <CancelConfirmationDialog
-                paidThroughDisplay={formatDate(paidThrough || initialNextBilling)}
-                priceText={priceText}
+                paidThroughDisplay={paidThrough ? formatDate(paidThrough) : null}
+                priceText={quotedPriceText}
                 isLoading={isLoading}
                 onConfirm={handleConfirmCancel}
                 onKeep={() => setIsConfirming(false)}
@@ -354,9 +376,16 @@ export function SubscriptionSettingsAction({
 }
 
 export interface CancelConfirmationDialogProps {
-  /** Human-readable access-through date shown as the post-cancel access promise. */
-  paidThroughDisplay: string;
-  /** Formatted renewal price (e.g. "$29.00") or null when the backend provides none. */
+  /**
+   * Human-readable access-through date, or null when the paid-cycle end is
+   * unknown (Wave 8 audit M-2: never render an "access until N/A" promise).
+   */
+  paidThroughDisplay: string | null;
+  /**
+   * Formatted renewal price (e.g. "$29.00") or null when the backend price is
+   * not a verified provider snapshot (Wave 8 audit H-2: never quote an
+   * unverified price as the renewal amount).
+   */
   priceText: string | null;
   isLoading: boolean;
   onConfirm: () => void;
@@ -366,8 +395,11 @@ export interface CancelConfirmationDialogProps {
 /**
  * Confirmation state for the cancel action (SP-804, DEV-SPEC §9.8, §15.9).
  * Presentational so all safety/messaging criteria are directly renderable in
- * static tests: quotes the renewal price, the paid-through access promise, and
- * the artifact-retention guarantee; both actions disable while in flight.
+ * static tests. Copy discipline (Wave 8 audit H-3/M-2): quotes only a
+ * provider-verified renewal price, promises paid-cycle access only when the
+ * access end date is known, makes no refund claims (refund policy is an open
+ * owner decision — REFUND-01), and always carries the artifact-retention
+ * guarantee; both actions disable while in flight.
  */
 export function CancelConfirmationDialog({
   paidThroughDisplay,
@@ -389,13 +421,19 @@ export function CancelConfirmationDialog({
         {priceText ? (
           <>
             Your plan renews at <strong>{priceText}/month</strong>. Cancelling stops all future
-            charges — no refund is issued for the current cycle.{" "}
+            charges.{" "}
           </>
         ) : (
-          "Are you sure you want to cancel? "
+          "Cancelling stops all future charges. "
         )}
-        You will keep access until <strong>{paidThroughDisplay}</strong>. Your previously generated
-        Sketch and Report will <strong>never be deleted</strong>.
+        {paidThroughDisplay ? (
+          <>
+            You will keep access until <strong>{paidThroughDisplay}</strong>.{" "}
+          </>
+        ) : (
+          "Any remaining access after cancellation depends on your billing state and will be confirmed afterwards. "
+        )}
+        Your previously generated Sketch and Report will <strong>never be deleted</strong>.
       </p>
       <div className="flex gap-2">
         <button

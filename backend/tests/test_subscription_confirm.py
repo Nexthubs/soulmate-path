@@ -699,3 +699,122 @@ async def test_confirm_subscription_endpoint_returns_403_on_mismatched_unattache
         resp = await client.post("/api/soulmate/paypal/confirm", json={"paypal_subscription_id": sub_id})
         assert resp.status_code == 403
         assert "does not belong to this session" in resp.json()["message"]
+
+
+# ==============================================================================
+# Wave 8 audit H-2 remediation: provider plan price verification at binding
+# ==============================================================================
+
+
+class MockPlanAwarePayPalClient(PayPalClient):
+    """Mock PayPalClient with configurable plan payloads for price verification."""
+
+    def __init__(
+        self,
+        subscription_responses: Optional[Dict[str, Any]] = None,
+        plan_responses: Optional[Dict[str, Any]] = None,
+    ):
+        super().__init__(client_id="mock_id", client_secret="mock_secret")
+        self.subscription_responses = subscription_responses or {}
+        self.plan_responses = plan_responses or {}
+
+    async def get_subscription(self, subscription_id: str) -> Optional[Dict[str, Any]]:
+        return self.subscription_responses.get(subscription_id)
+
+    async def get_plan(self, plan_id: str) -> Optional[Dict[str, Any]]:
+        return self.plan_responses.get(plan_id)
+
+
+@pytest.mark.asyncio
+async def test_confirm_binding_stores_verified_provider_plan_price(test_session: SoulmateSession, monkeypatch):
+    """Wave 8 audit H-2: the binding must fetch the bound PayPal plan and store a
+    traceable provider pricing snapshot (currency + regular renewal price),
+    marked verified via price_verified_at; the status response exposes it."""
+    plan_id = "P-SOULMATE-INTRO-TEST"
+    monkeypatch.setattr(settings, "paypal_soulmate_intro_plan_id", plan_id)
+
+    sub_id = f"I-PRICEV-{uuid.uuid4().hex[:8].upper()}"
+    mock_payload = {
+        "id": sub_id,
+        "status": "APPROVAL_PENDING",
+        "plan_id": plan_id,
+        "custom_id": test_session.public_id,
+        "billing_info": {"next_billing_time": "2026-10-24T12:00:00Z"},
+    }
+    plan_payload = {
+        "id": plan_id,
+        "billing_cycles": [
+            {"tenure_type": "TRIAL", "pricing_scheme": {"fixed_price": {"value": "19.00", "currency_code": "USD"}}},
+            {"tenure_type": "REGULAR", "pricing_scheme": {"fixed_price": {"value": "35.00", "currency_code": "EUR"}}},
+        ],
+    }
+    mock_client = MockPlanAwarePayPalClient(
+        {sub_id: mock_payload}, plan_responses={plan_id: plan_payload}
+    )
+
+    async with AsyncSessionLocal() as async_db:
+        result = await SubscriptionService.confirm_paypal_subscription(
+            db=async_db,
+            session=test_session,
+            paypal_subscription_id=sub_id,
+            paypal_client=mock_client,
+        )
+        assert result.provider_subscription_id == sub_id
+
+        st = await SubscriptionService.get_subscription_status(async_db, test_session)
+
+    # Provider-verified regular renewal price (last REGULAR cycle wins over
+    # the TRIAL intro cycle and over local config).
+    assert st.currency == "EUR"
+    assert st.regular_price == "35.00"
+    assert st.price_verified is True
+
+    with SessionLocal() as sync_db:
+        db_sub = sync_db.execute(
+            select(Subscription).where(Subscription.provider_subscription_id == sub_id)
+        ).scalars().first()
+        assert db_sub is not None
+        assert db_sub.regular_price == Decimal("35.00")
+        assert db_sub.currency == "EUR"
+        assert db_sub.price_verified_at is not None
+
+
+@pytest.mark.asyncio
+async def test_confirm_binding_without_plan_verification_keeps_price_unverified(
+    test_session: SoulmateSession, monkeypatch
+):
+    """Wave 8 audit H-2: when the plan pricing cannot be verified, binding stays
+    usable (fail-open) with the configured provisional price, and the response
+    flags it as NOT verified so the UI will not quote it in the cancel dialog."""
+    plan_id = "P-SOULMATE-INTRO-TEST"
+    monkeypatch.setattr(settings, "paypal_soulmate_intro_plan_id", plan_id)
+
+    sub_id = f"I-PRICEUNV-{uuid.uuid4().hex[:8].upper()}"
+    mock_payload = {
+        "id": sub_id,
+        "status": "APPROVAL_PENDING",
+        "plan_id": plan_id,
+        "custom_id": test_session.public_id,
+        "billing_info": {"next_billing_time": "2026-10-24T12:00:00Z"},
+    }
+    # No plan data available at all.
+    mock_client = MockPlanAwarePayPalClient({sub_id: mock_payload})
+
+    async with AsyncSessionLocal() as async_db:
+        await SubscriptionService.confirm_paypal_subscription(
+            db=async_db,
+            session=test_session,
+            paypal_subscription_id=sub_id,
+            paypal_client=mock_client,
+        )
+        st = await SubscriptionService.get_subscription_status(async_db, test_session)
+
+    assert st.price_verified is False
+    assert st.regular_price == str(settings.soulmate_regular_price)
+
+    with SessionLocal() as sync_db:
+        db_sub = sync_db.execute(
+            select(Subscription).where(Subscription.provider_subscription_id == sub_id)
+        ).scalars().first()
+        assert db_sub is not None
+        assert db_sub.price_verified_at is None

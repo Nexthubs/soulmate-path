@@ -165,9 +165,34 @@ class SubscriptionService:
             raise ValidationError(f"PayPal subscription is in invalid status: '{provider_status}'.")
 
         # 6. Extract Details & Dates
-        currency = settings.soulmate_currency or "USD"
+        currency = settings.soulmate_currency
         intro_price = settings.soulmate_intro_price
-        regular_price = settings.soulmate_regular_price or Decimal("29.00")
+        regular_price = settings.soulmate_regular_price
+        price_verified_at: Optional[datetime] = None
+
+        # High-risk remediation (Wave 8 audit H-2): the displayed/quoted renewal
+        # price must be a traceable provider snapshot, not local config. Fetch
+        # the bound plan's pricing; only a successful snapshot marks the price
+        # verified. Fail-open keeps binding usable, but the price then stays
+        # provisional (price_verified_at=None) and the UI will not quote it in
+        # the cancel confirmation.
+        if provider_plan_id:
+            try:
+                plan_pricing = cls._extract_plan_regular_pricing(await client.get_plan(provider_plan_id))
+                if plan_pricing is not None:
+                    currency, regular_price = plan_pricing
+                    price_verified_at = utc_now()
+            except Exception as e:
+                logger.warning(
+                    "Could not verify PayPal plan pricing for %s at binding: %s",
+                    provider_plan_id,
+                    e,
+                )
+
+        if not currency or regular_price is None:
+            raise ValidationError(
+                "Soulmate plan pricing is unavailable: neither provider verification nor configured pricing succeeded."
+            )
 
         billing_info = sub_data.get("billing_info", {})
         next_billing_at = parse_iso_datetime(billing_info.get("next_billing_time"))
@@ -186,6 +211,7 @@ class SubscriptionService:
             currency=currency,
             intro_price=intro_price,
             regular_price=regular_price,
+            price_verified_at=price_verified_at,
             first_payment_at=None,
             next_billing_at=next_billing_at,
         )
@@ -299,11 +325,39 @@ class SubscriptionService:
         paid_at = session.subscription_success_at or paid_at
         await cls._ensure_artifacts_initialized(session=session, paid_at=paid_at, db=db)
 
+    @staticmethod
+    def _extract_plan_regular_pricing(plan_data: Optional[Dict[str, Any]]) -> Optional[tuple[str, Decimal]]:
+        """Extract (currency, regular renewal price) from a PayPal plan payload.
+
+        The regular renewal price is the fixed price of the last REGULAR-tenure
+        billing cycle (V1 plans: an intro TRIAL month followed by REGULAR
+        months). Returns None when the payload lacks a usable regular price.
+        """
+        if not plan_data:
+            return None
+        regular_cycle = None
+        for cycle in plan_data.get("billing_cycles") or []:
+            if str(cycle.get("tenure_type", "")).upper() == "REGULAR":
+                regular_cycle = cycle  # keep the last REGULAR cycle
+        if regular_cycle is None:
+            return None
+        fixed = (regular_cycle.get("pricing_scheme") or {}).get("fixed_price") or {}
+        value = fixed.get("value")
+        currency = fixed.get("currency_code")
+        if value is None or not currency:
+            return None
+        try:
+            price = Decimal(str(value))
+        except Exception:
+            return None
+        if not price.is_finite() or price <= 0:
+            return None
+        return str(currency).upper(), price
+
     @classmethod
     async def _validate_new_subscription_plan(
         cls, db: AsyncSession, session: SoulmateSession, provider_plan_id: Optional[str],
-    ) -> None:
-        # This is policy enforcement, never email-based authorization. The same
+    ) -> None:        # This is policy enforcement, never email-based authorization. The same
         # policy evaluator feeds the offer UI and both server binding paths.
         allowed = {p for p in (settings.paypal_soulmate_intro_plan_id, settings.paypal_soulmate_standard_plan_id) if p}
         if not allowed:
@@ -422,8 +476,14 @@ class SubscriptionService:
     async def reconcile_subscription(
         cls, db: AsyncSession, provider_subscription_id: str,
         paypal_client: Optional[PayPalClient] = None,
+        verify_price: bool = False,
     ) -> Optional[Subscription]:
-        """Restore only a trustworthy binding and transaction-backed payment state."""
+        """Restore only a trustworthy binding and transaction-backed payment state.
+
+        `verify_price` refreshes the provider plan pricing snapshot (Wave 8 audit
+        H-2); it is opt-in so webhook-driven reconciliations do not add a plan
+        fetch per event.
+        """
         sub_id = provider_subscription_id.strip()
         if not sub_id or not sub_id.startswith("I-"):
             return None
@@ -481,6 +541,29 @@ class SubscriptionService:
             last_paid = parse_iso_datetime(billing.get("last_payment", {}).get("time"))
             if last_paid and sub.first_payment_at is not None:
                 apply_billing_count(sub, 0, last_paid)
+        if verify_price and sub.provider_plan_id and sub.provider_plan_id != "UNKNOWN":
+            try:
+                plan_pricing = cls._extract_plan_regular_pricing(await client.get_plan(sub.provider_plan_id))
+                if plan_pricing is not None:
+                    verified_currency, verified_price = plan_pricing
+                    if sub.currency != verified_currency or sub.regular_price != verified_price:
+                        logger.info(
+                            "Provider plan pricing snapshot refreshed for subscription %s: %s %s -> %s %s",
+                            sub.provider_subscription_id,
+                            sub.currency,
+                            sub.regular_price,
+                            verified_currency,
+                            verified_price,
+                        )
+                        sub.currency = verified_currency
+                        sub.regular_price = verified_price
+                    sub.price_verified_at = utc_now()
+            except Exception as e:
+                logger.warning(
+                    "Plan price verification failed for %s during reconciliation: %s",
+                    sub.provider_subscription_id,
+                    e,
+                )
         await db.flush()
         return sub
 
@@ -543,12 +626,18 @@ class SubscriptionService:
                 is_paid=False,
             )
 
-        # If still in processing and auto_reconcile requested, reconcile against PayPal API
-        if auto_reconcile and sub.first_payment_at is None and sub.provider_status not in ("CANCELLED", "EXPIRED"):
+        # Honor the explicit reconcile request for paid subscriptions too
+        # (Wave 8 audit H-1): missed/delayed provider status and billing dates
+        # must refresh when Settings opens, not only while unpaid. Terminal
+        # provider states map monotonically locally and need no per-open
+        # refresh. Price verification is included so quoted renewal prices
+        # track the provider plan (audit H-2).
+        if auto_reconcile and sub.provider_status not in ("CANCELLED", "EXPIRED"):
             reconciled = await cls.reconcile_subscription(
                 db=db,
                 provider_subscription_id=sub.provider_subscription_id,
                 paypal_client=paypal_client,
+                verify_price=True,
             )
             if reconciled:
                 sub = reconciled
@@ -575,6 +664,7 @@ class SubscriptionService:
             provider_status=sub.provider_status,
             currency=sub.currency,
             regular_price=str(sub.regular_price) if sub.regular_price is not None else None,
+            price_verified=sub.price_verified_at is not None,
             first_payment_at=sub.first_payment_at,
             next_billing_at=sub.next_billing_at,
             paid_through_at=sub.paid_through_at,
@@ -707,6 +797,17 @@ class SubscriptionService:
             },
         )
 
+        # State-aware success message (Wave 8 audit M-2): only promise
+        # paid-cycle access when a confirmed payment AND a known access end
+        # date exist; otherwise make no unsupported access claim.
+        if sub.first_payment_at is not None:
+            if sub.paid_through_at is not None:
+                message = "Subscription successfully cancelled. Access remains active through your current billing cycle."
+            else:
+                message = "Subscription successfully cancelled. Your paid access end date will be confirmed by the provider shortly."
+        else:
+            message = "Subscription successfully cancelled. No further charges will occur."
+
         return SubscriptionCancelResponse(
             status="CANCELLED",
             is_paid=sub.first_payment_at is not None,
@@ -714,5 +815,5 @@ class SubscriptionService:
             provider_status="CANCELLED",
             cancelled_at=sub.cancelled_at,
             paid_through_at=sub.paid_through_at,
-            message="Subscription successfully cancelled. Access remains active through your current billing cycle.",
+            message=message,
         )

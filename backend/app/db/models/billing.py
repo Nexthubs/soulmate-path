@@ -64,6 +64,14 @@ class Subscription(Base, TimestampMixin):
         Numeric(12, 2),
         nullable=False,
     )
+    # SP-803/804 RV remediation: provider-verified price snapshot provenance.
+    # Set when the PayPal plan's currency/regular price was fetched and stored
+    # into currency/regular_price; NULL means the price is provisional config
+    # data that the provider has not confirmed.
+    price_verified_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     first_payment_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True),
         nullable=True,

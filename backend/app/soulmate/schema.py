@@ -340,6 +340,10 @@ class SubscriptionStatusResponse(BaseModel):
         default=None,
         description="Regular monthly renewal price of the reconciled subscription, decimal string (SP-803)",
     )
+    price_verified: bool = Field(
+        default=False,
+        description="True when currency/regular_price come from a verified PayPal plan snapshot (Wave 8 audit H-2)",
+    )
     first_payment_at: Optional[datetime] = Field(default=None, description="Confirmed payment UTC timestamp")
     next_billing_at: Optional[datetime] = Field(default=None, description="Next billing UTC timestamp")
     paid_through_at: Optional[datetime] = Field(default=None, description="Paid-through expiration UTC timestamp")

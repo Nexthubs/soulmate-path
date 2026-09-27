@@ -72,7 +72,8 @@ Status-aware Drawer destination (`SP-802`) completed and evidenced in `docs/hand
 Subscription details in Settings (`SP-803`) completed and evidenced in `docs/handoffs/SP-803.md` (status response now carries `currency`/`regular_price` from the reconciled row; settings card shows plan/status/regular monthly price/next-billing-or-paid-through; full Figma page-chrome parity flagged for M6 QA).
 Cancel action UI (`SP-804`) completed and evidenced in `docs/handoffs/SP-804.md` (extracted testable `CancelConfirmationDialog` with renewal-price quote + retention guarantee, in-flight re-entry guard, entry hidden once cancelled; success-path provider cancel covered by SP-409 tests + M3 gate live evidence).
 Paid-through access display (`SP-805`) completed and evidenced in `docs/handoffs/SP-805.md` (`derivePaidAccessCopy` derives all access claims from actual reconciled state/dates; expired paid-through no longer claims "Active"; suspended/processing states carry no renewal promise; client clock used for display tense only per TIME-01).
-*(Note: WAVE 8 is 100% complete — SP-801..805 DONE, 2026-09-27.)*
+Wave 8 audit remediation (2026-09-27, Codex audit: 3H+2M all confirmed and fixed): paid subscriptions now reconcile with PayPal on Settings open (H-1); provider plan price snapshot verified at binding + on reconcile with `price_verified` provenance, hard-coded price fallback removed (H-2); unapproved no-refund assertion removed, policy tracked as `REFUND-01` (H-3); drawer destination reset on close + unknown-status whitelist (M-1); cancel copy makes no access promise without a known end date, backend cancel message state-aware (M-2). Guard-vs-`paid_through_at` semantic gap tracked as `PAID-THROUGH-01` (OPEN). Real sandbox cancel success-path E2E remains an owner-scheduled gap (runbook in docs/handoffs/SP-804.md).
+*(Note: WAVE 8 is 100% complete — SP-801..805 DONE, 2026-09-27, incl. audit remediation.)*
 
 ## 2. Milestone status
 
@@ -98,6 +99,8 @@ Blocking decision IDs:
 | AGE-01 | final DOB/legal rule |
 | COPY-02 | complete Transition-2 production copy |
 | COPY-03 | final Transition-4 dynamic behavior |
+| REFUND-01 | refund policy statement in cancellation UI (Wave 8 audit H-3; copy removed until approved) |
+| PAID-THROUGH-01 | guard enforcement vs paid-through access window semantics (Wave 8 audit risk item) |
 | (REPORT-01/02 RESOLVED 2026-09-27; SP-706 DONE — remaining M6 gates: production provider config, real paid flow, PAY-01, DOMAIN-01) | M6 |
 | RECOVERY-01 | same-email second paid session Sketch recovery path; 2026-09-27 owner ruling: session-scoped read isolation is INTENTIONAL (`不得恢复裸邮箱跨会话读取`), verified-identity recovery deferred to a future iteration; still gates PAY-02 resolution away from `blocked` |
 | PROMPT-01 | future Sketch input-quality change |
@@ -110,7 +113,7 @@ Details and current handling → `DECISIONS.md`.
 
 ```text
 Quiz config: soulmate-quiz-v1 (canonical JSON & seeded in DB soulmate_quiz_versions)
-DB migration: 0005_legacy_session_status (head) applied to shared dev and verified round-trip in disposable PostgreSQL; 0004 added provider/billing ordering checkpoints, 0005 normalized legacy post-payment session status to SUBSCRIBED
+DB migration: 0006_price_verification (head) applied to shared dev and verified round-trip; 0005 normalized legacy post-payment session status to SUBSCRIBED; 0006 adds subscriptions.price_verified_at for provider price snapshot provenance (Wave 8 audit H-2)
 Config checkpoint: DEV-SPEC §22 groups verified, centralized Decimal pricing, RFC 1123 domain syntax check, multi-layer frontend gate; §13.3 report provider env configured in dev (litellm.giaogiao.work / gemma-4-26b / key set; provider switch stays empty per REPORT-01/02)
 API checkpoint: DEV-SPEC v1.2 baseline; error taxonomy, correlation middleware, and structured logging established (SP-005); report scaffold endpoints added (SP-702 GET /artifacts/report)
 Payment provider: PayPal monthly subscription with intro first month + regular monthly renewal

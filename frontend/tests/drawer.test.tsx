@@ -166,6 +166,9 @@ describe("SP-802: status-aware drawer destination (server-authoritative)", () =>
     // unknown / not yet loaded stays conservative on the paying user's home base
     expect(resolveSketchDestinationFromStatus(null)).toBe(SOULMATE_ROUTES.RESULT);
     expect(resolveSketchDestinationFromStatus(undefined)).toBe(SOULMATE_ROUTES.RESULT);
+    // Wave 8 audit M-1: unrecognized status values are NOT mapped to Sketch
+    expect(resolveSketchDestinationFromStatus("SOMETHING_ELSE")).toBe(SOULMATE_ROUTES.RESULT);
+    expect(resolveSketchDestinationFromStatus("")).toBe(SOULMATE_ROUTES.RESULT);
   });
 
   it("resolves from the SP-503 aggregate payload when authorized (200)", () => {

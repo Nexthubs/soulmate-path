@@ -41,14 +41,23 @@ class MockPayPalClient(PayPalClient):
         self,
         subscription_responses: Optional[Dict[str, Any]] = None,
         transactions_responses: Optional[Dict[str, Any]] = None,
+        plan_responses: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(client_id="mock_id", client_secret="mock_secret")
         self.subscription_responses = subscription_responses or {}
         self.transactions_responses = transactions_responses or {}
+        self.plan_responses = plan_responses or {}
         self.list_transactions_calls: list[dict[str, Any]] = []
+        self.get_subscription_calls: list[str] = []
+        self.get_plan_calls: list[str] = []
 
     async def get_subscription(self, subscription_id: str) -> Optional[Dict[str, Any]]:
+        self.get_subscription_calls.append(subscription_id)
         return self.subscription_responses.get(subscription_id)
+
+    async def get_plan(self, plan_id: str) -> Optional[Dict[str, Any]]:
+        self.get_plan_calls.append(plan_id)
+        return self.plan_responses.get(plan_id)
 
     async def list_subscription_transactions(
         self,
@@ -352,6 +361,108 @@ async def test_status_response_surfaces_plan_price_for_settings(async_db: AsyncS
     assert st_none.status == "NONE"
     assert st_none.currency is None
     assert st_none.regular_price is None
+
+
+@pytest.mark.asyncio
+async def test_status_reconcile_refreshes_paid_subscription_from_provider(async_db: AsyncSession):
+    """Wave 8 audit H-1: a paid subscription must reconcile with PayPal when
+    Settings opens (reconcile=true) — stale local status/billing dates refresh
+    from the provider instead of only serving local records."""
+    sub_id = f"I-STALE-{uuid.uuid4().hex[:8].upper()}"
+    paid_at = datetime(2026, 9, 20, 12, 0, 0, tzinfo=timezone.utc)
+    sess, sub = await create_test_session_and_sub(async_db, sub_id, status="ACTIVE", first_payment_at=paid_at)
+    sub.next_billing_at = datetime(2026, 9, 25, 12, 0, 0, tzinfo=timezone.utc)  # stale local value
+    await async_db.commit()
+
+    mock_payload = {
+        "id": sub_id,
+        "status": "ACTIVE",
+        "plan_id": "P-SOULMATE-INTRO",
+        "billing_info": {"next_billing_time": "2026-10-25T12:00:00Z"},
+    }
+    client = MockPayPalClient({sub_id: mock_payload}, transactions_responses={sub_id: []})
+
+    st = await SubscriptionService.get_subscription_status(
+        async_db, sess, auto_reconcile=True, paypal_client=client
+    )
+    await async_db.commit()
+
+    # Provider reconciliation refreshed the stale local billing dates
+    assert st.status == "ACTIVE"
+    assert st.is_paid is True
+    assert st.next_billing_at == datetime(2026, 10, 25, 12, 0, 0, tzinfo=timezone.utc)
+    assert st.paid_through_at == datetime(2026, 10, 25, 12, 0, 0, tzinfo=timezone.utc)
+    # first_payment_at immutability (PAY-AUTH-01/TIME-01) is untouched
+    assert st.first_payment_at == paid_at
+
+
+@pytest.mark.asyncio
+async def test_status_reconcile_skips_terminal_provider_states(async_db: AsyncSession):
+    """Wave 8 audit H-1: terminal local states stay monotonic and do not spend a
+    provider round-trip on every Settings open."""
+    sub_id = f"I-TERMSKIP-{uuid.uuid4().hex[:8].upper()}"
+    sess, sub = await create_test_session_and_sub(
+        async_db, sub_id, status="CANCELLED", first_payment_at=datetime.now(timezone.utc),
+        cancelled_at=datetime.now(timezone.utc),
+    )
+    client = MockPayPalClient({})
+
+    st = await SubscriptionService.get_subscription_status(async_db, sess, auto_reconcile=True)
+
+    assert st.status == "CANCELLED"
+    assert client.get_subscription_calls == []
+
+
+@pytest.mark.asyncio
+async def test_reconcile_with_verify_price_refreshes_provider_price_snapshot(async_db: AsyncSession):
+    """Wave 8 audit H-2: reconcile(verify_price=True) refreshes the price
+    snapshot from the provider plan and marks it verified; the default leaves
+    pricing untouched (webhook-driven reconciliations stay cheap)."""
+    sub_id = f"I-PRICESNAP-{uuid.uuid4().hex[:8].upper()}"
+    sess, sub = await create_test_session_and_sub(
+        async_db, sub_id, status="ACTIVE", first_payment_at=datetime.now(timezone.utc)
+    )
+    assert sub.price_verified_at is None
+
+    plan_payload = {
+        "id": "P-SOULMATE-INTRO",
+        "billing_cycles": [
+            {"tenure_type": "TRIAL", "pricing_scheme": {"fixed_price": {"value": "19.00", "currency_code": "USD"}}},
+            {"tenure_type": "REGULAR", "pricing_scheme": {"fixed_price": {"value": "31.50", "currency_code": "USD"}}},
+        ],
+    }
+    mock_payload = {
+        "id": sub_id,
+        "status": "ACTIVE",
+        "plan_id": "P-SOULMATE-INTRO",
+        "billing_info": {"next_billing_time": "2026-10-25T12:00:00Z"},
+    }
+    client = MockPayPalClient(
+        {sub_id: mock_payload}, transactions_responses={sub_id: []}, plan_responses={"P-SOULMATE-INTRO": plan_payload}
+    )
+
+    reconciled = await SubscriptionService.reconcile_subscription(
+        db=async_db, provider_subscription_id=sub_id, paypal_client=client, verify_price=True
+    )
+    await async_db.commit()
+
+    assert reconciled is not None
+    assert reconciled.regular_price == Decimal("31.50")
+    assert reconciled.currency == "USD"
+    assert reconciled.price_verified_at is not None
+
+    # Without verify_price the pricing snapshot is not refreshed
+    sub2_id = f"I-PRICESKIP-{uuid.uuid4().hex[:8].upper()}"
+    sess2, sub2 = await create_test_session_and_sub(
+        async_db, sub2_id, status="ACTIVE", first_payment_at=datetime.now(timezone.utc)
+    )
+    client2 = MockPayPalClient({sub2_id: mock_payload}, transactions_responses={sub2_id: []})
+    await SubscriptionService.reconcile_subscription(
+        db=async_db, provider_subscription_id=sub2_id, paypal_client=client2
+    )
+    assert client2.get_plan_calls == []
+    await async_db.refresh(sub2)
+    assert sub2.price_verified_at is None
 
 
 @pytest.mark.asyncio

@@ -1195,7 +1195,7 @@ Adds `Soulmate Sketch` entry without duplicating global navigation infrastructur
 
 **Priority:** P1  
 **Depends:** SP-503, SP-801  
-**Status:** DONE (docs/handoffs/SP-802.md)  
+**Status:** DONE (docs/handoffs/SP-802.md; Wave 8 audit M-1 remediated 2026-09-27)  
 **Context refs:** DEV-SPEC §3, §10 | Decisions: PAY-AUTH-01, TIME-01 | Dependency handoffs: SP-503, SP-801
 
 
@@ -1216,7 +1216,7 @@ Destination comes from server-authoritative status, not local membership flag on
 
 **Priority:** P1  
 **Depends:** SP-408  
-**Status:** DONE (docs/handoffs/SP-803.md)  
+**Status:** DONE (docs/handoffs/SP-803.md; Wave 8 audit H-1/H-2 remediated 2026-09-27)  
 **Context refs:** DEV-SPEC §2, §9.8 | Decisions: PAY-AUTH-01 | Dependency handoffs: SP-408
 
 
@@ -1232,7 +1232,7 @@ Shows current plan/status/regular monthly price/next billing or paid-through inf
 
 **Priority:** P1  
 **Depends:** SP-409, SP-803  
-**Status:** DONE (docs/handoffs/SP-804.md)  
+**Status:** DONE (docs/handoffs/SP-804.md; Wave 8 audit H-3/M-2 remediated 2026-09-27)  
 **Context refs:** DEV-SPEC §9.8, §15.9 | Decisions: PAY-AUTH-01 | Dependency handoffs: SP-409, SP-803
 
 
@@ -1248,7 +1248,7 @@ Shows current plan/status/regular monthly price/next billing or paid-through inf
 
 **Priority:** P1  
 **Depends:** SP-408, SP-803  
-**Status:** DONE (docs/handoffs/SP-805.md)  
+**Status:** DONE (docs/handoffs/SP-805.md; audit risk tracked as PAID-THROUGH-01)  
 **Context refs:** DEV-SPEC §9.8, §10 | Decisions: PAY-AUTH-01 | Dependency handoffs: SP-408, SP-803
 
 

@@ -22,6 +22,7 @@ import {
   CancelConfirmationDialog,
   formatDate,
   formatSubscriptionPrice,
+  resolveQuotedCancelPrice,
   derivePaidAccessCopy,
 } from "../src/soulmate/components/settings";
 
@@ -274,9 +275,39 @@ describe("SP-409: Subscription Cancellation & Settings Action", () => {
       );
 
       expect(html).not.toContain("/month");
-      expect(html).toContain("Are you sure you want to cancel?");
+      expect(html).toContain("Cancelling stops all future charges");
       expect(html).toContain("Oct 25, 2026");
       expect(html).toContain("never be deleted");
+    });
+
+    it("never asserts a refund policy (Wave 8 audit H-3: REFUND-01 open)", () => {
+      const withPrice = renderToStaticMarkup(
+        <CancelConfirmationDialog {...baseDialogProps} priceText="$29.00" />
+      );
+      const withoutPrice = renderToStaticMarkup(
+        <CancelConfirmationDialog {...baseDialogProps} priceText={null} />
+      );
+      for (const html of [withPrice, withoutPrice]) {
+        expect(html.toLowerCase()).not.toContain("refund");
+      }
+    });
+
+    it("makes no access-until promise when the paid-cycle end date is unknown (Wave 8 audit M-2)", () => {
+      const html = renderToStaticMarkup(
+        <CancelConfirmationDialog {...baseDialogProps} paidThroughDisplay={null} priceText="$29.00" />
+      );
+
+      expect(html).not.toContain("keep access until");
+      expect(html).not.toContain("N/A");
+      expect(html).toContain("depends on your billing state");
+      expect(html).toContain("never be deleted");
+    });
+
+    it("quotes the renewal price only when it is a verified provider snapshot (Wave 8 audit H-2)", () => {
+      expect(resolveQuotedCancelPrice(true, "29.00", "USD")).toBe("$29.00");
+      expect(resolveQuotedCancelPrice(false, "29.00", "USD")).toBeNull();
+      expect(resolveQuotedCancelPrice(undefined, "29.00", "USD")).toBeNull();
+      expect(resolveQuotedCancelPrice(true, null, "USD")).toBeNull();
     });
 
     it("disables both actions while a cancellation request is in flight (safe repeated action)", () => {
