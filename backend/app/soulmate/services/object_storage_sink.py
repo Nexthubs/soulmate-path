@@ -90,6 +90,8 @@ def build_public_object_url(storage_key: str) -> Optional[str]:
     (`OBJECT_STORAGE_PUBLIC_URL_PREFIX`) at read time — URLs are never baked
     into stored data (DOMAIN-01 spirit). None when no prefix is configured.
     """
+    if settings.is_production:
+        return None  # ASSET-ACCESS-01: production always uses one-hour signed URLs.
     prefix = (settings.object_storage_public_url_prefix or "").strip().rstrip("/")
     if not prefix:
         return None

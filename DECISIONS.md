@@ -41,6 +41,15 @@
 - **Affected:** SP-603..607.
 - **Source/evidence:** DEV-SPEC v1.2.
 
+### ASSET-ACCESS-01 — Production Sketch image access
+
+- **Status:** RESOLVED
+- **Date:** 2026-09-27
+- **Decision:** production serves Sketch images through one-hour presigned object-storage URLs. Leave `OBJECT_STORAGE_PUBLIC_URL_PREFIX` empty so the asset API uses the existing signed-URL fallback. The production object must not also remain readable through a public R2 domain; disabling the prefix alone changes only the URL issued by the API.
+- **Tradeoff:** no stable public CDN cache URL for Sketch images.
+- **Affected:** SP-607, RV-03 R-01, M4/M6 storage configuration and acceptance.
+- **Source:** product-owner ruling during RV-03 re-review.
+
 ### IMGPROVIDER-01 — OpenAI-compatible image endpoint configuration
 
 - **Status:** RESOLVED

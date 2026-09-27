@@ -1545,7 +1545,7 @@ Review:
 ## RV-03 — Sketch generation correctness review
 
 **After:** SP-601..607  
-**Status:** DONE (2026-09-27 independent review; M4 BLOCKED, `docs/reviews/M4-SKETCH-REVIEW.md`)
+**Status:** DONE (2026-09-27 RV-03 PASS; M4 PASS, `docs/reviews/M4-SKETCH-REVIEW.md`)
 **Context refs:** DEV-SPEC §11–12, §14, §20, §23 | Decisions: PROMPT-01, ASSET-01, TIME-01 | Dependency handoffs: —
 
 
@@ -1678,6 +1678,8 @@ docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md
 - Result aggregate API contract checkpoint recorded.
 
 ## M4 — Sketch Ready
+
+**Completion:** COMPLETE (RV-03 and M4 gate PASS, 2026-09-27; `docs/reviews/M4-SKETCH-REVIEW.md`).
 
 **Required:**
 - SP-601..607;

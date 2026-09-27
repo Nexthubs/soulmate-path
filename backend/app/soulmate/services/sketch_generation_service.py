@@ -106,11 +106,6 @@ INTERNAL_ERROR_CODE = "INTERNAL_ERROR"
 STORAGE_NOT_CONFIGURED_CODE = "STORAGE_NOT_CONFIGURED"
 BUDGET_EXHAUSTED_CODE = "ATTEMPT_BUDGET_EXHAUSTED"
 
-# Append-only per-attempt history cap (M-02): every provider call / reclaim /
-# fence discard / retry gets one durable entry on the job.
-MAX_ATTEMPT_HISTORY = 20
-
-
 def sketch_idempotency_key(email_normalized: str, artifact_version: str) -> str:
     """`sketch:<email_hash>:<artifact_version>` per DEV-SPEC §11.6."""
     email_hash = hashlib.sha256(email_normalized.strip().lower().encode("utf-8")).hexdigest()[:16]
@@ -133,17 +128,15 @@ def hard_attempt_cap() -> int:
 
 def _record_job_event(job: AIGenerationJob, entry: Dict[str, Any]) -> None:
     """
-    Appends one entry to the job's append-only attempt history (M-02, §11.3/§19):
-    every provider call outcome, reclaim, fence discard, and retry is durably
-    recorded with its attempt number and provider request id, so provider spend
-    can be reconstructed from the job row alone. Top-level error fields keep
-    their existing "latest outcome" semantics; `attempts` is the full timeline.
+    Appends one entry to the job's attempt history (M-02, §11.3/§19).
+    A worker that dies before persisting a provider response cannot record that
+    response's request id; its claim remains visible as an unknown outcome.
     """
     entry = {"at": utc_now().isoformat(), **entry}
     existing = job.error_json if isinstance(job.error_json, dict) else {}
     history = list(existing.get("attempts") or [])
     history.append(entry)
-    job.error_json = {**existing, "attempts": history[-MAX_ATTEMPT_HISTORY:]}
+    job.error_json = {**existing, "attempts": history}
 
 
 @runtime_checkable
@@ -293,6 +286,7 @@ class SketchGenerationService:
                 existing_job.error_json = {
                     **(existing_job.error_json or {}),
                     "user_retry": True,
+                    "user_retry_grant_pending": True,
                     "requeued_at": utc_now().isoformat(),
                 }
                 _record_job_event(
@@ -905,11 +899,9 @@ class SketchGenerationService:
 
         Returns `(job, budget_exhausted)`. `budget_exhausted=True` means the job
         was terminated inside this transaction instead of being claimed: every
-        budget slot had been consumed by REAL claims and the job only returned
-        to QUEUED via stale reclamation (a crash loop) — M-01. The check looks
-        at the last history event so a deliberate user retry (which may push the
-        attempt count past the automatic budget, up to the hard cap) still
-        claims and gets its one provider opportunity.
+        budget slot had been consumed by REAL claims. An explicit user retry
+        grants exactly one additional claim, represented by a persistent flag
+        consumed at claim time. History events never act as authorization.
         """
         conditions = [
             AIGenerationJob.job_type == JOB_TYPE_SKETCH,
@@ -933,11 +925,20 @@ class SketchGenerationService:
             return None, False
 
         max_attempts = max(1, settings.job_retry_max_attempts)
-        history = (job.error_json or {}).get("attempts") or []
-        last_event = history[-1].get("event") if history else None
-        if (job.attempt or 0) >= max_attempts and last_event == "reclaimed":
+        metadata = job.error_json if isinstance(job.error_json, dict) else {}
+        user_retry_grant = metadata.get("user_retry_grant_pending") is True
+        if (job.attempt or 0) >= hard_attempt_cap() or (
+            (job.attempt or 0) >= max_attempts and not user_retry_grant
+        ):
             job.status = JOB_FAILED_RETRYABLE
             job.locked_at = None
+            job.error_json = {
+                **metadata,
+                "error_code": BUDGET_EXHAUSTED_CODE,
+                "retryable": False,
+                "attempt": job.attempt or 0,
+                "user_retry_grant_pending": False,
+            }
             _record_job_event(
                 job,
                 {
@@ -956,6 +957,8 @@ class SketchGenerationService:
         job.attempt = (job.attempt or 0) + 1
         job.status = JOB_PROCESSING
         job.locked_at = utc_now()
+        if user_retry_grant:
+            job.error_json = {**metadata, "user_retry_grant_pending": False}
         _record_job_event(job, {"event": "claimed", "attempt": job.attempt or 0})
         await db.flush()
         return job, False

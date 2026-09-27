@@ -99,6 +99,12 @@ def test_production_validation_passes_when_all_keys_provided():
     # Should complete without error
     valid_prod_settings.validate_production_config()
 
+    public_prod_settings = valid_prod_settings.model_copy(
+        update={"object_storage_public_url_prefix": "https://cdn.example.com/assets"}
+    )
+    with pytest.raises(ConfigurationError, match="OBJECT_STORAGE_PUBLIC_URL_PREFIX"):
+        public_prod_settings.validate_production_config()
+
 
 def test_production_validation_rejects_insecure_and_loopback_urls():
     """Verify production rejects non-HTTPS, localhost, 127.0.0.1, or private IP base URLs."""

@@ -268,6 +268,10 @@ class Settings(BaseSettings):
             missing_keys.append("OBJECT_STORAGE_ACCESS_KEY")
         if not self.object_storage_secret_key:
             missing_keys.append("OBJECT_STORAGE_SECRET_KEY")
+        if (self.object_storage_public_url_prefix or "").strip():
+            missing_keys.append(
+                "OBJECT_STORAGE_PUBLIC_URL_PREFIX (must be empty in production per ASSET-ACCESS-01)"
+            )
 
         # Session Secret Key check (DEV-SPEC §20)
         if (

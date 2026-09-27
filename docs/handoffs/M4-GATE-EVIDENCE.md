@@ -46,13 +46,13 @@ The M4 "Sketch Ready" exit criteria are now evidenced end-to-end with real money
 
 ## Addendum — provider-call audit (2026-09-27, product-owner observation)
 
-The owner observed 8 gateway consumption rows for `gpt-image-2` and questioned the request policy. Full audit against our DB (every provider call leaves a `provider_request_id` on the job/artifact):
+The owner observed 8 gateway consumption rows for `gpt-image-2` and questioned the request policy. The table below records the implementer's contemporaneous attribution. Pre-RV-03-remediation database rows retained only the last request ID; earlier IDs and the three unmatched rows cannot be independently reconstructed from those rows. Current code retains IDs for committed outcomes and late returned results, while a worker death before commit still leaves an unknown outcome.
 
 | Gateway row (local) | Attribution | Request id |
 |---|---|---|
 | 11:00:14 (in 1410 / out 3168) | **Real gate-run success** (attempt 4 after in-run fixes) | `b3980150…` |
 | 11:11:15 / 11:11:57 / 11:13:01 / 11:15:06 (in 1394 / out 3168) | **Test-suite drain**: the live backend's lifespan workers claimed jobs enqueued by the backend test suite executed while the server was up — a process-hygiene violation of our own documented rule ("never run pytest with a live server"), not a product defect | `ce03ccde…`, `59a85b4b…`, `408e892f…`, `7ca7a63b…` |
-| 11:11:21 / 11:13:05 / 11:15:00 (in 697 / out ~166) | **Not ours**: no matching `provider_request_id` exists in our DB; our adapter makes exactly one POST per attempt, so no code path emits a second smaller call. Occurring seconds after each completion, these are most plausibly gateway-internal rows (e.g. moderation/metadata pass or upstream retry) or unrelated traffic on the shared token — owner can expand a row to inspect the prompt | — |
+| 11:11:21 / 11:13:05 / 11:15:00 (in 697 / out ~166) | **Unattributed.** No matching request ID is retained in our DB. Gateway-internal activity or unrelated traffic on the shared token are hypotheses; the gateway records must be inspected to decide. | — |
 
 Also accounted: the real gate generation's earlier 3 attempts (format-gate failures under the old sink code, ~09:02–09:05 local, request ids `aec45aff…`/`e27554ea…` + one overwritten) predate the screenshot's visible window — total real spend for the user generation = 4 calls across its defect-fixing lifetime, 1 per attempt per the §11.6 retry budget.
 

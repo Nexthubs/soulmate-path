@@ -264,6 +264,12 @@ def test_public_url_builder_derives_from_prefix(monkeypatch):
     assert build_public_object_url("soulmate/sketches/abc/original.webp") is None
 
 
+def test_production_never_uses_public_object_url(monkeypatch):
+    monkeypatch.setattr(settings, "environment", "production")
+    monkeypatch.setattr(settings, "object_storage_public_url_prefix", "https://cdn.example.com/assets")
+    assert build_public_object_url("soulmate/sketches/abc/original.webp") is None
+
+
 # ---------------------------------------------------------------------------
 # Worker integration (AC 1 + 2 + 4 end to end)
 # ---------------------------------------------------------------------------

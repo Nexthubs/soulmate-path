@@ -6,9 +6,9 @@
 ## 1. Current milestone
 
 ```text
-Current milestone: M4 — Sketch Ready (Wave 6 implementation complete; RV-03 review complete)
-Status: BLOCKED (docs/reviews/M4-SKETCH-REVIEW.md; prompt-failure path plus retry/audit findings)
-Latest accepted review: docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md (M3 CONDITIONAL_PASS; M2 PASS restored post-RV-remediation)
+Current milestone: M4 — Sketch Ready COMPLETE (Wave 6 implementation and RV-03 review complete)
+Status: PASS (RV-03 final follow-up in docs/reviews/M4-SKETCH-REVIEW.md)
+Latest accepted review: docs/reviews/M4-SKETCH-REVIEW.md (RV-03 PASS; M4 PASS)
 ```
 
 Repository architecture & boundary (`SP-001`) completed and evidenced in `docs/handoffs/SP-001.md`.
@@ -59,7 +59,7 @@ Generation queue / worker (`SP-603`) completed and evidenced in `docs/handoffs/S
 Retry / idempotency (`SP-604`) completed and evidenced in `docs/handoffs/SP-604.md` (two-phase claims, bounded exponential backoff, stale-claim reclamation, 20-concurrent trigger test passed).
 Durable object storage (`SP-605`) completed and evidenced in `docs/handoffs/SP-605.md` (S3-compatible ObjectStorageSink via boto3; §11.7 keys; MIME/size validation; live upload deferred to M4 gate).
 One-email-one-sketch constraint (`SP-606`) completed and evidenced in `docs/handoffs/SP-606.md` (identity-level generation convergence on email_normalized; DB constraint proven; cross-session read isolation preserved per RECOVERY-01).
-Live Sketch page states (`SP-607`) completed and evidenced in `docs/handoffs/SP-607.md` (GET /artifacts/sketch asset URL — R2 public prefix verified live; frontend live state machine, bounded polling, locked→Result routing).
+Live Sketch page states (`SP-607`) completed and evidenced in `docs/handoffs/SP-607.md` (GET /artifacts/sketch asset URL, frontend live state machine, bounded polling, locked→Result routing; current private signed-URL policy is `ASSET-ACCESS-01`).
 *(Note: WAVE 6 is 100% complete — SP-601..607 DONE, 2026-09-26.)*
 
 ## 2. Milestone status
@@ -69,13 +69,13 @@ Live Sketch page states (`SP-607`) completed and evidenced in `docs/handoffs/SP-
 | M1 Quiz Funnel Ready | PASS | `docs/reviews/M1-QUIZ-FUNNEL-REVIEW.md` |
 | M2 Sandbox Revenue Ready | PASS (restored post-RV-remediation) | `docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md` §6 |
 | M3 Entitlement / Result Ready | CONDITIONAL_PASS | `docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md` |
-| M4 Sketch Ready | BLOCKED (RV-03, 2026-09-27) | `docs/reviews/M4-SKETCH-REVIEW.md` |
+| M4 Sketch Ready | PASS — COMPLETE (RV-03, 2026-09-27) | `docs/reviews/M4-SKETCH-REVIEW.md` |
 | M5 Report Scaffold Ready | NOT_STARTED | `docs/reviews/M5-REPORT-SCAFFOLD-REVIEW.md` |
 | M6 Production Ready | NOT_STARTED | `docs/reviews/M6-PRODUCTION-READINESS-REVIEW.md` |
 
 ## 3. Active / blocked work
 
-Active tasks: RV-03 remediation is complete (`docs/handoffs/RV-03-REMEDIATION.md`: H-01 prompt-failure terminalization, M-01 reclaim no-charge + claim-time budget, M-02 append-only attempt history) — M4 remains BLOCKED pending the independent re-review of the affected paths. The prior implementer-run paid flow has independently verified persisted DB/API/R2 state; a fresh reviewer-run paid flow, live retry, and M4-subscription webhook replay (backend on 0.0.0.0:8000) remain NOT_RUN. M2 restored to PASS and M3 CONDITIONAL_PASS on 2026-09-26 after RV-01/RV-02 remediation + live sandbox acceptance.
+Active tasks: RV-03 and M4 PASS on the reviewed code (`docs/reviews/M4-SKETCH-REVIEW.md`). H-02 claim-budget bypass is fixed and PostgreSQL regressions pass; M-02's unavoidable response-before-commit audit gap is documented. `ASSET-ACCESS-01` is enforced in production config; the current R2 object's former public URL returns 403 and its one-hour signed URL returns 200. The prior paid flow remains the live generation evidence; a fresh reviewer-run purchase, live retry, 12-hour wait and gate-subscription webhook replay remain NOT_RUN. M2 remains PASS and M3 CONDITIONAL_PASS.
 
 Blocking decision IDs:
 
@@ -103,6 +103,7 @@ Config checkpoint: DEV-SPEC §22 groups verified, centralized Decimal pricing, R
 API checkpoint: DEV-SPEC v1.2 baseline; error taxonomy, correlation middleware, and structured logging established (SP-005)
 Payment provider: PayPal monthly subscription with intro first month + regular monthly renewal
 Sketch target model: gpt-image-2 via provider adapter
+Sketch production asset access: ASSET-ACCESS-01 chooses one-hour presigned URLs; current dev R2 origin private-read smoke PASS; future production bucket requires M6 verification
 Report production provider: disabled / decision pending
 ```
 
@@ -115,6 +116,6 @@ Report production provider: disabled / decision pending
 ## 6. Next safe tasks
 
 ```text
-1. Request the independent re-review of the RV-03 affected paths (`docs/handoffs/RV-03-REMEDIATION.md`; H-01/M-01/M-02 fixed, R-01 product ruling requested). Do not advance to Wave 7 as an M4 PASS until the reviewer re-rules.
-2. For any live PayPal webhook recheck, bind the backend on the WireGuard-reachable interface. Keep workers disabled or use the disposable PostgreSQL test runner for backend tests; never let a live worker drain shared test jobs.
+1. Keep M4's signed-only storage rule for deployment; M6 must recheck the actual production bucket, DNS and old public paths. The owner should check other consumers of the now-private shared `morii` bucket (`anima/`, `rmbg/`, root objects).
+2. Follow the next task in `TASK-BREAKDOWN.md` when separately authorized. For any live PayPal webhook recheck, bind the backend on the WireGuard-reachable interface. Keep workers disabled or use the disposable PostgreSQL test runner for backend tests.
 ```

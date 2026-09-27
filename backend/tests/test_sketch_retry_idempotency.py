@@ -406,6 +406,22 @@ async def test_crash_loop_budget_enforced_at_claim_time(async_db):
     assert job.status == JOB_QUEUED
     assert job.attempt == max_attempts  # charged exactly once per claim
 
+    # A late response appends a fence event after the final reclaim. That audit
+    # event must not grant another automatic claim beyond the budget.
+    late_result = SketchGenerationResult(
+        provider="openai", model="gpt-image-2", image_bytes=b"late-bytes",
+        image_format="webp", size="1024x1536", quality="medium",
+        provider_request_id="req_late_budget", duration_ms=10,
+    )
+    late_status = await Svc._finalize_success(
+        job_id=outcome.job.id, artifact_id=outcome.artifact.id,
+        claim_attempt=work.claim_attempt, rendered=work.rendered,
+        result=late_result, sink=RecordingSink(),
+    )
+    assert late_status == JOB_QUEUED
+    await async_db.refresh(job)
+    assert job.error_json["attempts"][-1]["event"] == "fence_discarded"
+
     # The next claim terminates the crash loop without a provider call.
     provider = FakeProvider()
     status = await SketchGenerationService.process_next_queued_job(
@@ -425,6 +441,43 @@ async def test_crash_loop_budget_enforced_at_claim_time(async_db):
     # charges == claims == max_attempts (no reclaim double-charge anywhere)
     claimed_events = [e for e in job_after.error_json["attempts"] if e["event"] == "claimed"]
     assert len(claimed_events) == max_attempts
+
+    # An explicit retry grants one further claim. If that claim dies, the
+    # subsequent reclaim and late response cannot reuse the consumed grant.
+    await async_db.refresh(job)
+    await async_db.refresh(sess)
+    await async_db.refresh(outcome.artifact)
+    retried = await SketchGenerationService.enqueue_sketch_generation(async_db, sess)
+    assert retried.job.status == JOB_QUEUED
+    assert retried.job.error_json["user_retry_grant_pending"] is True
+    retry_work = await Svc._claim_and_prepare(
+        db_session_factory=AsyncSessionLocal, now=utc_now(), job_id=outcome.job.id
+    )
+    assert retry_work is not None and not isinstance(retry_work, str)
+    assert retry_work.claim_attempt == max_attempts + 1
+    async with AsyncSessionLocal() as stale_db:
+        stale_job = await stale_db.get(AIGenerationJob, outcome.job.id)
+        assert stale_job.error_json["user_retry_grant_pending"] is False
+        stale_job.locked_at = stale_at
+        await stale_db.commit()
+    assert await SketchGenerationService.reclaim_stale_processing_jobs() == 1
+    assert await Svc._finalize_success(
+        job_id=outcome.job.id, artifact_id=outcome.artifact.id,
+        claim_attempt=retry_work.claim_attempt, rendered=retry_work.rendered,
+        result=late_result, sink=RecordingSink(),
+    ) == JOB_QUEUED
+    async with AsyncSessionLocal() as verify_db:
+        requeued = await verify_db.get(AIGenerationJob, outcome.job.id)
+        due_at = requeued.run_after
+    provider_after_retry = FakeProvider()
+    assert await SketchGenerationService.process_next_queued_job(
+        provider=provider_after_retry, sink=RecordingSink(), job_id=outcome.job.id,
+        now=due_at + timedelta(seconds=1),
+    ) == JOB_FAILED_RETRYABLE
+    assert provider_after_retry.calls == 0
+    async with AsyncSessionLocal() as verify_db:
+        terminal_job = await verify_db.get(AIGenerationJob, outcome.job.id)
+    assert terminal_job.attempt == max_attempts + 1
 
 
 # ---------------------------------------------------------------------------
