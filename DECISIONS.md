@@ -108,18 +108,25 @@
 
 ### REPORT-01 — Production report generation model/rules
 
-- **Status:** OPEN
+- **Status:** RESOLVED (2026-09-27, owner decision)
 - **Context:** Figma provides report layout, but source requirements do not define a production generator/model.
-- **Decision:** TBD. Implement structured schema/persistence/renderer/provider boundary and fixture only.
-- **Current handling (2026-09-27):** owner direction — the production generator will target an OpenAI-compatible endpoint; the §13.3 provider config surface now includes dedicated report keys (`SOULMATE_REPORT_PROVIDER`, `SOULMATE_REPORT_API_BASE_URL`, `SOULMATE_REPORT_API_KEY`, `SOULMATE_REPORT_MODEL`, `SOULMATE_REPORT_PROMPT_VERSION`), falling back to the shared `OPENAI_*` settings. Generation itself remains disabled until this decision and REPORT-02 close (SP-704 owns the provider/trigger).
-- **Affected:** SP-701..706, M5/M6.
+- **Decision (owner, 2026-09-27):**
+  - Generator: OpenAI-compatible chat endpoint (per owner direction recorded 2026-09-27 during SP-702), model `gemma-4-26b` (owner-selected, already configured in env as `SOULMATE_REPORT_MODEL`); endpoint `SOULMATE_REPORT_API_BASE_URL` + `SOULMATE_REPORT_API_KEY` with shared `OPENAI_*` fallback (SP-704 adapter).
+  - Generation strategy: **on_demand** (owner-selected; DEV-SPEC §13.4 V1 default confirmed) — the entitled, unlocked user triggers generation from the Report page; the server decides idempotency, mirroring the accepted Sketch queue pattern (§11.5–11.6, `ai_generation_jobs`).
+  - Output contract: provider output must validate against `ReportV1` (SP-701) and persists only via `ReportService.save_completed_report` no-clobber semantics (SP-702).
+- **Affected:** SP-706 (unblocked for implementation; production switch still gated by REPORT-02), M6.
 
 ### REPORT-02 — Production report prompt/content specification
 
-- **Status:** OPEN
-- **Context:** no supported production prompt or report-content mapping exists in supplied requirements.
-- **Decision:** TBD. Production report generation remains disabled.
-- **Affected:** SP-704/706, M5/M6.
+- **Status:** OPEN — awaiting owner-supplied prompt text (owner decision 2026-09-27: the owner provides the prompt content; the implementation must not author the reading content).
+- **Context:** no supported production prompt or report-content mapping exists in supplied requirements (PRD confirms: report page layout + "reading within 24 hours" FAQ only).
+- **Required to close (owner to supply):**
+  1. The production prompt text (English editorial instruction defining the personalized reading: tone, structure, personalization depth, any prohibited-claim rules).
+  2. Any output constraints beyond the `ReportV1` schema (section count, length, forbidden content).
+  3. Any safety/compliance framing requirements (e.g. entertainment-purpose wording) — none exists in the PRD.
+- **Integration format (fixed by SP-704 machinery):** the supplied text becomes the body of `config/prompts/soulmate-report/<version>.txt` with exactly two whitelisted placeholders — `{profile_json}` (normalized camelCase profile) and `{report_schema_json}` (the ReportV1 JSON schema); no other braces are permitted; template version must match `SOULMATE_REPORT_PROMPT_VERSION`.
+- **Until closed:** `SOULMATE_REPORT_PROVIDER` stays empty (generation disabled). Once the owner text is received and acknowledged, this entry flips to RESOLVED with the approved template version recorded, the provider switch may be enabled, and SP-706 goes live.
+- **Affected:** SP-704/706, M6.
 
 ### PROMPT-01 — Q7 as Sketch `features` input
 

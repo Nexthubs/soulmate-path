@@ -7,7 +7,7 @@
 
 ```text
 Current milestone: M5 — Report Scaffold Ready (remediation re-reviewed 2026-09-27)
-Status: PASS for the scaffold at 6e49409; production Report generation remains DISABLED and SP-706 BLOCKED on REPORT-01/02
+Status: PASS for the scaffold at 6e49409; REPORT-01 RESOLVED 2026-09-27 (on_demand, gemma-4-26b via OpenAI-compatible adapter) — SP-706 implementation authorized, go-live still gated on REPORT-02 (owner to supply the production prompt text); generation switch stays OFF
 Latest accepted review: docs/reviews/M5-REPORT-SCAFFOLD-REVIEW.md (M5 PASS; evidence limits recorded)
 ```
 
@@ -81,7 +81,7 @@ Report mock fixture (`SP-705`) completed and evidenced in `docs/handoffs/SP-705.
 
 ## 3. Active / blocked work
 
-Active gate: M5 scaffold PASS on the reviewed `6e49409` code (`docs/reviews/M5-REPORT-SCAFFOLD-REVIEW.md`); its browser, database and provider evidence limits are recorded there. Report production generation and SP-706 remain blocked on REPORT-01/02. M4 PASS, M2 PASS and M3 CONDITIONAL_PASS remain unchanged.
+Active gate: M5 scaffold PASS on the reviewed `6e49409` code (`docs/reviews/M5-REPORT-SCAFFOLD-REVIEW.md`); its browser, database and provider evidence limits are recorded there. REPORT-01 is RESOLVED (owner: on_demand + gemma-4-26b via OpenAI-compatible adapter) and SP-706 implementation is authorized; production go-live stays gated on REPORT-02 (owner to supply the prompt text). M4 PASS, M2 PASS and M3 CONDITIONAL_PASS remain unchanged.
 
 Blocking decision IDs:
 
@@ -92,7 +92,7 @@ Blocking decision IDs:
 | AGE-01 | final DOB/legal rule |
 | COPY-02 | complete Transition-2 production copy |
 | COPY-03 | final Transition-4 dynamic behavior |
-| REPORT-01 / REPORT-02 | production Report generation / SP-706 / M6 |
+| REPORT-02 — owner to supply the production prompt text (REPORT-01 RESOLVED 2026-09-27: on_demand + gemma-4-26b) | SP-706 go-live / M6 |
 | RECOVERY-01 | same-email second paid session Sketch recovery path; 2026-09-27 owner ruling: session-scoped read isolation is INTENTIONAL (`不得恢复裸邮箱跨会话读取`), verified-identity recovery deferred to a future iteration; still gates PAY-02 resolution away from `blocked` |
 | PROMPT-01 | future Sketch input-quality change |
 | DOMAIN-01 | canonical production URLs |
@@ -110,7 +110,7 @@ API checkpoint: DEV-SPEC v1.2 baseline; error taxonomy, correlation middleware, 
 Payment provider: PayPal monthly subscription with intro first month + regular monthly renewal
 Sketch target model: gpt-image-2 via provider adapter
 Sketch production asset access: ASSET-ACCESS-01 chooses one-hour presigned URLs; current dev R2 origin private-read smoke PASS; future production bucket requires M6 verification
-Report production provider: disabled / decision pending (SP-704 adapter + template machinery ready; SP-706 BLOCKED on REPORT-01/02)
+Report production provider: disabled / REPORT-01 RESOLVED 2026-09-27 (on_demand, gemma-4-26b via SP-704 adapter); SP-706 go-live gated on REPORT-02 (owner prompt text → config/prompts/soulmate-report/<version>.txt + SOULMATE_REPORT_PROMPT_VERSION, then switch SOULMATE_REPORT_PROVIDER=openai_compatible)
 ```
 
 ## 5. Production-disabled
@@ -122,6 +122,6 @@ Report production provider: disabled / decision pending (SP-704 adapter + templa
 ## 6. Next safe tasks
 
 ```text
-1. Keep Report production generation off while REPORT-01/02 remain OPEN; SP-706 requires their resolution and separate authorization. M6 must independently verify release configuration, exact 390px visual parity and a real paid flow. Release QA must also reword the Report page READY-state copy (it currently says the report is being prepared although generation is off — M5 re-review Low note).
+1. Keep Report production generation off while REPORT-02 remains OPEN; supply the owner prompt text to close it (format fixed in DECISIONS.md REPORT-02), then SP-706 implements the on_demand trigger and go-live. M6 must independently verify release configuration, exact 390px visual parity and a real paid flow. Release QA must also reword the Report page READY-state copy (it currently says the report is being prepared although generation is off — M5 re-review Low note).
 2. Preserve M4's signed-only storage rule for deployment; M6 must recheck the production bucket and affected consumers. Follow later tasks only when separately authorized.
 ```
