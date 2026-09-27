@@ -6,8 +6,8 @@
 ## 1. Current milestone
 
 ```text
-Current milestone: M4 — Sketch Ready (Wave 6 implementation 100% complete; M4 review pending)
-Status: READY_FOR_REVIEW (all SP-601..607 DONE; live provider call is the remaining M4 gate item)
+Current milestone: M4 — Sketch Ready (Wave 6 implementation 100% complete; RV-03 independent review next)
+Status: READY_FOR_REVIEW (reviewer brief: docs/reviews/RV-03-REVIEWER-BRIEF.md, HEAD ed5371d)
 Latest accepted review: docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md (M3 CONDITIONAL_PASS; M2 PASS restored post-RV-remediation)
 ```
 
@@ -87,7 +87,7 @@ Blocking decision IDs:
 | COPY-02 | complete Transition-2 production copy |
 | COPY-03 | final Transition-4 dynamic behavior |
 | REPORT-01 / REPORT-02 | production Report generation / SP-706 / M6 |
-| RECOVERY-01 | same-email second paid session Sketch recovery path; gates PAY-02 resolution away from `blocked` |
+| RECOVERY-01 | same-email second paid session Sketch recovery path; 2026-09-27 owner ruling: session-scoped read isolation is INTENTIONAL (`不得恢复裸邮箱跨会话读取`), verified-identity recovery deferred to a future iteration; still gates PAY-02 resolution away from `blocked` |
 | PROMPT-01 | future Sketch input-quality change |
 | DOMAIN-01 | canonical production URLs |
 | LEGAL-01 | production testimonials/statistics |
@@ -115,6 +115,6 @@ Report production provider: disabled / decision pending
 ## 6. Next safe tasks
 
 ```text
-1. M4 milestone review (docs/reviews/M4-SKETCH-REVIEW.md; prefer an independent reviewer).
-2. During review or immediately after: one live paid-flow generation run as M4 gate evidence.
+1. RV-03 independent review of Wave 6 (reviewer: Codex; brief: docs/reviews/RV-03-REVIEWER-BRIEF.md; output: docs/reviews/M4-SKETCH-REVIEW.md).
+2. During review: backend must listen on 0.0.0.0:8000 (WireGuard-reachable) for the PayPal webhook path; stop the backend before running pytest.
 ```
