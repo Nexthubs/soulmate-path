@@ -1179,7 +1179,7 @@ Product explicitly provides/approves model/rules, prompt, output constraints, an
 
 **Priority:** P1  
 **Depends:** SP-001  
-**Status:** TODO
+**Status:** DONE (docs/handoffs/SP-801.md)  
 **Context refs:** DEV-SPEC §2–3 | Decisions: DOMAIN-01 | Dependency handoffs: SP-001
 
 

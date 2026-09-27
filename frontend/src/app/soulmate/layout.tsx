@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { assertClientConfig } from "@/soulmate/config";
 import { ConfigValidator } from "@/soulmate/components/ConfigValidator";
+import { SoulmateDrawerProvider } from "@/soulmate/components/drawer";
 
 export const metadata: Metadata = {
   title: "Soulmate Path - See the Face of Your Soulmate",
@@ -25,7 +26,7 @@ export default function SoulmateLayout({
   return (
     <main className="w-full max-w-[390px] min-h-screen mx-auto flex flex-col relative shadow-sm bg-white">
       <ConfigValidator />
-      {children}
+      <SoulmateDrawerProvider>{children}</SoulmateDrawerProvider>
     </main>
   );
 }

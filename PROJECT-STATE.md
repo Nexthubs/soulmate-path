@@ -67,6 +67,8 @@ Report renderer parity (`SP-703`) completed and evidenced in `docs/handoffs/SP-7
 Report generation provider interface (`SP-704`) completed and evidenced in `docs/handoffs/SP-704.md` (pluggable `SoulmateReportGenerator` protocol; mock provider + owner-directed OpenAI-compatible adapter over §13.3 config; versioned prompt-template machinery with NO production template shipped — missing template fails closed; factory default disabled).
 Report mock fixture (`SP-705`) completed and evidenced in `docs/handoffs/SP-705.md` (canonical `[MOCK]`-labeled fixture as single source of truth for the mock provider + backend E2E + frontend renderer tests; store→retrieve chain proven; dev env configured with OpenAI-compatible endpoint and gemma-4-26b, switch stays off).
 *(Note: WAVE 7 is 100% complete — SP-701..705 DONE, 2026-09-27. M5 scaffold re-review PASS; SP-706 stays BLOCKED on REPORT-01/02.)*
+Drawer Soulmate entry (`SP-801`) completed and evidenced in `docs/handoffs/SP-801.md` (global AccountDrawer mounted once in the soulmate layout, `Soulmate Sketch` entry first with injectable sanitized destination defaulting to `/soulmate`; status-aware routing deferred to SP-802).
+*(Note: WAVE 8 is in progress — SP-801 DONE, 2026-09-27; SP-802..804 TODO.)*
 
 ## 2. Milestone status
 
@@ -122,5 +124,6 @@ Report production provider: ENABLED in dev (REPORT-01/02 RESOLVED; on_demand via
 
 ```text
 1. Report generation is live in dev (SP-706 DONE). M6 must verify production provider configuration, run a real paid-flow acceptance, reword-review READY/FAILED copy if needed, and re-check exact 390px visual parity. M6 must independently verify release configuration, exact 390px visual parity and a real paid flow. Release QA must also reword the Report page READY-state copy (it currently says the report is being prepared although generation is off — M5 re-review Low note).
-2. Preserve M4's signed-only storage rule for deployment; M6 must recheck the production bucket and affected consumers. Follow later tasks only when separately authorized.
+2. WAVE 8 (authorized): SP-801 DONE — next safe tasks are SP-802 (status-aware drawer destination from server-authoritative status) and SP-803 (subscription details in Settings); SP-804 after SP-803.
+3. Preserve M4's signed-only storage rule for deployment; M6 must recheck the production bucket and affected consumers. Follow later tasks only when separately authorized.
 ```

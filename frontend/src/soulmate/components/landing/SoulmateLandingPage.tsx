@@ -4,6 +4,7 @@ import React from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { SOULMATE_ROUTES } from "@/soulmate/domain";
+import { DrawerMenuButton } from "@/soulmate/components/drawer";
 
 export interface SoulmateLandingPageProps {
   /**
@@ -73,13 +74,17 @@ export function SoulmateLandingPage({
         <h1 className="font-serif text-[28px] leading-[26px] tracking-[0.425px] text-[#000000] select-none">
           Hint Soulmate
         </h1>
-        <a
-          href={loginUrl}
-          className="font-sans text-[18px] leading-[24px] text-[#000000] hover:text-neutral-700 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 rounded px-1.5 py-0.5"
-          aria-label="Log in to existing account"
-        >
-          Login
-        </a>
+        <div className="flex items-center gap-2">
+          <a
+            href={loginUrl}
+            className="font-sans text-[18px] leading-[24px] text-[#000000] hover:text-neutral-700 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 rounded px-1.5 py-0.5"
+            aria-label="Log in to existing account"
+          >
+            Login
+          </a>
+          {/* Shared trigger for the global AccountDrawer (SP-801; Figma 102:14) */}
+          <DrawerMenuButton />
+        </div>
       </header>
 
       {/* Main Hero Section (Figma Node 102:51) */}
