@@ -83,8 +83,9 @@ class Settings(BaseSettings):
     # 3. Soulmate Quiz & Business Timers (Spec §4, §10, TIME-01)
     # --------------------------------------------------------------------------
     soulmate_quiz_version: str = "soulmate-quiz-v1"
-    soulmate_sketch_unlock_hours: int = 12
-    soulmate_report_unlock_hours: int = 24
+    # Float hours: dev gate runs may use sub-hour values (e.g. 0.003); production sets 12/24.
+    soulmate_sketch_unlock_hours: float = 12
+    soulmate_report_unlock_hours: float = 24
     soulmate_sketch_generation_mode: str = "on_demand"
     soulmate_report_generation_mode: str = "on_demand"
 

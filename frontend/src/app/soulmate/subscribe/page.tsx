@@ -4,6 +4,7 @@ import React, { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getSubscriptionOffer, SubscriptionOfferResponse } from "@/soulmate/api";
+import { getCurrentSession } from "@/soulmate/api/session";
 import { useRouteGuard } from "@/soulmate/hooks/useRouteGuard";
 import { SOULMATE_ROUTES } from "@/soulmate/domain";
 import { PayPalSubscriptionButton, PayPalSubscriptionApprovalData } from "@/soulmate/components/subscribe";
@@ -13,7 +14,31 @@ function SubscribeContent() {
   const searchParams = useSearchParams();
   const query = searchParams.toString();
   const resultUrl = `${SOULMATE_ROUTES.RESULT}${query ? `?${query}` : ""}`;
-  const sessionId = searchParams.get("session_id") || undefined;
+  const sessionIdFromQuery = searchParams.get("session_id") || undefined;
+
+  // PAY-AUTH-01 session binding fallback: direct navigation to /subscribe without
+  // ?session_id resolves the cookie-authenticated session so PayPal
+  // createSubscription always carries custom_id (review fix: the binding was lost
+  // when the email -> subscribe navigation omitted it).
+  const [resolvedSessionId, setResolvedSessionId] = useState<string | undefined>(sessionIdFromQuery);
+  useEffect(() => {
+    if (sessionIdFromQuery) {
+      setResolvedSessionId(sessionIdFromQuery);
+      return;
+    }
+    let mounted = true;
+    getCurrentSession()
+      .then((sess) => {
+        if (mounted && sess?.session_id) setResolvedSessionId(sess.session_id);
+      })
+      .catch(() => {
+        // Anonymous visitor: the checkout stays disabled by the binding guard.
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [sessionIdFromQuery]);
+  const sessionId = resolvedSessionId;
 
   // DEV-SPEC §3, M-3 Audit Remediation: Route Guard for /soulmate/subscribe (Email must be captured)
   // In production, Route Guard is strictly enforced; fixture bypass is only allowed in non-production.

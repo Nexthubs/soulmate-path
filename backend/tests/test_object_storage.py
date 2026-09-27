@@ -189,18 +189,27 @@ async def test_persist_accepts_png_and_jpeg_variants():
 
 
 @pytest.mark.asyncio
-async def test_persist_rejects_relabelled_payload():
-    """A payload whose magic bytes contradict the declared format must not be stored."""
-    sink = ObjectStorageSink(bucket="test-bucket", s3_client=StubS3Client())
-    with pytest.raises(SketchStorageError):
-        await sink.persist(artifact_id=ARTIFACT_ID, result=_result(_png_payload(), "webp"))
+async def test_persist_reclassifies_mislabeled_payload_to_sniffed_format():
+    """A gateway that ignores output_format (PNG despite webp request) is stored
+    under the SNIFFED format — the durable key never lies about the bytes."""
+    stub = StubS3Client()
+    sink = ObjectStorageSink(bucket="test-bucket", s3_client=stub)
+    key = await sink.persist(artifact_id=ARTIFACT_ID, result=_result(_png_payload(), "webp"))
+    assert key.endswith("original.png")
+    assert stub.calls[0]["ContentType"] == "image/png"
 
 
 @pytest.mark.asyncio
-async def test_persist_rejects_unsupported_format():
+async def test_persist_rejects_payload_matching_no_supported_format():
+    """Garbage/unknown payloads are rejected regardless of declared format."""
     sink = ObjectStorageSink(bucket="test-bucket", s3_client=StubS3Client())
+    garbage = b"\x00\x01\x02\x03" * 512
     with pytest.raises(SketchStorageError):
-        await sink.persist(artifact_id=ARTIFACT_ID, result=_result(_webp_payload(), "gif"))
+        await sink.persist(artifact_id=ARTIFACT_ID, result=_result(garbage, "webp"))
+    with pytest.raises(SketchStorageError):
+        await sink.persist(artifact_id=ARTIFACT_ID, result=_result(garbage, "png"))
+
+
 
 
 @pytest.mark.asyncio

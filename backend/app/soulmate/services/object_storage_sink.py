@@ -139,23 +139,27 @@ def _sniff_image_format(payload: bytes) -> Optional[str]:
 
 def validate_sketch_payload(result: SketchGenerationResult) -> str:
     """
-    Validates declared format, magic bytes, and size; returns the canonical
-    image format for the storage key. Raises SketchStorageError on violation.
+    Validates the payload and returns the CANONICAL image format for the storage
+    key: the sniffed magic-byte format when it is supported, which tolerates
+    OpenAI-compatible gateways that ignore the requested `output_format` and
+    return PNG. Only payloads matching NO supported format are rejected — a
+    mislabeled-but-valid image is reclassified, never stored under a false
+    extension. Raises SketchStorageError on violation.
     """
-    image_format = (result.image_format or "").strip().lower()
-    if image_format not in IMAGE_CONTENT_TYPES:
-        raise SketchStorageError(
-            f"Unsupported sketch image format '{result.image_format}'.",
-            details={"image_format": result.image_format, "allowed": sorted(IMAGE_CONTENT_TYPES)},
-        )
-
+    declared = (result.image_format or "").strip().lower()
     sniffed = _sniff_image_format(result.image_bytes)
-    if sniffed != image_format:
-        # A relabeled or corrupted payload must not become the durable asset.
+    if sniffed is None or sniffed not in IMAGE_CONTENT_TYPES:
         raise SketchStorageError(
-            f"Sketch payload does not match its declared format "
-            f"(declared={image_format}, sniffed={sniffed or 'unknown'}).",
-            details={"declared": image_format, "sniffed": sniffed},
+            f"Sketch payload does not match any supported image format "
+            f"(declared={declared}, sniffed={sniffed or 'unknown'}).",
+            details={"declared": declared, "sniffed": sniffed},
+        )
+    if declared != sniffed:
+        logger.warning(
+            "Provider ignored output_format: requested %s but payload is %s; "
+            "storing under the sniffed format.",
+            declared,
+            sniffed,
         )
 
     size = len(result.image_bytes)
@@ -165,7 +169,7 @@ def validate_sketch_payload(result: SketchGenerationResult) -> str:
             f"[{MIN_SKETCH_BYTES}, {MAX_SKETCH_BYTES}].",
             details={"size_bytes": size},
         )
-    return image_format
+    return sniffed
 
 
 class ObjectStorageSink:

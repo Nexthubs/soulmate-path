@@ -58,3 +58,6 @@
 - SP-604: bounded user retry supersedes "terminal jobs need manual requeue" (automatic path now exists for FAILED_RETRYABLE under the cap; FAILED_PERMANENT stays support-only).
 - SP-605: the unconfigured-storage dev fallback no longer fakes completion.
 - SP-606/607: response semantics extended with `retry_available`; page behavior unchanged otherwise.
+
+---
+**Paid-flow addendum:** during the live M4 gate run, the sink format gate was refined to store payloads under the SNIFFED magic-byte format (compatible endpoints may ignore `output_format`); unknown payloads still rejected. See `docs/handoffs/M4-GATE-EVIDENCE.md`.

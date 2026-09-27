@@ -50,9 +50,14 @@ export function PayPalSubscriptionButton({
   }, []);
 
   useEffect(() => {
-    // If blocked or credentials missing, do not attempt to load script
-    if (isBlocked || !clientId || !planId) {
+    // PAY-AUTH-01 invariant: a subscription without custom_id session binding can
+    // never be server-confirmed. Refuse to render the checkout (instead of creating
+    // an unbindable subscription) when the session identity is missing.
+    if (isBlocked || !clientId || !planId || !sessionId) {
       setIsLoading(false);
+      if (!isBlocked && clientId && planId && !sessionId) {
+        setError("Session binding unavailable — reload the page to continue checkout.");
+      }
       return;
     }
 
@@ -77,7 +82,16 @@ export function PayPalSubscriptionButton({
 
         setIsLoading(false);
 
-        // Render PayPal Subscription Buttons
+        // Render PayPal Subscription Buttons. render() is asynchronous: a
+        // StrictMode/HMR double-mount can abort an in-flight first render, so the
+        // rejection is caught and retried once on a fresh container before being
+        // surfaced (review fix: silent unhandled rejection left the checkout blank).
+        const renderButtons = async (instance: any) => {
+          if (!containerRef.current) return;
+          containerRef.current.innerHTML = "";
+          await instance.render(containerRef.current);
+        };
+
         const buttonsInstance = paypal.Buttons({
           style: {
             shape: "rect",
@@ -88,13 +102,13 @@ export function PayPalSubscriptionButton({
           createSubscription: (_data: unknown, actions: any) => {
             return actions.subscription.create({
               plan_id: planId,
-              ...(sessionId ? { custom_id: sessionId } : {}),
+              custom_id: sessionId,
             });
           },
           onApprove: async (data: any) => {
             if (!isMounted) return;
             // HIGH-RISK INVARIANT (PAY-AUTH-01):
-            // Only forward subscriptionID for server confirmation. Never set entitlement here.
+            // Only forward subscriptionID for server verification. Never set entitlement here.
             await onApprove({
               subscriptionID: data.subscriptionID,
               orderID: data.orderID,
@@ -111,10 +125,24 @@ export function PayPalSubscriptionButton({
           },
         });
 
-        if (containerRef.current && buttonsInstance.isEligible()) {
-          containerRef.current.innerHTML = "";
-          buttonsInstance.render(containerRef.current);
-        }
+        renderButtons(buttonsInstance)
+          .catch(async (renderErr: unknown) => {
+            if (!isMounted) return;
+            // One retry after the aborted-render race; the SDK namespace is
+            // already loaded, so a fresh container render succeeds.
+            await new Promise((resolve) => setTimeout(resolve, 200));
+            if (!isMounted) return;
+            await renderButtons(buttonsInstance);
+          })
+          .catch((renderErr: unknown) => {
+            if (!isMounted) return;
+            const errorMsg =
+              renderErr instanceof Error
+                ? renderErr.message
+                : "Failed to render PayPal checkout buttons.";
+            setError(errorMsg);
+            onError?.(renderErr);
+          });
       })
       .catch((err: unknown) => {
         if (!isMounted) return;

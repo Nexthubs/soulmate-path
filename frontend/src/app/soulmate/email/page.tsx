@@ -186,6 +186,10 @@ function EmailPageContent() {
     if (effectiveUserGender) params.set("user_gender", effectiveUserGender);
     if (effectivePartnerAgeRange) params.set("age_range", effectivePartnerAgeRange);
     if (effectivePartnerEthnicity) params.set("ethnicity", effectivePartnerEthnicity);
+    // PAY-AUTH-01 session binding: subscribe needs the session public_id so PayPal
+    // createSubscription carries custom_id; without it the subscription can never
+    // be server-confirmed (review fix: email -> subscribe lost the binding).
+    if (activeSessionId) params.set("session_id", activeSessionId);
 
     const query = params.toString();
     router.push(query ? `${nextRoute}?${query}` : nextRoute);
