@@ -1301,7 +1301,7 @@ Copy is derived from actual access date/state and does not promise an unsupporte
 
 **Priority:** P1  
 **Depends:** SP-603/604  
-**Status:** TODO
+**Status:** REVIEW (2026-09-28 — `generation_metric` stream + `GenerationMetricsService.summary` shipped for the sketch pipeline; report-pipeline adoption noted before SP-904; evidence in `docs/handoffs/SP-902.md`)
 **Context refs:** DEV-SPEC §18–19 | Decisions: ASSET-01 | Dependency handoffs: SP-603
 
 

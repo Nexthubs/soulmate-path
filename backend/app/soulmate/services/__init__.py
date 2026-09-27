@@ -57,6 +57,11 @@ from app.soulmate.services.sketch_generation_service import (
 )
 from app.soulmate.services.subscription_service import SubscriptionService
 from app.soulmate.services.summary_service import SummaryService
+from app.soulmate.services.generation_metrics_service import (
+    GenerationMetricsService,
+    GenerationMetricsSummary,
+    LatencyStats,
+)
 from app.soulmate.services.webhook_service import PayPalWebhookService
 from app.soulmate.services.webhook_verifier import PayPalWebhookVerifier, get_webhook_verifier
 
@@ -115,6 +120,9 @@ __all__ = [
     "sketch_idempotency_key",
     "start_sketch_workers",
     "stop_sketch_workers",
+    "GenerationMetricsService",
+    "GenerationMetricsSummary",
+    "LatencyStats",
 ]
 
 

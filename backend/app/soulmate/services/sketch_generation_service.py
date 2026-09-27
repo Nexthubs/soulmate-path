@@ -75,6 +75,7 @@ from app.db.models.artifact import AIGenerationJob, SoulmateArtifact
 from app.db.models.session import SoulmateProfile, SoulmateSession
 from app.db.session import AsyncSessionLocal
 from app.soulmate.analytics import track_funnel_event
+from app.soulmate.metrics import record_generation_metric
 from app.soulmate.domain.artifact_status import normalize_generation
 from app.soulmate.domain.profile import ProfileValidationError, SoulmateProfileV1
 from app.soulmate.domain.sketch_models import SketchGenerationResult, SketchProviderError
@@ -311,12 +312,30 @@ class SketchGenerationService:
                     existing_job.attempt,
                     hard_attempt_cap(),
                 )
+                # §19/SP-902: user-triggered requeues count toward retry volume.
+                record_generation_metric(
+                    "generation_user_retry",
+                    job_id=existing_job.id,
+                    artifact_id=artifact.id,
+                    session_id=str(artifact.session_id),
+                    fields={"job_type": JOB_TYPE_SKETCH, "attempt": existing_job.attempt or 0},
+                )
                 return SketchEnqueueOutcome(
                     artifact=artifact,
                     job=existing_job if own else None,  # job state is only for the owning session
                     created=False,
                     cross_session=not own,
                 )
+            # §19/SP-902: idempotency conflicts (re-enqueue converging on the
+            # existing job) are only observable through this metric stream —
+            # they leave no durable DB trace.
+            record_generation_metric(
+                "enqueue_duplicate",
+                job_id=existing_job.id,
+                artifact_id=artifact.id,
+                session_id=str(artifact.session_id),
+                fields={"job_type": JOB_TYPE_SKETCH},
+            )
             return SketchEnqueueOutcome(
                 artifact=artifact,
                 job=existing_job if own else None,  # job state is only for the owning session
@@ -354,6 +373,15 @@ class SketchGenerationService:
 
         await db.commit()
         await db.refresh(artifact)
+        if created:
+            # §19/SP-902: one metric per logically created generation job.
+            record_generation_metric(
+                "enqueue_created",
+                job_id=job.id,
+                artifact_id=artifact.id,
+                session_id=str(artifact.session_id),
+                fields={"job_type": JOB_TYPE_SKETCH},
+            )
         return SketchEnqueueOutcome(
             artifact=artifact,
             job=job if own else None,  # same isolation rule as convergence above
@@ -467,6 +495,18 @@ class SketchGenerationService:
                         "Sketch job %s terminated %s at claim time (crash-loop budget exhausted)",
                         job.id, JOB_FAILED_RETRYABLE,
                     )
+                    # §19/SP-902: crash-loop terminal counts as a final failure.
+                    record_generation_metric(
+                        "generation_final_failure",
+                        job_id=job.id,
+                        artifact_id=job.artifact_id,
+                        session_id=str(artifact.session_id) if artifact is not None else None,
+                        fields={
+                            "job_type": JOB_TYPE_SKETCH,
+                            "error_code": BUDGET_EXHAUSTED_CODE,
+                            "attempts": job.attempt or 0,
+                        },
+                    )
                     track_funnel_event(
                         "soulmate_sketch_generation_failed",
                         session_id=str(artifact.session_id) if artifact is not None else None,
@@ -576,6 +616,21 @@ class SketchGenerationService:
                     )
 
                 await db.commit()
+                # §19/SP-902: queue latency = enqueue → this claim.
+                queue_latency_ms = None
+                if job.created_at is not None:
+                    queue_latency_ms = max(0, int((started_at - job.created_at).total_seconds() * 1000))
+                record_generation_metric(
+                    "queue_latency_ms",
+                    job_id=job.id,
+                    artifact_id=artifact.id,
+                    session_id=str(artifact.session_id),
+                    fields={
+                        "job_type": JOB_TYPE_SKETCH,
+                        "latency_ms": queue_latency_ms,
+                        "attempt": claim_attempt,
+                    },
+                )
                 # §18.1: the provider call for this claim has started.
                 track_funnel_event(
                     "soulmate_sketch_generation_started",
@@ -692,6 +747,9 @@ class SketchGenerationService:
                 artifact.completed_at = utc_now()
 
                 job.status = JOB_COMPLETED
+                # Captured BEFORE the claim fence is released: winning-claim →
+                # completion is the §19/SP-902 generation latency.
+                winning_claim_at = job.locked_at
                 job.locked_at = None
                 # M-02: keep the append-only attempt history on success — the
                 # artifact carries the WINNING request id, the job history carries
@@ -722,6 +780,21 @@ class SketchGenerationService:
             latency_ms = None
             if gen_started_at is not None and gen_completed_at is not None:
                 latency_ms = int((gen_completed_at - gen_started_at).total_seconds() * 1000)
+            # §19/SP-902: winning-claim → durable completion on the metrics stream.
+            generation_latency_ms = None
+            if winning_claim_at is not None and gen_completed_at is not None:
+                generation_latency_ms = max(0, int((gen_completed_at - winning_claim_at).total_seconds() * 1000))
+            record_generation_metric(
+                "generation_success",
+                job_id=job_id,
+                artifact_id=artifact_id,
+                session_id=str(gen_session_id) if gen_session_id else None,
+                fields={
+                    "job_type": JOB_TYPE_SKETCH,
+                    "latency_ms": generation_latency_ms,
+                    "attempts": claim_attempt,
+                },
+            )
             track_funnel_event(
                 "soulmate_sketch_generation_completed",
                 session_id=str(gen_session_id) if gen_session_id else None,
@@ -839,13 +912,27 @@ class SketchGenerationService:
             # Bounded transient retry: back to QUEUED with exponential backoff;
             # the artifact stays PROCESSING (§10.3 GENERATING).
             job.status = JOB_QUEUED
-            job.run_after = utc_now() + timedelta(seconds=retry_backoff_seconds(claim_attempt))
+            backoff = retry_backoff_seconds(claim_attempt)
+            job.run_after = utc_now() + timedelta(seconds=backoff)
             if artifact is not None:
                 artifact.attempt_count = (artifact.attempt_count or 0) + 1
             logger.warning(
                 "Sketch job %s attempt %s/%s failed retryably (error_code=%s); "
                 "requeued with backoff until %s",
                 job.id, claim_attempt, max_attempts, error_code, job.run_after,
+            )
+            # §19/SP-902: retryable requeues count toward retry volume.
+            record_generation_metric(
+                "generation_retry",
+                job_id=job.id,
+                artifact_id=artifact.id if artifact is not None else None,
+                session_id=str(artifact.session_id) if artifact is not None else None,
+                fields={
+                    "job_type": JOB_TYPE_SKETCH,
+                    "error_code": error_code,
+                    "attempt": claim_attempt,
+                    "backoff_seconds": backoff,
+                },
             )
             return JOB_QUEUED
 
@@ -865,6 +952,18 @@ class SketchGenerationService:
             "soulmate_sketch_generation_failed",
             session_id=str(artifact.session_id) if artifact is not None else None,
             properties={"error_code": error_code, "attempts": claim_attempt},
+        )
+        # §19/SP-902: the same terminal outcome on the metrics stream.
+        record_generation_metric(
+            "generation_final_failure",
+            job_id=job.id,
+            artifact_id=artifact.id if artifact is not None else None,
+            session_id=str(artifact.session_id) if artifact is not None else None,
+            fields={
+                "job_type": JOB_TYPE_SKETCH,
+                "error_code": error_code,
+                "attempts": claim_attempt,
+            },
         )
         return status
 
@@ -918,6 +1017,12 @@ class SketchGenerationService:
                         "Reclaimed stale sketch job %s (attempt %s unchanged; budget enforced at claim)",
                         job.id, attempt,
                     )
+        if reclaimed:
+            # §19/SP-902: stale-claim reclamation count (worker-loss signal).
+            record_generation_metric(
+                "generation_stale_reclaimed",
+                fields={"job_type": JOB_TYPE_SKETCH, "count": reclaimed},
+            )
         return reclaimed
 
     # ------------------------------------------------------------------
