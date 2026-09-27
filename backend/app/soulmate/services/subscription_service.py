@@ -30,6 +30,7 @@ from app.db.models.session import SoulmateSession
 from app.soulmate.domain.ledger_models import PaymentRecordCreate
 from app.soulmate.domain.guard import is_paid_access_ended
 from app.soulmate.domain.session_state import SessionStatus
+from app.soulmate.metrics import record_payment_metric
 from app.soulmate.schema import (
     PayPalConfirmResponse,
     SubscriptionCancelResponse,
@@ -58,6 +59,11 @@ def parse_iso_datetime(dt_str: Optional[str]) -> Optional[datetime]:
         return dt.astimezone(timezone.utc)
     except Exception:
         return None
+
+
+def _normalize_payment_time(value: datetime) -> datetime:
+    """Normalize persisted/provider timestamps before comparing reconciliation evidence."""
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
 
 
 class SubscriptionService:
@@ -403,6 +409,12 @@ class SubscriptionService:
         )).scalars().first()
         if session is None:
             raise ProviderUnavailableError("Payment session is not available for reconciliation.")
+        first_payment_confirmation_latency_ms = None
+        if sub.first_payment_at is None and session.subscription_success_at is None:
+            normalized_paid_at = _normalize_payment_time(paid_at)
+            first_payment_confirmation_latency_ms = max(
+                0, int((utc_now() - normalized_paid_at).total_seconds() * 1000)
+            )
         if sub.first_payment_at is None or paid_at < sub.first_payment_at:
             sub.first_payment_at = paid_at
         base = min(t for t in (sub.first_payment_at, session.subscription_success_at) if t is not None)
@@ -427,6 +439,11 @@ class SubscriptionService:
                       message="Persisted transaction-backed entitlement time",
                       extra_data={"session_id": str(session.id), "subscription_id": str(sub.id),
                                   "first_payment_at": base.isoformat()})
+        if first_payment_confirmation_latency_ms is not None:
+            record_payment_metric(
+                "first_payment_confirmation_latency",
+                fields={"latency_ms": first_payment_confirmation_latency_ms},
+            )
 
     @classmethod
     async def _reconcile_subscription_payments(
@@ -490,6 +507,10 @@ class SubscriptionService:
         if not sub_id or not sub_id.startswith("I-"):
             return None
         sub = await cls.lock_subscription(db, sub_id)
+        had_local_subscription = sub is not None
+        local_status = sub.provider_status if sub is not None else None
+        local_first_payment_at = sub.first_payment_at if sub is not None else None
+        local_failed_payments_count = (sub.failed_payments_count or 0) if sub is not None else None
         client = paypal_client or PayPalClient()
         try:
             remote = await client.get_subscription(sub_id)
@@ -525,6 +546,10 @@ class SubscriptionService:
             db.add(sub)
             await db.flush()
         await payment_lock(db, "session", sub.session_id)
+        if had_local_subscription and remote_status in {"ACTIVE", "CANCELLED", "EXPIRED", "SUSPENDED"} and local_status != remote_status:
+            record_payment_metric(
+                "reconciliation_mismatch", fields={"mismatch_category": "provider_status"}
+            )
         status_time = parse_iso_datetime(remote.get("status_update_time"))
         # A fetched provider snapshot is current; use its event time when available.
         snapshot_time = utc_now()
@@ -539,10 +564,22 @@ class SubscriptionService:
         if billing.get("last_payment") or remote_status in ("ACTIVE", "CANCELLED", "SUSPENDED", "EXPIRED"):
             paid_at = await cls._reconcile_subscription_payments(sub, remote, client, db)
             if paid_at is not None:
+                if had_local_subscription and (
+                    local_first_payment_at is None
+                    or _normalize_payment_time(local_first_payment_at) != _normalize_payment_time(paid_at)
+                ):
+                    record_payment_metric(
+                        "reconciliation_mismatch", fields={"mismatch_category": "first_payment_time"}
+                    )
                 await cls.activate_from_payment(db, sub, paid_at)
         provider_count = billing.get("failed_payments_count")
         if provider_count is not None:
-            apply_billing_count(sub, int(provider_count), snapshot_time)
+            provider_failed_count = int(provider_count)
+            if had_local_subscription and local_failed_payments_count != provider_failed_count:
+                record_payment_metric(
+                    "reconciliation_mismatch", fields={"mismatch_category": "failed_payment_count"}
+                )
+            apply_billing_count(sub, provider_failed_count, snapshot_time)
         else:
             last_paid = parse_iso_datetime(billing.get("last_payment", {}).get("time"))
             if last_paid and sub.first_payment_at is not None:

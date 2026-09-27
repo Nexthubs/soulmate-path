@@ -547,7 +547,7 @@ async def test_payment_completed_after_cancellation_records_ledger_without_react
 
 
 @pytest.mark.asyncio
-async def test_subsequent_payment_failed_does_not_clear_first_entitlement(async_db_session: AsyncSession):
+async def test_subsequent_payment_failed_does_not_clear_first_entitlement(async_db_session: AsyncSession, monkeypatch):
     """
     Invariant PAY-AUTH-01 & TIME-01:
     A user whose first cycle succeeded has subscription_success_at set.
@@ -555,6 +555,11 @@ async def test_subsequent_payment_failed_does_not_clear_first_entitlement(async_
     it records the failed attempt without destroying history or erasing subscription_success_at.
     """
     provider_sub_id = f"I-FAIL-RENEW-{uuid.uuid4().hex[:8]}"
+    metrics = []
+    monkeypatch.setattr(
+        "app.soulmate.services.webhook_service.record_payment_metric",
+        lambda metric, **kwargs: metrics.append((metric, kwargs.get("fields"))),
+    )
     first_paid = datetime(2026, 8, 25, 12, 0, 0, tzinfo=timezone.utc)
 
     session, sub = await create_test_session_and_sub(
@@ -572,6 +577,7 @@ async def test_subsequent_payment_failed_does_not_clear_first_entitlement(async_
             "id": f"FAILED-TX-{uuid.uuid4().hex[:8]}",
             "billing_agreement_id": provider_sub_id,
             "amount": {"total": "29.00", "currency": "USD"},
+            "billing_info": {"last_failed_payment": {"reason_code": "INSUFFICIENT_FUNDS"}},
         },
     }
 
@@ -595,6 +601,7 @@ async def test_subsequent_payment_failed_does_not_clear_first_entitlement(async_
     await async_db_session.refresh(sub)
     assert session.subscription_success_at == first_paid
     assert sub.first_payment_at == first_paid
+    assert metrics == [("payment_failure", {"reason_category": "insufficient_funds"})]
 
 
 # ==============================================================================
@@ -952,5 +959,4 @@ async def test_billing_subscription_updated_preserves_unresolved_failure_count(a
     # Preserves failure count and detected timestamp!
     assert sub.failed_payments_count == 2
     assert sub.billing_issue_detected_at == issue_time
-
 

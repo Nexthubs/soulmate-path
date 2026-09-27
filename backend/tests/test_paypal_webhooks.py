@@ -18,7 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.errors import ValidationError, WebhookVerificationError
+from app.core.errors import ProviderUnavailableError, ValidationError, WebhookVerificationError
 from app.db.models.billing import PayPalWebhookEvent, Subscription, SubscriptionPayment
 from app.db.models.session import SoulmateSession
 from app.db.session import AsyncSessionLocal, SessionLocal
@@ -236,8 +236,13 @@ async def test_endpoint_mounted_at_both_canonical_and_alias_paths(mock_webhook_v
 
 
 @pytest.mark.asyncio
-async def test_unverified_event_missing_headers_rejected_and_mutates_no_state(async_db_session: AsyncSession):
+async def test_unverified_event_missing_headers_rejected_and_mutates_no_state(async_db_session: AsyncSession, monkeypatch):
     """Missing transmission headers raises WebhookVerificationError and leaves business state untouched."""
+    metrics = []
+    monkeypatch.setattr(
+        "app.soulmate.services.webhook_service.record_payment_metric",
+        lambda metric, **kwargs: metrics.append((metric, kwargs.get("fields"))),
+    )
     event = make_sample_event(event_id=f"WH-UNVERIFIED-HDR-{uuid.uuid4().hex[:8]}")
     raw_bytes = json.dumps(event).encode("utf-8")
 
@@ -256,11 +261,17 @@ async def test_unverified_event_missing_headers_rejected_and_mutates_no_state(as
     # Invariant Verification: No records created in subscriptions, subscription_payments, or paypal_webhook_events
     events_stmt = select(PayPalWebhookEvent).where(PayPalWebhookEvent.paypal_event_id == event["id"])
     assert (await async_db_session.execute(events_stmt)).scalars().first() is None
+    assert metrics == [("webhook_verification_failure", {"reason_category": "missing_headers"})]
 
 
 @pytest.mark.asyncio
-async def test_unverified_event_signature_failure_rejected_and_mutates_no_state(async_db_session: AsyncSession):
+async def test_unverified_event_signature_failure_rejected_and_mutates_no_state(async_db_session: AsyncSession, monkeypatch):
     """Failed signature verification rejects with WebhookVerificationError and does not mutate business state."""
+    metrics = []
+    monkeypatch.setattr(
+        "app.soulmate.services.webhook_service.record_payment_metric",
+        lambda metric, **kwargs: metrics.append((metric, kwargs.get("fields"))),
+    )
     event = make_sample_event(event_id=f"WH-FORGED-{uuid.uuid4().hex[:8]}")
     raw_bytes = json.dumps(event).encode("utf-8")
 
@@ -286,6 +297,7 @@ async def test_unverified_event_signature_failure_rejected_and_mutates_no_state(
     # Confirm no subscription was granted or activated by the unverified event
     for s in subs:
         assert s.provider_subscription_id != "I-SUB-999"
+    assert metrics == [("webhook_verification_failure", {"reason_category": "signature_rejected"})]
 
 
 # ==============================================================================
@@ -327,8 +339,13 @@ async def test_successful_event_recorded_in_db(async_db_session: AsyncSession):
 
 
 @pytest.mark.asyncio
-async def test_idempotent_duplicate_event_returns_200_to_stop_paypal_retries(async_db_session: AsyncSession):
+async def test_idempotent_duplicate_event_returns_200_to_stop_paypal_retries(async_db_session: AsyncSession, monkeypatch):
     """Replaying the same event returns 200 OK with duplicate=True without recreating records."""
+    metrics = []
+    monkeypatch.setattr(
+        "app.soulmate.services.webhook_service.record_payment_metric",
+        lambda metric, **kwargs: metrics.append((metric, kwargs.get("fields"))),
+    )
     event = make_sample_event(event_id=f"WH-DUP-{uuid.uuid4().hex[:8]}")
     await bind_sample_sale(event)
     raw_bytes = json.dumps(event).encode("utf-8")
@@ -369,6 +386,48 @@ async def test_idempotent_duplicate_event_returns_200_to_stop_paypal_retries(asy
     stmt = select(PayPalWebhookEvent).where(PayPalWebhookEvent.paypal_event_id == event["id"])
     events = (await async_db_session.execute(stmt)).scalars().all()
     assert len(events) == 1
+    assert metrics == [
+        ("webhook_duplicate_event", {"event_category": "sale_completed"}),
+        ("webhook_duplicate_event", {"event_category": "sale_completed"}),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_webhook_processing_failure_metric_is_safe_and_receipt_remains_retryable(
+    async_db_session: AsyncSession, monkeypatch
+):
+    metrics = []
+    monkeypatch.setattr(
+        "app.soulmate.services.webhook_service.record_payment_metric",
+        lambda metric, **kwargs: metrics.append((metric, kwargs.get("fields"))),
+    )
+
+    async def fail_dispatch(cls, *args, **kwargs):
+        raise ProviderUnavailableError("sensitive provider failure detail")
+
+    monkeypatch.setattr(PayPalWebhookService, "_dispatch_event", classmethod(fail_dispatch))
+    event = make_sample_event(event_id=f"WH-PROC-ERR-{uuid.uuid4().hex[:8]}")
+
+    class RequestWithHeaders:
+        headers = SAMPLE_HEADERS
+
+    parsed = PayPalWebhookService.parse_raw_request(
+        request=RequestWithHeaders(), raw_body=json.dumps(event).encode("utf-8")
+    )
+    with pytest.raises(ProviderUnavailableError):
+        await PayPalWebhookService.process_webhook(
+            raw_request=parsed, db=async_db_session, verifier=SuccessfulVerifier()
+        )
+
+    saved = (await async_db_session.execute(
+        select(PayPalWebhookEvent).where(PayPalWebhookEvent.paypal_event_id == event["id"])
+    )).scalars().one()
+    assert saved.processing_error == "ProviderUnavailableError"
+    assert saved.processed_at is None
+    assert metrics == [(
+        "webhook_event_processing_failure",
+        {"event_category": "sale_completed", "error_category": "provider_unavailable"},
+    )]
 
 
 @pytest.mark.asyncio
@@ -497,4 +556,3 @@ async def test_http_endpoint_server_error_returns_500_for_paypal_retry(monkeypat
             headers=SAMPLE_HEADERS,
         )
         assert resp.status_code == 500
-

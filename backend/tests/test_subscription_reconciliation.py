@@ -142,7 +142,9 @@ async def create_test_session_and_sub(
 
 
 @pytest.mark.asyncio
-async def test_reconciliation_sets_authoritative_first_payment_at_and_activates_entitlement(async_db: AsyncSession):
+async def test_reconciliation_sets_authoritative_first_payment_at_and_activates_entitlement(
+    async_db: AsyncSession, monkeypatch
+):
     """
     Verify: When PayPal confirms initial payment via billing_info.last_payment:
     1. sub.first_payment_at is set to the authoritative payment time.
@@ -151,6 +153,11 @@ async def test_reconciliation_sets_authoritative_first_payment_at_and_activates_
     4. Artifacts are initialized with unlock_at (+12h and +24h).
     5. Payment is recorded in subscription_payments ledger.
     """
+    metrics = []
+    monkeypatch.setattr(
+        "app.soulmate.services.subscription_service.record_payment_metric",
+        lambda metric, **kwargs: metrics.append((metric, kwargs.get("fields"))),
+    )
     sub_id = f"I-RECON-{uuid.uuid4().hex[:8].upper()}"
     sess, sub = await create_test_session_and_sub(async_db, sub_id, status="APPROVED")
     assert sub.first_payment_at is None
@@ -209,6 +216,45 @@ async def test_reconciliation_sets_authoritative_first_payment_at_and_activates_
     assert len(payments) == 1
     assert payments[0].amount == Decimal("19.00")
     assert payments[0].status == "COMPLETED"
+    latency_metrics = [fields for metric, fields in metrics if metric == "first_payment_confirmation_latency"]
+    assert len(latency_metrics) == 1
+    assert latency_metrics[0]["latency_ms"] >= 0
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_mismatch_metrics_cover_safe_state_categories(async_db: AsyncSession, monkeypatch):
+    metrics = []
+    monkeypatch.setattr(
+        "app.soulmate.services.subscription_service.record_payment_metric",
+        lambda metric, **kwargs: metrics.append((metric, kwargs.get("fields"))),
+    )
+    sub_id = f"I-METRIC-MISMATCH-{uuid.uuid4().hex[:8].upper()}"
+    _, sub = await create_test_session_and_sub(async_db, sub_id, status="APPROVAL_PENDING")
+    paid_at = "2026-09-27T12:00:00Z"
+    client = MockPayPalClient({
+        sub_id: {
+            "id": sub_id,
+            "status": "ACTIVE",
+            "plan_id": "P-SOULMATE-INTRO",
+            "billing_info": {
+                "failed_payments_count": 2,
+                "last_payment": {
+                    "amount": {"currency_code": "USD", "value": "19.00"},
+                    "time": paid_at,
+                },
+            },
+        }
+    })
+
+    await SubscriptionService.reconcile_subscription(
+        db=async_db, provider_subscription_id=sub_id, paypal_client=client
+    )
+
+    mismatch_metrics = [fields for metric, fields in metrics if metric == "reconciliation_mismatch"]
+    assert [fields["mismatch_category"] for fields in mismatch_metrics] == [
+        "provider_status", "first_payment_time", "failed_payment_count",
+    ]
+    assert all(set(fields) == {"mismatch_category"} for fields in mismatch_metrics)
 
 
 @pytest.mark.asyncio
@@ -1370,7 +1416,4 @@ async def test_reconciliation_preserves_failed_payments_count_when_unresolved(
     # Failure count preserved!
     assert sub.failed_payments_count == 2
     assert sub.billing_issue_detected_at == issue_time
-
-
-
 

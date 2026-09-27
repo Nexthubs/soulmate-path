@@ -31,6 +31,11 @@ from app.soulmate.domain.webhook_models import (
 from app.soulmate.services.ledger_service import PaymentLedgerService
 from app.soulmate.services.paypal_client import PayPalClient
 from app.soulmate.services.subscription_service import SubscriptionService
+from app.soulmate.metrics import (
+    payment_failure_reason_category,
+    payment_webhook_event_category,
+    record_payment_metric,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -182,6 +187,9 @@ class PayPalWebhookService:
                     error_code="VALIDATION_ERROR",
                     extra_data={"event_id": event_id, "event_type": event_type, "missing_headers": missing},
                 )
+                record_payment_metric(
+                    "webhook_verification_failure", fields={"reason_category": "missing_headers"}
+                )
                 raise WebhookVerificationError(
                     message="Missing required PayPal transmission headers for signature verification.",
                     details={"missing_headers": missing},
@@ -195,6 +203,9 @@ class PayPalWebhookService:
                     error_code="VALIDATION_ERROR",
                     extra_data={"event_id": event_id, "event_type": event_type},
                 )
+                record_payment_metric(
+                    "webhook_verification_failure", fields={"reason_category": "verifier_unavailable"}
+                )
                 raise WebhookVerificationError(
                     message="Webhook signature verifier is not configured or provided.",
                     details={"event_id": event_id},
@@ -202,19 +213,28 @@ class PayPalWebhookService:
 
             webhook_id = settings.paypal_webhook_id
             try:
-                is_valid = await verifier.verify(
-                    raw_body=raw_request.raw_body,
-                    headers=raw_request.headers,
-                    webhook_event=raw_request.parsed_json,
-                    webhook_id=webhook_id,
+                try:
+                    is_valid = await verifier.verify(
+                        raw_body=raw_request.raw_body,
+                        headers=raw_request.headers,
+                        webhook_event=raw_request.parsed_json,
+                        webhook_id=webhook_id,
+                    )
+                except TypeError:
+                    is_valid = await verifier.verify(
+                        raw_body=raw_request.raw_body,
+                        headers=raw_request.headers,
+                        webhook_id=webhook_id,
+                    )
+            except Exception:
+                record_payment_metric(
+                    "webhook_verification_failure", fields={"reason_category": "verification_error"}
                 )
-            except TypeError:
-                is_valid = await verifier.verify(
-                    raw_body=raw_request.raw_body,
-                    headers=raw_request.headers,
-                    webhook_id=webhook_id,
-                )
+                raise
             if not is_valid:
+                record_payment_metric(
+                    "webhook_verification_failure", fields={"reason_category": "signature_rejected"}
+                )
                 log_event(
                     event_type="paypal_webhook_signature_failed",
                     message=f"Signature verification failed for webhook event {event_id}",
@@ -237,6 +257,10 @@ class PayPalWebhookService:
         ).execution_options(populate_existing=True))).scalars().first()
         if event is not None and event.processed_at is not None and event.processing_error is None:
             await db.commit()
+            record_payment_metric(
+                "webhook_duplicate_event",
+                fields={"event_category": payment_webhook_event_category(event_type)},
+            )
             return PayPalWebhookResponse(status="duplicate", event_id=event_id,
                                          event_type=event_type, duplicate=True)
         retry = event is not None
@@ -260,6 +284,19 @@ class PayPalWebhookService:
             event.processing_error = type(exc).__name__
             event.processed_at = None
             await db.commit()
+            if isinstance(exc, ValidationError):
+                error_category = "validation"
+            elif isinstance(exc, ProviderUnavailableError):
+                error_category = "provider_unavailable"
+            else:
+                error_category = "other"
+            record_payment_metric(
+                "webhook_event_processing_failure",
+                fields={
+                    "event_category": payment_webhook_event_category(event_type),
+                    "error_category": error_category,
+                },
+            )
             log_event(event_type="paypal_webhook_retry_required", message="Verified webhook business processing incomplete",
                       level=logging.WARNING, extra_data={"event_id": event_id, "event_type": event_type,
                                                         "error_type": type(exc).__name__})
@@ -419,7 +456,7 @@ class PayPalWebhookService:
         # Use their event identity so two failed attempts do not collapse.
         amount_info = resource.get("amount", {})
         amount = Decimal(str(amount_info.get("total", "0.00")))
-        await PaymentLedgerService.record_payment(db, PaymentRecordCreate(
+        _, payment_created = await PaymentLedgerService.record_payment(db, PaymentRecordCreate(
             subscription_id=sub.id, provider_payment_id=f"FAILED-{raw_request.event_id}",
             provider_event_id=raw_request.event_id, amount=amount,
             currency=amount_info.get("currency", sub.currency), status="FAILED", raw_json=resource,
@@ -429,6 +466,16 @@ class PayPalWebhookService:
         status = str(resource.get("status") or "").upper()
         if status in ("ACTIVE", "SUSPENDED"):
             apply_provider_status(sub, status, at)
+        if payment_created:
+            billing_info = resource.get("billing_info", {})
+            last_failed = billing_info.get("last_failed_payment", {}) if isinstance(billing_info, dict) else {}
+            reason_code = last_failed.get("reason_code") if isinstance(last_failed, dict) else None
+            if reason_code is None:
+                reason_code = resource.get("reason_code")
+            record_payment_metric(
+                "payment_failure",
+                fields={"reason_category": payment_failure_reason_category(reason_code)},
+            )
 
     @classmethod
     async def _handle_payment_refunded(

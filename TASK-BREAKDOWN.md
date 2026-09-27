@@ -1320,7 +1320,7 @@ Copy is derived from actual access date/state and does not promise an unsupporte
 
 **Priority:** P0  
 **Depends:** SP-406/408  
-**Status:** TODO
+**Status:** DONE (2026-09-28)
 **Context refs:** DEV-SPEC §18–19 | Decisions: PAY-AUTH-01 | Dependency handoffs: SP-406
 
 
