@@ -45,6 +45,7 @@ from app.soulmate.domain.report_models import (
     is_retryable_provider_status,
     provider_code_for_status,
 )
+from app.soulmate.services.report_fixture import build_mock_report
 
 logger = logging.getLogger(__name__)
 
@@ -182,53 +183,17 @@ class MockReportProvider:
     """
     Deterministic mock implementing `SoulmateReportGenerator`.
 
-    Output is unmistakably test content ("[MOCK]" labels, no reading claims) that
-    echoes normalized profile fields so tests can verify the §13.3 input contract
-    end to end. SP-705 owns the polished canonical fixture content.
+    Content comes from the canonical mock fixture (SP-705,
+    `app.soulmate.services.report_fixture`) — unmistakably test content that echoes
+    the normalized profile so tests can verify the §13.3 input contract end to end.
+    Never calls an external service.
     """
 
     provider_name = REPORT_PROVIDER_MOCK
 
     async def generate(self, generation_input: ReportGenerationInput) -> ReportGenerationResult:
         started = time.monotonic()
-        profile = generation_input.profile
-        report = parse_soulmate_report_v1(
-            {
-                "schemaVersion": "v1",
-                "title": "[MOCK] Soulmate Report — Test Fixture, Not a Real Reading",
-                "intro": (
-                    "Deterministic mock-provider output used only for renderer and E2E "
-                    "testing. Production report generation stays disabled (REPORT-01/REPORT-02)."
-                ),
-                "sections": [
-                    {
-                        "index": "01.",
-                        "title": "Mock Input Echo (Non-Production)",
-                        "body": (
-                            f"Normalized profile input received: preferred partner gender "
-                            f"'{profile.preferred_partner_gender}', age range "
-                            f"'{profile.preferred_partner_age_range}', key quality "
-                            f"'{profile.key_soulmate_quality}'."
-                        ),
-                        "points": [
-                            {
-                                "title": "Deterministic",
-                                "body": "Identical inputs produce identical structure; no external service is called.",
-                            }
-                        ],
-                    },
-                    {
-                        "index": "02.",
-                        "title": "Schema Conformance Check",
-                        "body": (
-                            "This section lets renderer and persistence tests verify the "
-                            "ReportV1 contract end to end."
-                        ),
-                    },
-                ],
-                "closing": "[MOCK] End of test fixture.",
-            }
-        )
+        report = build_mock_report(profile=generation_input.profile)
         return ReportGenerationResult(
             report=report,
             provider=self.provider_name,

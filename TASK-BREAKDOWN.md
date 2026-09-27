@@ -1149,7 +1149,7 @@ Create a provider interface without choosing unspecced production content.
 
 **Priority:** P2  
 **Depends:** SP-701  
-**Status:** TODO
+**Status:** DONE (docs/handoffs/SP-705.md)  
 **Context refs:** DEV-SPEC §13.2–13.3 | Decisions: REPORT-01, REPORT-02 | Dependency handoffs: SP-701
 
 

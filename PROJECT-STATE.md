@@ -6,8 +6,8 @@
 ## 1. Current milestone
 
 ```text
-Current milestone: M5 — Report Scaffold Ready (Wave 7 in progress)
-Status: IN_PROGRESS (SP-701 DONE 2026-09-27)
+Current milestone: M5 — Report Scaffold Ready (Wave 7 complete, ready for independent review)
+Status: READY_FOR_REVIEW (SP-701..705 DONE 2026-09-27; SP-706 BLOCKED on REPORT-01/02)
 Latest accepted review: docs/reviews/M4-SKETCH-REVIEW.md (RV-03 PASS; M4 PASS)
 ```
 
@@ -65,6 +65,8 @@ Live Sketch page states (`SP-607`) completed and evidenced in `docs/handoffs/SP-
 Report persistence (`SP-702`) completed and evidenced in `docs/handoffs/SP-702.md` (validated content_json on the session-scoped REPORT artifact row, no-clobber canonical save, GET /api/soulmate/artifacts/report with ownership + unlock gating; §13.3 OpenAI-compatible provider env keys added per owner direction, generation still disabled).
 Report renderer parity (`SP-703`) completed and evidenced in `docs/handoffs/SP-703.md` (canonical contract moved to frontend domain layer with runtime validation mirroring the backend policy; ReportRenderer consumes only validated ReportV1 with a fail-safe fallback state; Figma 102:1358 parity styles untouched).
 Report generation provider interface (`SP-704`) completed and evidenced in `docs/handoffs/SP-704.md` (pluggable `SoulmateReportGenerator` protocol; mock provider + owner-directed OpenAI-compatible adapter over §13.3 config; versioned prompt-template machinery with NO production template shipped — missing template fails closed; factory default disabled).
+Report mock fixture (`SP-705`) completed and evidenced in `docs/handoffs/SP-705.md` (canonical `[MOCK]`-labeled fixture as single source of truth for the mock provider + backend E2E + frontend renderer tests; store→retrieve chain proven; dev env configured with OpenAI-compatible endpoint and gemma-4-26b, switch stays off).
+*(Note: WAVE 7 is 100% complete — SP-701..705 DONE, 2026-09-27. M5 is ready for its independent review; SP-706 stays BLOCKED on REPORT-01/02.)*
 
 ## 2. Milestone status
 
@@ -74,7 +76,7 @@ Report generation provider interface (`SP-704`) completed and evidenced in `docs
 | M2 Sandbox Revenue Ready | PASS (restored post-RV-remediation) | `docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md` §6 |
 | M3 Entitlement / Result Ready | CONDITIONAL_PASS | `docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md` |
 | M4 Sketch Ready | PASS — COMPLETE (RV-03, 2026-09-27) | `docs/reviews/M4-SKETCH-REVIEW.md` |
-| M5 Report Scaffold Ready | IN_PROGRESS (SP-701..704 DONE; SP-705 TODO) | `docs/reviews/M5-REPORT-SCAFFOLD-REVIEW.md` |
+| M5 Report Scaffold Ready | READY_FOR_REVIEW (Wave 7 complete: SP-701..705 DONE) | `docs/reviews/M5-REPORT-SCAFFOLD-REVIEW.md` |
 | M6 Production Ready | NOT_STARTED | `docs/reviews/M6-PRODUCTION-READINESS-REVIEW.md` |
 
 ## 3. Active / blocked work
@@ -103,12 +105,12 @@ Details and current handling → `DECISIONS.md`.
 ```text
 Quiz config: soulmate-quiz-v1 (canonical JSON & seeded in DB soulmate_quiz_versions)
 DB migration: 0005_legacy_session_status (head) applied to shared dev and verified round-trip in disposable PostgreSQL; 0004 added provider/billing ordering checkpoints, 0005 normalized legacy post-payment session status to SUBSCRIBED
-Config checkpoint: DEV-SPEC §22 groups verified, centralized Decimal pricing, RFC 1123 domain syntax check, multi-layer frontend gate
-API checkpoint: DEV-SPEC v1.2 baseline; error taxonomy, correlation middleware, and structured logging established (SP-005)
+Config checkpoint: DEV-SPEC §22 groups verified, centralized Decimal pricing, RFC 1123 domain syntax check, multi-layer frontend gate; §13.3 report provider env configured in dev (litellm.giaogiao.work / gemma-4-26b / key set; provider switch stays empty per REPORT-01/02)
+API checkpoint: DEV-SPEC v1.2 baseline; error taxonomy, correlation middleware, and structured logging established (SP-005); report scaffold endpoints added (SP-702 GET /artifacts/report)
 Payment provider: PayPal monthly subscription with intro first month + regular monthly renewal
 Sketch target model: gpt-image-2 via provider adapter
 Sketch production asset access: ASSET-ACCESS-01 chooses one-hour presigned URLs; current dev R2 origin private-read smoke PASS; future production bucket requires M6 verification
-Report production provider: disabled / decision pending
+Report production provider: disabled / decision pending (SP-704 adapter + template machinery ready; SP-706 BLOCKED on REPORT-01/02)
 ```
 
 ## 5. Production-disabled
