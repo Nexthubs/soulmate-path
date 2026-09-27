@@ -221,6 +221,14 @@ export function SubscriptionSettingsAction({
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const isCancelled = status === "CANCELLED" || Boolean(cancelledAt);
+  // Wave 8 audit: only subscriptions that can still produce a charge offer a
+  // cancel action — EXPIRED/CANCELLED subscriptions have nothing to cancel.
+  const canCancel =
+    !isCancelled && (status === "ACTIVE" || status === "PROCESSING" || status === "SUSPENDED");
+  // The renewal sentence is factual only for an ACTIVE subscription that will
+  // actually renew: PROCESSING has no completed charge yet and SUSPENDED has
+  // renewal paused, so neither may claim "Your plan renews at …".
+  const willRenew = status === "ACTIVE";
   // SP-803 + Wave 8 audit H-2 (re-audit confirmed): BOTH the plan row and the
   // cancel confirmation render the amount only when it is a verified PayPal
   // plan snapshot; unverified prices are shown as plan shape without a rate.
@@ -363,8 +371,8 @@ export function SubscriptionSettingsAction({
           )}
         </div>
 
-        {/* Action button */}
-        {!isCancelled && (
+        {/* Action button — offered only for cancellable states (Wave 8 audit: EXPIRED has nothing to cancel) */}
+        {canCancel && (
           <div className="pt-2">
             {!isConfirming ? (
               <button
@@ -379,6 +387,7 @@ export function SubscriptionSettingsAction({
               <CancelConfirmationDialog
                 paidThroughDisplay={isPaid && paidThrough ? formatDate(paidThrough) : null}
                 isPaid={isPaid}
+                willRenew={willRenew}
                 priceText={quotedPriceText}
                 isLoading={isLoading}
                 onConfirm={handleConfirmCancel}
@@ -405,6 +414,13 @@ export interface CancelConfirmationDialogProps {
    */
   isPaid: boolean;
   /**
+   * Wave 8 re-audit: the "Your plan renews at …" sentence is factual only for
+   * an ACTIVE subscription. A verified price alone does not prove renewal —
+   * prices are verified at binding, before any charge exists (PROCESSING),
+   * and renewal is paused for SUSPENDED / impossible for EXPIRED.
+   */
+  willRenew: boolean;
+  /**
    * Formatted renewal price (e.g. "$29.00") or null when the backend price is
    * not a verified provider snapshot (Wave 8 audit H-2: never quote an
    * unverified price as the renewal amount).
@@ -427,6 +443,7 @@ export interface CancelConfirmationDialogProps {
 export function CancelConfirmationDialog({
   paidThroughDisplay,
   isPaid,
+  willRenew,
   priceText,
   isLoading,
   onConfirm,
@@ -442,7 +459,7 @@ export function CancelConfirmationDialog({
     >
       <h4 className="text-sm font-semibold text-rose-950">Confirm Cancellation</h4>
       <p className="text-xs text-slate-600 leading-relaxed">
-        {priceText ? (
+        {priceText && willRenew ? (
           <>
             Your plan renews at <strong>{priceText}/month</strong>. Cancelling stops all future
             charges.{" "}

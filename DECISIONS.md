@@ -153,10 +153,15 @@
 
 ### REFUND-01 — Refund policy and cancellation copy
 
-- **Status:** OPEN
+- **Status:** OPEN — provisional draft proposed 2026-09-27 by implementer at owner's request; **awaiting owner approval. No refund statement ships in the UI until approved.**
 - **Date:** 2026-09-27
 - **Context:** Wave 8 audit (H-3): the SP-804 cancel confirmation asserted "no refund is issued for the current cycle", but §9.8 only mandates stopping future renewals, retaining the paid cycle until `paid_through_at`, and permanently retaining generated content. Those rules do not by themselves authorize a blanket no-refund statement; refunds are handled out-of-band via PayPal dispute/support (SP-409).
-- **Decision:** TBD by product/payment policy owner. Until approved, the cancel UI makes NO refund claim of any kind (assertion removed 2026-09-27). Approved policy and wording must be supplied before any refund statement re-appears in user-facing copy.
+- **Decision (approved so far):** the cancel UI makes NO refund claim until the owner approves the policy and final wording below.
+- **Provisional draft (NOT approved for shipping) — cancel confirmation dialog, appended after the artifact-retention sentence:**
+  > Refund policy: cancelling stops all future billing, and you keep the access you've already paid for. Payments for billing cycles you had access to are non-refundable. If a charge looks wrong, contact our support team or raise it with PayPal.
+- **Provisional draft — cancelled-state card (settings), one-liner variant:**
+  > Payments for billing cycles you had access to are non-refundable; billing disputes go through our support team or PayPal.
+- **Drafting notes for the owner:** (1) the non-refundable phrasing assumes `PAID-THROUGH-01` semantics (users keep what they paid for through `paid_through_at`) — if a prorated/partial-refund policy is ever wanted, this draft must be rewritten; (2) in the dialog, the sentence must render only in the paid branch (unpaid subscriptions have nothing to refund); (3) final wording needs owner sign-off, and the support contact must match the real support channel before shipping.
 - **Affected:** SP-804 (`CancelConfirmationDialog`), SP-805 copy, customer support flow, M6 release QA.
 
 ### PAID-THROUGH-01 — Guard enforcement vs paid-through access window

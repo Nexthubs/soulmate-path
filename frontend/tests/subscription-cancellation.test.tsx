@@ -264,6 +264,7 @@ describe("SP-409: Subscription Cancellation & Settings Action", () => {
     const baseDialogProps = {
       paidThroughDisplay: "Oct 25, 2026",
       isPaid: true,
+      willRenew: true,
       isLoading: false,
       onConfirm: () => {},
       onKeep: () => {},
@@ -298,6 +299,7 @@ describe("SP-409: Subscription Cancellation & Settings Action", () => {
         <CancelConfirmationDialog
           paidThroughDisplay={null}
           isPaid={false}
+          willRenew={false}
           priceText={null}
           isLoading={false}
           onConfirm={() => {}}
@@ -309,6 +311,39 @@ describe("SP-409: Subscription Cancellation & Settings Action", () => {
       expect(html).not.toContain("depends on your billing state");
       expect(html).toContain("Cancelling stops all future charges");
       expect(html).toContain("never be deleted");
+    });
+
+    it("claims a renewal only for ACTIVE subscriptions even when the price is verified (Wave 8 re-audit H)", () => {
+      // Prices are verified at binding — before any charge exists — so a
+      // verified price alone must never produce "Your plan renews at …" for
+      // PROCESSING / SUSPENDED states.
+      const processingLike = renderToStaticMarkup(
+        <CancelConfirmationDialog
+          paidThroughDisplay={null}
+          isPaid={false}
+          willRenew={false}
+          priceText="$29.00"
+          isLoading={false}
+          onConfirm={() => {}}
+          onKeep={() => {}}
+        />
+      );
+      expect(processingLike).not.toContain("renews at");
+      expect(processingLike).not.toContain("/month");
+      expect(processingLike).toContain("Cancelling stops all future charges");
+
+      const active = renderToStaticMarkup(
+        <CancelConfirmationDialog
+          paidThroughDisplay="Oct 25, 2026"
+          isPaid={true}
+          willRenew={true}
+          priceText="$29.00"
+          isLoading={false}
+          onConfirm={() => {}}
+          onKeep={() => {}}
+        />
+      );
+      expect(active).toContain("Your plan renews at <strong>$29.00/month</strong>");
     });
 
     it("omits the price sentence when the backend provides no price", () => {
@@ -382,6 +417,54 @@ describe("SP-409: Subscription Cancellation & Settings Action", () => {
       expect(html).not.toContain('data-testid="cancellation-confirmation-dialog"');
       expect(html).toContain('data-testid="cancelled-access-info"');
       expect(html).toContain('data-testid="artifact-retention-notice"');
+    });
+
+    it("offers NO cancel entry for EXPIRED subscriptions even with a verified price (Wave 8 re-audit H)", () => {
+      const html = renderToStaticMarkup(
+        <SubscriptionSettingsAction
+          status="EXPIRED"
+          isPaid={true}
+          currency="USD"
+          regularPrice="29.00"
+          priceVerified={true}
+          paidThroughAt="2026-09-20T00:00:00Z"
+        />
+      );
+
+      expect(html).not.toContain('data-testid="cancel-subscription-button"');
+      expect(html).not.toContain('data-testid="cancellation-confirmation-dialog"');
+      // Access copy reflects the ended window (detail paragraph; EXPIRED is not
+      // a cancelled state, so the amber headline card does not render)
+      expect(html).toContain("Your paid access period has ended");
+      expect(html.toLowerCase()).not.toContain("renews at");
+    });
+
+    it("keeps the cancel entry for PROCESSING and SUSPENDED states (still cancellable)", () => {
+      const processing = renderToStaticMarkup(
+        <SubscriptionSettingsAction
+          status="PROCESSING"
+          isPaid={false}
+          currency="USD"
+          regularPrice="29.00"
+          priceVerified={true}
+          nextBillingAt="2026-10-24T00:00:00Z"
+        />
+      );
+      const suspended = renderToStaticMarkup(
+        <SubscriptionSettingsAction
+          status="SUSPENDED"
+          isPaid={true}
+          currency="USD"
+          regularPrice="29.00"
+          priceVerified={true}
+        />
+      );
+
+      expect(processing).toContain('data-testid="cancel-subscription-button"');
+      // Plan row amount follows price verification (not renewal state); the
+      // dialog's renewal sentence is gated separately (willRenew, see above).
+      expect(processing).toContain("Monthly — $29.00/month");
+      expect(suspended).toContain('data-testid="cancel-subscription-button"');
     });
   });
 
