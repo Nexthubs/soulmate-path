@@ -62,6 +62,7 @@ from app.soulmate.domain.report_models import (
     ReportGenerationInput,
     ReportProviderError,
 )
+from app.soulmate.metrics import record_generation_metric
 from app.soulmate.services.payment_consistency import payment_lock
 from app.soulmate.services.subscription_service import SubscriptionService
 
@@ -207,6 +208,13 @@ class ReportGenerationService:
                 artifact.generation_status = "QUEUED"
                 await db.commit()
                 await db.refresh(artifact)
+                record_generation_metric(
+                    "generation_user_retry",
+                    job_id=existing_job.id,
+                    artifact_id=artifact.id,
+                    session_id=str(artifact.session_id),
+                    fields={"job_type": JOB_TYPE_REPORT, "attempt": existing_job.attempt or 0},
+                )
                 logger.info(
                     "User retry requeued report job %s (attempt %s/%s)",
                     existing_job.id,
@@ -214,6 +222,13 @@ class ReportGenerationService:
                     hard_attempt_cap(),
                 )
                 return ReportEnqueueOutcome(artifact=artifact, job=existing_job, created=False)
+            record_generation_metric(
+                "enqueue_duplicate",
+                job_id=existing_job.id,
+                artifact_id=artifact.id,
+                session_id=str(artifact.session_id),
+                fields={"job_type": JOB_TYPE_REPORT},
+            )
             return ReportEnqueueOutcome(artifact=artifact, job=existing_job, created=False)
 
         # TIME-01: the persisted unlock time gates generation server-side.
@@ -245,6 +260,14 @@ class ReportGenerationService:
 
         await db.commit()
         await db.refresh(artifact)
+        if created:
+            record_generation_metric(
+                "enqueue_created",
+                job_id=job.id,
+                artifact_id=artifact.id,
+                session_id=str(artifact.session_id),
+                fields={"job_type": JOB_TYPE_REPORT},
+            )
         return ReportEnqueueOutcome(artifact=artifact, job=job, created=created)
 
     # ------------------------------------------------------------------
@@ -345,6 +368,17 @@ class ReportGenerationService:
                         "Report job %s terminated %s at claim time (crash-loop budget exhausted)",
                         job.id, JOB_FAILED_RETRYABLE,
                     )
+                    record_generation_metric(
+                        "generation_final_failure",
+                        job_id=job.id,
+                        artifact_id=job.artifact_id,
+                        session_id=str(artifact.session_id) if artifact is not None else None,
+                        fields={
+                            "job_type": JOB_TYPE_REPORT,
+                            "error_code": BUDGET_EXHAUSTED_CODE,
+                            "attempts": job.attempt or 0,
+                        },
+                    )
                     return JOB_FAILED_RETRYABLE
                 claim_attempt = job.attempt or 0
 
@@ -428,6 +462,20 @@ class ReportGenerationService:
                 )
 
                 await db.commit()
+                queue_latency_ms = None
+                if job.created_at is not None:
+                    queue_latency_ms = max(0, int((started_at - job.created_at).total_seconds() * 1000))
+                record_generation_metric(
+                    "queue_latency_ms",
+                    job_id=job.id,
+                    artifact_id=artifact.id,
+                    session_id=str(artifact.session_id),
+                    fields={
+                        "job_type": JOB_TYPE_REPORT,
+                        "latency_ms": queue_latency_ms,
+                        "attempt": claim_attempt,
+                    },
+                )
                 return _ClaimedWork(
                     job_id=job.id,
                     artifact_id=artifact.id,
@@ -511,6 +559,7 @@ class ReportGenerationService:
                 artifact.completed_at = utc_now()
 
                 job.status = JOB_COMPLETED
+                winning_claim_at = job.locked_at
                 job.locked_at = None
                 _record_job_event(
                     job,
@@ -529,6 +578,22 @@ class ReportGenerationService:
                 job_id,
                 result.model,
                 result.provider_request_id,
+            )
+            generation_latency_ms = None
+            if winning_claim_at is not None and artifact.completed_at is not None:
+                generation_latency_ms = max(
+                    0, int((artifact.completed_at - winning_claim_at).total_seconds() * 1000)
+                )
+            record_generation_metric(
+                "generation_success",
+                job_id=job_id,
+                artifact_id=artifact_id,
+                session_id=str(artifact.session_id),
+                fields={
+                    "job_type": JOB_TYPE_REPORT,
+                    "latency_ms": generation_latency_ms,
+                    "attempts": claim_attempt,
+                },
             )
             return JOB_COMPLETED
 
@@ -635,13 +700,26 @@ class ReportGenerationService:
         max_attempts = max(1, settings.job_retry_max_attempts)
         if retryable and claim_attempt < max_attempts:
             job.status = JOB_QUEUED
-            job.run_after = utc_now() + timedelta(seconds=retry_backoff_seconds(claim_attempt))
+            backoff = retry_backoff_seconds(claim_attempt)
+            job.run_after = utc_now() + timedelta(seconds=backoff)
             if artifact is not None:
                 artifact.attempt_count = (artifact.attempt_count or 0) + 1
             logger.warning(
                 "Report job %s attempt %s/%s failed retryably (error_code=%s); "
                 "requeued with backoff until %s",
                 job.id, claim_attempt, max_attempts, error_code, job.run_after,
+            )
+            record_generation_metric(
+                "generation_retry",
+                job_id=job.id,
+                artifact_id=artifact.id if artifact is not None else None,
+                session_id=str(artifact.session_id) if artifact is not None else None,
+                fields={
+                    "job_type": JOB_TYPE_REPORT,
+                    "error_code": error_code,
+                    "attempt": claim_attempt,
+                    "backoff_seconds": backoff,
+                },
             )
             return JOB_QUEUED
 
@@ -655,6 +733,17 @@ class ReportGenerationService:
         logger.warning(
             "Report job %s reached terminal %s after %s attempt(s) (error_code=%s, provider_code=%s)",
             job.id, status, claim_attempt, error_code, provider_code,
+        )
+        record_generation_metric(
+            "generation_final_failure",
+            job_id=job.id,
+            artifact_id=artifact.id if artifact is not None else None,
+            session_id=str(artifact.session_id) if artifact is not None else None,
+            fields={
+                "job_type": JOB_TYPE_REPORT,
+                "error_code": error_code,
+                "attempts": claim_attempt,
+            },
         )
         return status
 
@@ -701,6 +790,11 @@ class ReportGenerationService:
                         "Reclaimed stale report job %s (attempt %s unchanged; budget enforced at claim)",
                         job.id, attempt,
                     )
+        if reclaimed:
+            record_generation_metric(
+                "generation_stale_reclaimed",
+                fields={"job_type": JOB_TYPE_REPORT, "count": reclaimed},
+            )
         return reclaimed
 
     # ------------------------------------------------------------------

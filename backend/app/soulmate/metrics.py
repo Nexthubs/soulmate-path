@@ -1,8 +1,9 @@
 """Central generation-metrics emitter (DEV-SPEC §18–19, SP-902).
 
-Operational metrics for the generation pipeline (queue/worker, SP-603/604) —
-distinct from the §18.1 funnel analytics stream in `app.soulmate.analytics`:
-this is the §19 observability stream that SP-904 alerts will key on.
+Operational metrics for the DB-backed generation queues: sketch (SP-603/604)
+and report (SP-706). This is distinct from the §18.1 funnel analytics stream
+in `app.soulmate.analytics`; it is the §19 observability stream that SP-904
+alerts will key on.
 
 Every metric is emitted through the §19.1 structured log pipeline as a single
 stable `event_type="generation_metric"` record with the metric name and its

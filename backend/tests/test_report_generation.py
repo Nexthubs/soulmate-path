@@ -35,6 +35,7 @@ from app.soulmate.domain.report_models import (
     ReportGenerationDisabledError,
     ReportGenerationInput,
 )
+from app.soulmate.metrics import GENERATION_METRIC_EVENT, GENERATION_METRIC_FIELDS
 from app.soulmate.security import generate_session_token
 from app.soulmate.services.report_fixture import MOCK_REPORT_JSON
 from app.soulmate.services.report_generation_service import (
@@ -45,10 +46,19 @@ from app.soulmate.services.report_generation_service import (
     ReportGenerationService,
     report_idempotency_key,
 )
+from app.soulmate.services.generation_metrics_service import GenerationMetricsService
 from test_report_provider import _get_valid_answers_dict
 
 GENERATE_URL = "/api/soulmate/artifacts/report/generate"
 REPORT_URL = "/api/soulmate/artifacts/report"
+
+
+def _generation_metric_data(caplog):
+    return [
+        record.extra_data
+        for record in caplog.records
+        if getattr(record, "event_type", None) == GENERATION_METRIC_EVENT
+    ]
 
 
 @pytest.fixture
@@ -303,6 +313,81 @@ async def test_worker_happy_path_persists_validated_content(async_db):
     assert outcome.artifact.model == "fake-model"
     assert outcome.artifact.prompt_version == "v1"
     assert outcome.artifact.provider_request_id == "req-fake-1"
+
+
+@pytest.mark.asyncio
+async def test_report_worker_emits_enqueue_queue_and_success_metrics(async_db, caplog):
+    caplog.set_level("INFO")
+    sess = await _seed_generating_session(async_db)
+    outcome = await ReportGenerationService.enqueue_report_generation(async_db, sess)
+    await ReportGenerationService.enqueue_report_generation(async_db, sess)
+
+    status = await ReportGenerationService.process_next_queued_job(
+        provider=_FakeProvider(result=_fake_result()), job_id=outcome.job.id
+    )
+    assert status == JOB_COMPLETED
+
+    metrics = _generation_metric_data(caplog)
+    names = [metric["metric"] for metric in metrics]
+    assert names == ["enqueue_created", "enqueue_duplicate", "queue_latency_ms", "generation_success"]
+    assert all(metric["job_type"] == "SOULMATE_REPORT" for metric in metrics)
+    assert metrics[-1]["attempts"] == 1
+    assert metrics[-1]["latency_ms"] >= 0
+    for metric in metrics:
+        assert set(metric).issubset({"metric", *GENERATION_METRIC_FIELDS[metric["metric"]]})
+
+    summary = await GenerationMetricsService.summary(async_db, job_type="SOULMATE_REPORT")
+    assert summary.jobs_completed == 1
+    assert summary.final_failure_rate == 0.0
+    assert summary.queue_latency.samples == summary.generation_latency.samples == 1
+
+
+@pytest.mark.asyncio
+async def test_report_worker_emits_retry_final_failure_and_user_retry_metrics(
+    async_db, caplog, monkeypatch
+):
+    from app.soulmate.domain.report_models import ReportProviderError
+
+    caplog.set_level("INFO")
+    monkeypatch.setattr(settings, "job_retry_max_attempts", 2, raising=False)
+    monkeypatch.setattr(settings, "job_retry_base_backoff_seconds", 0.0, raising=False)
+    sess = await _seed_generating_session(async_db)
+    outcome = await ReportGenerationService.enqueue_report_generation(async_db, sess)
+    provider = _FakeProvider(error=ReportProviderError("provider overloaded", retryable=True))
+
+    first = await ReportGenerationService.process_next_queued_job(provider=provider, job_id=outcome.job.id)
+    second = await ReportGenerationService.process_next_queued_job(provider=provider, job_id=outcome.job.id)
+    await async_db.refresh(outcome.artifact)
+    await async_db.refresh(outcome.job)
+    retried = await ReportGenerationService.enqueue_report_generation(async_db, sess)
+
+    assert first == JOB_QUEUED
+    assert second == JOB_FAILED_RETRYABLE
+    assert retried.created is False
+    names = [metric["metric"] for metric in _generation_metric_data(caplog)]
+    assert names.count("generation_retry") == 1
+    assert names.count("generation_final_failure") == 1
+    assert names.count("generation_user_retry") == 1
+
+
+@pytest.mark.asyncio
+async def test_report_stale_reclaim_emits_count_metric(async_db, caplog, monkeypatch):
+    caplog.set_level("INFO")
+    monkeypatch.setattr(settings, "job_claim_stale_seconds", 1.0, raising=False)
+    sess = await _seed_generating_session(async_db)
+    outcome = await ReportGenerationService.enqueue_report_generation(async_db, sess)
+    now = datetime.now(timezone.utc)
+    outcome.job.status = "PROCESSING"
+    outcome.job.attempt = 1
+    outcome.job.locked_at = now - timedelta(seconds=30)
+    outcome.artifact.generation_status = "PROCESSING"
+    await async_db.commit()
+
+    assert await ReportGenerationService.reclaim_stale_processing_jobs(now=now) == 1
+    metrics = _generation_metric_data(caplog)
+    assert [metric for metric in metrics if metric["metric"] == "generation_stale_reclaimed"] == [
+        {"metric": "generation_stale_reclaimed", "job_type": "SOULMATE_REPORT", "count": 1}
+    ]
 
 
 @pytest.mark.asyncio
