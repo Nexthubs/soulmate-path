@@ -88,6 +88,9 @@ export function SubscriptionSettingsAction({
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const isCancelled = status === "CANCELLED" || Boolean(cancelledAt);
+  // SP-803: renewal price quoted in the confirmation dialog comes exclusively
+  // from provider-reconciled backend state; null omits the price sentence.
+  const priceText = formatSubscriptionPrice(regularPrice, currency);
 
   const handleCancelClick = () => {
     setError(null);
@@ -95,6 +98,9 @@ export function SubscriptionSettingsAction({
   };
 
   const handleConfirmCancel = async () => {
+    // Safe repeated action (SP-804): ignore re-entry while a request is in
+    // flight; the confirm button is also disabled during the request.
+    if (isLoading) return;
     setIsLoading(true);
     setError(null);
     try {
@@ -231,39 +237,85 @@ export function SubscriptionSettingsAction({
                 Cancel Subscription
               </button>
             ) : (
-              <div
-                data-testid="cancellation-confirmation-dialog"
-                className="rounded-xl border border-rose-200 bg-rose-50/50 p-4 space-y-3"
-              >
-                <h4 className="text-sm font-semibold text-rose-950">Confirm Cancellation</h4>
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  Are you sure you want to cancel? You will keep access until{" "}
-                  <strong>{formatDate(paidThrough || initialNextBilling)}</strong>. Your previously generated Sketch and Report will <strong>never be deleted</strong>.
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    data-testid="confirm-cancel-button"
-                    onClick={handleConfirmCancel}
-                    disabled={isLoading}
-                    className="rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700 transition disabled:opacity-50"
-                  >
-                    {isLoading ? "Cancelling..." : "Confirm Cancellation"}
-                  </button>
-                  <button
-                    type="button"
-                    data-testid="keep-subscription-button"
-                    onClick={() => setIsConfirming(false)}
-                    disabled={isLoading}
-                    className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition"
-                  >
-                    Keep Subscription
-                  </button>
-                </div>
-              </div>
+              <CancelConfirmationDialog
+                paidThroughDisplay={formatDate(paidThrough || initialNextBilling)}
+                priceText={priceText}
+                isLoading={isLoading}
+                onConfirm={handleConfirmCancel}
+                onKeep={() => setIsConfirming(false)}
+              />
             )}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+export interface CancelConfirmationDialogProps {
+  /** Human-readable access-through date shown as the post-cancel access promise. */
+  paidThroughDisplay: string;
+  /** Formatted renewal price (e.g. "$29.00") or null when the backend provides none. */
+  priceText: string | null;
+  isLoading: boolean;
+  onConfirm: () => void;
+  onKeep: () => void;
+}
+
+/**
+ * Confirmation state for the cancel action (SP-804, DEV-SPEC §9.8, §15.9).
+ * Presentational so all safety/messaging criteria are directly renderable in
+ * static tests: quotes the renewal price, the paid-through access promise, and
+ * the artifact-retention guarantee; both actions disable while in flight.
+ */
+export function CancelConfirmationDialog({
+  paidThroughDisplay,
+  priceText,
+  isLoading,
+  onConfirm,
+  onKeep,
+}: CancelConfirmationDialogProps) {
+  return (
+    <div
+      role="alertdialog"
+      aria-modal="true"
+      aria-label="Confirm cancellation"
+      data-testid="cancellation-confirmation-dialog"
+      className="rounded-xl border border-rose-200 bg-rose-50/50 p-4 space-y-3"
+    >
+      <h4 className="text-sm font-semibold text-rose-950">Confirm Cancellation</h4>
+      <p className="text-xs text-slate-600 leading-relaxed">
+        {priceText ? (
+          <>
+            Your plan renews at <strong>{priceText}/month</strong>. Cancelling stops all future
+            charges — no refund is issued for the current cycle.{" "}
+          </>
+        ) : (
+          "Are you sure you want to cancel? "
+        )}
+        You will keep access until <strong>{paidThroughDisplay}</strong>. Your previously generated
+        Sketch and Report will <strong>never be deleted</strong>.
+      </p>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          data-testid="confirm-cancel-button"
+          onClick={onConfirm}
+          disabled={isLoading}
+          aria-busy={isLoading}
+          className="rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700 transition disabled:opacity-50"
+        >
+          {isLoading ? "Cancelling..." : "Confirm Cancellation"}
+        </button>
+        <button
+          type="button"
+          data-testid="keep-subscription-button"
+          onClick={onKeep}
+          disabled={isLoading}
+          className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition"
+        >
+          Keep Subscription
+        </button>
       </div>
     </div>
   );

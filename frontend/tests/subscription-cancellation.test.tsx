@@ -19,6 +19,7 @@ import {
 } from "../src/soulmate/api/subscription";
 import {
   SubscriptionSettingsAction,
+  CancelConfirmationDialog,
   formatDate,
   formatSubscriptionPrice,
 } from "../src/soulmate/components/settings";
@@ -234,6 +235,79 @@ describe("SP-409: Subscription Cancellation & Settings Action", () => {
       expect(html).toContain("I-PAGE-TEST-123");
       expect(html).toContain("Active");
       expect(html).toContain("Nov 1, 2026");
+    });
+  });
+
+  describe("5. SP-804: cancel action confirmation state and safety", () => {
+    const baseDialogProps = {
+      paidThroughDisplay: "Oct 25, 2026",
+      isLoading: false,
+      onConfirm: () => {},
+      onKeep: () => {},
+    };
+
+    it("renders the confirmation state with renewal price, access promise, and retention guarantee", () => {
+      const html = renderToStaticMarkup(
+        <CancelConfirmationDialog {...baseDialogProps} priceText="$29.00" />
+      );
+
+      expect(html).toContain('data-testid="cancellation-confirmation-dialog"');
+      expect(html).toContain('role="alertdialog"');
+      expect(html).toContain('aria-modal="true"');
+      // Renewal price quoted from provider-reconciled state, with supported
+      // no-refund framing per DEV-SPEC §9.8 paid-through decision
+      expect(html).toContain("$29.00/month");
+      expect(html).toContain("Cancelling stops all future charges");
+      // Clear post-cancel access message
+      expect(html).toContain("You will keep access until <strong>Oct 25, 2026</strong>");
+      // No deletion of completed sketch/report
+      expect(html).toContain("never be deleted");
+      // Both exits available
+      expect(html).toContain('data-testid="confirm-cancel-button"');
+      expect(html).toContain('data-testid="keep-subscription-button"');
+    });
+
+    it("omits the price sentence when the backend provides no price", () => {
+      const html = renderToStaticMarkup(
+        <CancelConfirmationDialog {...baseDialogProps} priceText={null} />
+      );
+
+      expect(html).not.toContain("/month");
+      expect(html).toContain("Are you sure you want to cancel?");
+      expect(html).toContain("Oct 25, 2026");
+      expect(html).toContain("never be deleted");
+    });
+
+    it("disables both actions while a cancellation request is in flight (safe repeated action)", () => {
+      const html = renderToStaticMarkup(
+        <CancelConfirmationDialog {...baseDialogProps} priceText="$29.00" isLoading={true} />
+      );
+
+      expect(html).toContain("Cancelling...");
+      // Only in-flight markup renders disabled state on both action buttons
+      const confirmBtn = html.match(/<button[^>]*data-testid="confirm-cancel-button"[^>]*>/);
+      const keepBtn = html.match(/<button[^>]*data-testid="keep-subscription-button"[^>]*>/);
+      expect(confirmBtn).not.toBeNull();
+      expect(confirmBtn![0]).toContain("disabled");
+      expect(keepBtn).not.toBeNull();
+      expect(keepBtn![0]).toContain("disabled");
+      expect(html).toContain('aria-busy="true"');
+    });
+
+    it("hides the cancel entry entirely once a cancellation is recorded (idempotent UI state)", () => {
+      const html = renderToStaticMarkup(
+        <SubscriptionSettingsAction
+          status="CANCELLED"
+          isPaid={true}
+          cancelledAt="2026-09-27T12:00:00Z"
+          paidThroughAt="2026-10-25T00:00:00Z"
+        />
+      );
+
+      expect(html).not.toContain('data-testid="cancel-subscription-button"');
+      expect(html).not.toContain('data-testid="cancellation-confirmation-dialog"');
+      expect(html).toContain('data-testid="cancelled-access-info"');
+      expect(html).toContain('data-testid="artifact-retention-notice"');
     });
   });
 });
