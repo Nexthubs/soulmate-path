@@ -22,6 +22,7 @@ import {
   CancelConfirmationDialog,
   formatDate,
   formatSubscriptionPrice,
+  derivePaidAccessCopy,
 } from "../src/soulmate/components/settings";
 
 vi.mock("next/navigation", () => ({
@@ -308,6 +309,124 @@ describe("SP-409: Subscription Cancellation & Settings Action", () => {
       expect(html).not.toContain('data-testid="cancellation-confirmation-dialog"');
       expect(html).toContain('data-testid="cancelled-access-info"');
       expect(html).toContain('data-testid="artifact-retention-notice"');
+    });
+  });
+
+  describe("6. SP-805: paid-through access copy derives from actual state", () => {
+    // Fixed reference clock: client time is display-only (TIME-01); real
+    // access enforcement is server-side.
+    const NOW = new Date("2026-09-27T12:00:00Z");
+    const FUTURE = "2026-10-25T00:00:00Z";
+    const PAST = "2026-09-20T00:00:00Z";
+
+    it("claims active access only while the paid-through date is in the future", () => {
+      const copy = derivePaidAccessCopy({
+        status: "CANCELLED",
+        isPaid: true,
+        cancelledAt: "2026-09-26T00:00:00Z",
+        paidThroughAt: FUTURE,
+        now: NOW,
+      });
+      expect(copy.state).toBe("active");
+      expect(copy.headline).toBe("Active through Oct 25, 2026");
+      expect(copy.detail).toContain("No future renewal charges will be made");
+      expect(copy.detail).toContain("through Oct 25, 2026");
+    });
+
+    it("stops claiming active access once the paid-through date has passed", () => {
+      const copy = derivePaidAccessCopy({
+        status: "CANCELLED",
+        isPaid: true,
+        cancelledAt: "2026-09-15T00:00:00Z",
+        paidThroughAt: PAST,
+        now: NOW,
+      });
+      expect(copy.state).toBe("ended");
+      expect(copy.headline).toBe("Paid access ended Sep 20, 2026");
+      expect(copy.headline).not.toContain("Active");
+      expect(copy.detail).toContain("Your paid access period has ended");
+    });
+
+    it("keeps no-date cancellations truthful and vague-free of access promises", () => {
+      const copy = derivePaidAccessCopy({
+        status: "CANCELLED",
+        isPaid: true,
+        cancelledAt: "2026-09-26T00:00:00Z",
+        paidThroughAt: null,
+        nextBillingAt: null,
+        now: NOW,
+      });
+      expect(copy.state).toBe("retained");
+      expect(copy.headline).toBe("Access retained");
+      expect(copy.detail).toBe("No future renewal charges will be made.");
+      expect(copy.detail).not.toContain("Active");
+    });
+
+    it("never promises renewal for SUSPENDED subscriptions", () => {
+      const copy = derivePaidAccessCopy({
+        status: "SUSPENDED",
+        isPaid: true,
+        now: NOW,
+      });
+      expect(copy.state).toBe("suspended");
+      expect(copy.headline).toBe("Suspended");
+      expect(copy.detail).toContain("suspended");
+      expect(copy.detail).not.toMatch(/renews automatically/i);
+      expect(copy.detail).toContain("remain saved");
+    });
+
+    it("derives expired access from the past paid-through date without renewal promises", () => {
+      const copy = derivePaidAccessCopy({
+        status: "EXPIRED",
+        isPaid: true,
+        paidThroughAt: PAST,
+        now: NOW,
+      });
+      expect(copy.state).toBe("ended");
+      expect(copy.headline).toBe("Paid access ended Sep 20, 2026");
+      expect(copy.detail).toContain("No future renewal charges will be made");
+      expect(copy.detail).not.toMatch(/renews automatically/i);
+    });
+
+    it("tells unpaid PROCESSING sessions that access starts only after confirmation (PAY-AUTH-01)", () => {
+      const copy = derivePaidAccessCopy({
+        status: "PROCESSING",
+        isPaid: false,
+        now: NOW,
+      });
+      expect(copy.state).toBe("processing");
+      expect(copy.detail).toContain("begins only after your first payment is confirmed");
+      expect(copy.detail).not.toMatch(/renews automatically/i);
+    });
+
+    it("preserves the supported auto-renew copy for active paid subscriptions (§9.1)", () => {
+      const copy = derivePaidAccessCopy({
+        status: "ACTIVE",
+        isPaid: true,
+        nextBillingAt: FUTURE,
+        now: NOW,
+      });
+      expect(copy.state).toBe("renewing");
+      expect(copy.detail).toBe(
+        "Your subscription renews automatically monthly. You may cancel at any time while retaining access through the end of your billing cycle."
+      );
+    });
+
+    it("wires the derived copy into the cancelled card (no hard-coded Active claim)", () => {
+      const html = renderToStaticMarkup(
+        <SubscriptionSettingsAction
+          status="CANCELLED"
+          isPaid={true}
+          cancelledAt="2026-09-15T00:00:00Z"
+          paidThroughAt={PAST}
+        />
+      );
+
+      expect(html).toContain("Paid access ended Sep 20, 2026");
+      expect(html).not.toContain("Active through");
+      expect(html).toContain("Your paid access period has ended");
+      // Retention guarantee remains regardless of the access window (§9.8)
+      expect(html).toContain("never be deleted");
     });
   });
 });

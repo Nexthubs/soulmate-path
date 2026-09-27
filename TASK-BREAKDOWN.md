@@ -1248,7 +1248,7 @@ Shows current plan/status/regular monthly price/next billing or paid-through inf
 
 **Priority:** P1  
 **Depends:** SP-408, SP-803  
-**Status:** TODO
+**Status:** DONE (docs/handoffs/SP-805.md)  
 **Context refs:** DEV-SPEC §9.8, §10 | Decisions: PAY-AUTH-01 | Dependency handoffs: SP-408, SP-803
 
 

@@ -59,6 +59,101 @@ export function formatSubscriptionPrice(
   }
 }
 
+export type PaidAccessState = "active" | "ended" | "retained" | "suspended" | "processing" | "renewing";
+
+export interface PaidAccessCopy {
+  state: PaidAccessState;
+  /** Value shown for the "Access Status" line in the cancelled/suspended card. */
+  headline: string;
+  /**
+   * Explanatory sentence derived from the actual access date/state (SP-805).
+   * Never promises a refund or a renewal the state does not support.
+   */
+  detail: string;
+}
+
+/**
+ * SP-805: derive paid-through access copy from the actual reconciled state.
+ *
+ * - The paid-through date is `paid_through_at`, falling back to
+ *   `next_billing_at` (DEV-SPEC §9.8: the saved next billing time marks the end
+ *   of the already-paid cycle).
+ * - The client clock is used ONLY to pick the display tense of the copy
+ *   (TIME-01: client time is display-only); actual access is always enforced by
+ *   server-side guards, never by this text.
+ */
+export function derivePaidAccessCopy(params: {
+  status: string;
+  isPaid: boolean;
+  cancelledAt?: string | null;
+  paidThroughAt?: string | null;
+  nextBillingAt?: string | null;
+  now?: Date;
+}): PaidAccessCopy {
+  const { status, isPaid, cancelledAt, paidThroughAt, nextBillingAt } = params;
+  const nowMs = (params.now ?? new Date()).getTime();
+
+  const effectiveDate = paidThroughAt || nextBillingAt || null;
+  const effectiveMs = effectiveDate ? new Date(effectiveDate).getTime() : NaN;
+  const dateKnown = effectiveDate !== null && Number.isFinite(effectiveMs);
+  const dateIsPast = dateKnown && effectiveMs < nowMs;
+  const dateLabel = dateKnown ? formatDate(effectiveDate) : "";
+
+  // Suspended: billing is paused; promising a renewal would be unsupported.
+  if (status === "SUSPENDED") {
+    return {
+      state: "suspended",
+      headline: "Suspended",
+      detail:
+        "Your subscription is suspended. No automatic renewal is scheduled, and already-generated Sketch and Report artifacts remain saved.",
+    };
+  }
+
+  // Cancelled (or provider-expired): future renewals are stopped; the access
+  // claim must match whether the paid cycle is still running.
+  if (status === "CANCELLED" || status === "EXPIRED" || Boolean(cancelledAt)) {
+    if (dateKnown && dateIsPast) {
+      return {
+        state: "ended",
+        headline: `Paid access ended ${dateLabel}`,
+        detail: "No future renewal charges will be made. Your paid access period has ended.",
+      };
+    }
+    if (dateKnown) {
+      return {
+        state: "active",
+        headline: `Active through ${dateLabel}`,
+        detail: `No future renewal charges will be made. You retain full access to all paid features through ${dateLabel}.`,
+      };
+    }
+    return {
+      state: "retained",
+      headline: "Access retained",
+      detail: "No future renewal charges will be made.",
+    };
+  }
+
+  // Not yet paid (PAY-AUTH-01): entitlement begins only after a confirmed
+  // first payment, so a renewal promise here would be unsupported.
+  if (!isPaid) {
+    return {
+      state: "processing",
+      headline: "Processing",
+      detail:
+        "We are confirming your payment. Your paid access begins only after your first payment is confirmed.",
+    };
+  }
+
+  // Active paid subscription: the V1 plan is an auto-renewing monthly
+  // subscription (DEV-SPEC §9.1), so this renewal copy is supported.
+  return {
+    state: "renewing",
+    headline: "Active",
+    detail:
+      "Your subscription renews automatically monthly. You may cancel at any time while retaining access through the end of your billing cycle.",
+  };
+}
+
 /**
  * Subscription settings action component (DEV-SPEC §9.8, §15.9, SP-409).
  * Provides clear cancellation confirmation, server-side cancellation call,
@@ -91,6 +186,14 @@ export function SubscriptionSettingsAction({
   // SP-803: renewal price quoted in the confirmation dialog comes exclusively
   // from provider-reconciled backend state; null omits the price sentence.
   const priceText = formatSubscriptionPrice(regularPrice, currency);
+  // SP-805: access copy derives from the actual reconciled state and dates.
+  const accessCopy = derivePaidAccessCopy({
+    status,
+    isPaid,
+    cancelledAt,
+    paidThroughAt: paidThrough,
+    nextBillingAt: initialNextBilling,
+  });
 
   const handleCancelClick = () => {
     setError(null);
@@ -178,9 +281,9 @@ export function SubscriptionSettingsAction({
           </span>
         </div>
 
-        {/* Status messages and dates */}
+        {/* Status messages and dates — copy derived from actual state (SP-805) */}
         <div className="space-y-2 text-sm text-slate-600">
-          {!isCancelled && initialNextBilling && (
+          {!isCancelled && initialNextBilling && accessCopy.state === "renewing" && (
             <div className="flex justify-between" data-testid="next-billing-info">
               <span>Next Renewal Date:</span>
               <span className="font-medium text-slate-800">{formatDate(initialNextBilling)}</span>
@@ -191,12 +294,10 @@ export function SubscriptionSettingsAction({
             <div className="rounded-xl bg-amber-50/70 p-4 border border-amber-200/60 space-y-2" data-testid="cancelled-access-info">
               <div className="flex items-center justify-between text-amber-900 font-medium">
                 <span>Access Status:</span>
-                <span data-testid="paid-through-display">
-                  {paidThrough ? `Active through ${formatDate(paidThrough)}` : "Access retained"}
-                </span>
+                <span data-testid="paid-through-display">{accessCopy.headline}</span>
               </div>
-              <p className="text-xs text-amber-800">
-                No future renewal charges will be made. You retain full access to all paid features until your current cycle ends.
+              <p className="text-xs text-amber-800" data-testid="paid-access-detail">
+                {accessCopy.detail}
               </p>
               <div className="pt-2 border-t border-amber-200/50 text-xs text-amber-900 flex items-center gap-1.5" data-testid="artifact-retention-notice">
                 <svg className="w-4 h-4 text-emerald-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -206,8 +307,8 @@ export function SubscriptionSettingsAction({
               </div>
             </div>
           ) : (
-            <p className="text-xs text-slate-500">
-              Your subscription renews automatically monthly. You may cancel at any time while retaining access through the end of your billing cycle.
+            <p className="text-xs text-slate-500" data-testid="paid-access-detail">
+              {accessCopy.detail}
             </p>
           )}
 

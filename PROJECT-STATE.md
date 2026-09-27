@@ -71,7 +71,8 @@ Drawer Soulmate entry (`SP-801`) completed and evidenced in `docs/handoffs/SP-80
 Status-aware Drawer destination (`SP-802`) completed and evidenced in `docs/handoffs/SP-802.md` (destination resolved per open from the SP-503 aggregate — 403→`/soulmate`, LOCKED→`/soulmate/result`, unlocked→`/soulmate/sketch`; cookie-only identity, real-backend E2E for all routing rows).
 Subscription details in Settings (`SP-803`) completed and evidenced in `docs/handoffs/SP-803.md` (status response now carries `currency`/`regular_price` from the reconciled row; settings card shows plan/status/regular monthly price/next-billing-or-paid-through; full Figma page-chrome parity flagged for M6 QA).
 Cancel action UI (`SP-804`) completed and evidenced in `docs/handoffs/SP-804.md` (extracted testable `CancelConfirmationDialog` with renewal-price quote + retention guarantee, in-flight re-entry guard, entry hidden once cancelled; success-path provider cancel covered by SP-409 tests + M3 gate live evidence).
-*(Note: WAVE 8 is in progress — SP-801..804 DONE, 2026-09-27; SP-805 TODO.)*
+Paid-through access display (`SP-805`) completed and evidenced in `docs/handoffs/SP-805.md` (`derivePaidAccessCopy` derives all access claims from actual reconciled state/dates; expired paid-through no longer claims "Active"; suspended/processing states carry no renewal promise; client clock used for display tense only per TIME-01).
+*(Note: WAVE 8 is 100% complete — SP-801..805 DONE, 2026-09-27.)*
 
 ## 2. Milestone status
 
@@ -127,6 +128,6 @@ Report production provider: ENABLED in dev (REPORT-01/02 RESOLVED; on_demand via
 
 ```text
 1. Report generation is live in dev (SP-706 DONE). M6 must verify production provider configuration, run a real paid-flow acceptance, reword-review READY/FAILED copy if needed, and re-check exact 390px visual parity. M6 must independently verify release configuration, exact 390px visual parity and a real paid flow. Release QA must also reword the Report page READY-state copy (it currently says the report is being prepared although generation is off — M5 re-review Low note).
-2. WAVE 8 (authorized): SP-801..804 DONE — next in sequence is SP-805 (paid-through access display copy, depends on SP-408 + SP-803), the last Wave 8 task; Wave 9 (Analytics and operations) afterwards when separately authorized. M6 release QA should also decide on full Figma parity for the Settings page chrome (see docs/handoffs/SP-803.md §9).
+2. WAVE 8 (authorized): SP-801..805 DONE — Wave 8 complete (Drawer / Settings / account integration). Wave 9 (Analytics and operations) and any further waves require separate authorization. M6 production readiness remains the next milestone: release QA should also decide on full Figma parity for the Settings page chrome (see docs/handoffs/SP-803.md §9).
 3. Preserve M4's signed-only storage rule for deployment; M6 must recheck the production bucket and affected consumers. Follow later tasks only when separately authorized.
 ```
