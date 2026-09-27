@@ -1,11 +1,11 @@
 /**
- * Drawer navigation model (DEV-SPEC §2; SP-801).
+ * Drawer navigation model (DEV-SPEC §2, §10; SP-801, SP-802).
  *
- * The Soulmate Sketch entry is the primary product entry added by SP-801.
- * Its destination is injected by the caller: SP-802 replaces the default with
- * a server-authoritative, payment-status-aware resolution (PAY-AUTH-01, TIME-01).
+ * The Soulmate Sketch entry's destination is resolved from server-authoritative
+ * status (PAY-AUTH-01, TIME-01): never from a local membership flag alone.
  */
 import { SOULMATE_ROUTES, sanitizeInternalRoute } from "@/soulmate/domain";
+import type { ResultAggregateResponse } from "@/soulmate/api/result";
 
 export interface DrawerNavLink {
   label: string;
@@ -42,4 +42,43 @@ export function buildDrawerNavLinks(
     },
     { label: "Setting", href: SOULMATE_ROUTES.SETTINGS, testId: "drawer-link-setting" },
   ];
+}
+
+/**
+ * SP-802 routing: map the server-derived §10.3 combined sketch status to the
+ * Soulmate Sketch destination.
+ *
+ * - LOCKED (or unknown/not-yet-loaded) -> /soulmate/result: the paying user's
+ *   home base, where the countdown and report state live.
+ * - Any unlocked combined state (READY / GENERATING / COMPLETED / FAILED) ->
+ *   /soulmate/sketch: the sketch page natively renders the ready / loading /
+ *   completed / failed states per §10.3 and SP-607, and satisfies the §3 guard
+ *   (first payment confirmed + 12h unlocked) in all of them.
+ */
+export function resolveSketchDestinationFromStatus(
+  sketchStatus: string | null | undefined
+): string {
+  if (sketchStatus === "LOCKED" || sketchStatus == null) {
+    return SOULMATE_ROUTES.RESULT;
+  }
+  return SOULMATE_ROUTES.SKETCH;
+}
+
+/**
+ * SP-802 acceptance: the destination comes from server-authoritative status,
+ * not a local membership flag. `aggregate` is the SP-503 result payload;
+ * `errorStatus` is the HTTP status of its failure.
+ *
+ * - 403 (anonymous / IDOR / no confirmed first payment per PAY-AUTH-01) and
+ *   any other fetch failure -> routing row 1: /soulmate (safe default).
+ * - 200 payload -> resolved from the combined sketch status above.
+ */
+export function resolveDrawerSketchDestination(
+  aggregate: ResultAggregateResponse | null,
+  errorStatus: number | null
+): string {
+  if (errorStatus !== null || aggregate === null) {
+    return DEFAULT_SKETCH_DESTINATION;
+  }
+  return resolveSketchDestinationFromStatus(aggregate.sketch?.status);
 }

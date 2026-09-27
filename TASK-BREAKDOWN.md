@@ -1195,7 +1195,7 @@ Adds `Soulmate Sketch` entry without duplicating global navigation infrastructur
 
 **Priority:** P1  
 **Depends:** SP-503, SP-801  
-**Status:** TODO
+**Status:** DONE (docs/handoffs/SP-802.md)  
 **Context refs:** DEV-SPEC §3, §10 | Decisions: PAY-AUTH-01, TIME-01 | Dependency handoffs: SP-503, SP-801
 
 

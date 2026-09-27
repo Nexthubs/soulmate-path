@@ -1,14 +1,15 @@
 /**
- * SP-801: Drawer Soulmate entry (DEV-SPEC §2–3; Figma 102:14; Decision: DOMAIN-01).
+ * SP-801 + SP-802: Drawer Soulmate entry and status-aware destination
+ * (DEV-SPEC §2–3, §10; Figma 102:14; Decisions: DOMAIN-01, PAY-AUTH-01, TIME-01).
  *
  * Acceptance criteria under test:
  * - a global AccountDrawer exists as the single navigation infrastructure
  *   (provider-mounted; pages never re-implement it);
- * - the drawer adds the `Soulmate Sketch` entry (first position) whose
- *   destination is injectable — SP-802 replaces the default with
- *   server-authoritative status resolution;
- * - Figma 102:14 utility links (Privacy Policy / Terms of use / Subscribe
- *   policy / Setting) are preserved with canonical route targets;
+ * - the drawer adds the `Soulmate Sketch` entry (first position);
+ * - SP-802: the entry destination derives from server-authoritative status —
+ *   no confirmed first payment (403) -> /soulmate; sketch LOCKED -> /result;
+ *   any unlocked combined state -> /sketch — never a local membership flag;
+ * - Figma 102:14 utility links are preserved with canonical route targets;
  * - the shared trigger is wired into the landing header.
  */
 
@@ -21,8 +22,11 @@ import {
   DrawerMenuButton,
   buildDrawerNavLinks,
   DEFAULT_SKETCH_DESTINATION,
+  resolveSketchDestinationFromStatus,
+  resolveDrawerSketchDestination,
 } from "../src/soulmate/components/drawer";
 import { SOULMATE_ROUTES } from "../src/soulmate/domain";
+import { ResultAggregateResponse } from "../src/soulmate/api/result";
 import { SoulmateLandingPage } from "../src/soulmate/components/landing/SoulmateLandingPage";
 
 vi.mock("next/navigation", () => ({
@@ -123,6 +127,77 @@ describe("SP-801: AccountDrawer (Figma 102:14 parity)", () => {
   it("does not invent a balance card (Figma 102:43 is empty in the design source)", () => {
     const html = renderToStaticMarkup(<AccountDrawer open onClose={() => {}} />);
     expect(html.toLowerCase()).not.toContain("balance");
+  });
+});
+
+describe("SP-802: status-aware drawer destination (server-authoritative)", () => {
+  const aggregateWith = (
+    sketchStatus: ResultAggregateResponse["sketch"]["status"]
+  ): ResultAggregateResponse => ({
+    server_time: "2026-09-27T12:00:00Z",
+    subscription: {
+      provider: "paypal",
+      provider_status: "ACTIVE",
+      first_payment_at: "2026-09-26T12:00:00Z",
+      next_billing_at: "2026-10-26T12:00:00Z",
+    },
+    sketch: {
+      unlock_at: "2026-09-27T00:00:00Z",
+      availability: sketchStatus === "LOCKED" ? "LOCKED" : "UNLOCKED",
+      generation: "NOT_STARTED",
+      status: sketchStatus,
+    },
+    report: {
+      unlock_at: "2026-09-27T12:00:00Z",
+      availability: "LOCKED",
+      generation: "NOT_STARTED",
+      status: "LOCKED",
+    },
+  });
+
+  it("maps the §10.3 combined sketch status per the SP-802 routing table", () => {
+    // paid, sketch locked -> /soulmate/result
+    expect(resolveSketchDestinationFromStatus("LOCKED")).toBe(SOULMATE_ROUTES.RESULT);
+    // unlocked/generating (READY, GENERATING, FAILED) and completed -> /soulmate/sketch
+    expect(resolveSketchDestinationFromStatus("READY")).toBe(SOULMATE_ROUTES.SKETCH);
+    expect(resolveSketchDestinationFromStatus("GENERATING")).toBe(SOULMATE_ROUTES.SKETCH);
+    expect(resolveSketchDestinationFromStatus("COMPLETED")).toBe(SOULMATE_ROUTES.SKETCH);
+    expect(resolveSketchDestinationFromStatus("FAILED")).toBe(SOULMATE_ROUTES.SKETCH);
+    // unknown / not yet loaded stays conservative on the paying user's home base
+    expect(resolveSketchDestinationFromStatus(null)).toBe(SOULMATE_ROUTES.RESULT);
+    expect(resolveSketchDestinationFromStatus(undefined)).toBe(SOULMATE_ROUTES.RESULT);
+  });
+
+  it("resolves from the SP-503 aggregate payload when authorized (200)", () => {
+    expect(resolveDrawerSketchDestination(aggregateWith("LOCKED"), null)).toBe(
+      SOULMATE_ROUTES.RESULT
+    );
+    expect(resolveDrawerSketchDestination(aggregateWith("COMPLETED"), null)).toBe(
+      SOULMATE_ROUTES.SKETCH
+    );
+    expect(resolveDrawerSketchDestination(aggregateWith("GENERATING"), null)).toBe(
+      SOULMATE_ROUTES.SKETCH
+    );
+  });
+
+  it("falls back to /soulmate on 403 (no confirmed first payment, PAY-AUTH-01)", () => {
+    expect(resolveDrawerSketchDestination(null, 403)).toBe(SOULMATE_ROUTES.LANDING);
+    expect(resolveDrawerSketchDestination(null, 500)).toBe(SOULMATE_ROUTES.LANDING);
+    expect(resolveDrawerSketchDestination(null, null)).toBe(SOULMATE_ROUTES.LANDING);
+    expect(DEFAULT_SKETCH_DESTINATION).toBe(SOULMATE_ROUTES.LANDING);
+  });
+
+  it("keeps the entry inside the sanitized internal route space for every outcome", () => {
+    const outcomes = [
+      resolveDrawerSketchDestination(aggregateWith("LOCKED"), null),
+      resolveDrawerSketchDestination(aggregateWith("COMPLETED"), null),
+      resolveDrawerSketchDestination(null, 403),
+    ];
+    for (const destination of outcomes) {
+      expect(
+        buildDrawerNavLinks(destination).find((l) => l.testId === "drawer-link-sketch")?.href
+      ).toBe(destination);
+    }
   });
 });
 
