@@ -1545,7 +1545,7 @@ Review:
 ## RV-03 — Sketch generation correctness review
 
 **After:** SP-601..607  
-**Status:** TODO
+**Status:** DONE (2026-09-27 independent review; M4 BLOCKED, `docs/reviews/M4-SKETCH-REVIEW.md`)
 **Context refs:** DEV-SPEC §11–12, §14, §20, §23 | Decisions: PROMPT-01, ASSET-01, TIME-01 | Dependency handoffs: —
 
 

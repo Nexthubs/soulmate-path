@@ -294,56 +294,137 @@ async def test_fenced_finalize_discards_stale_worker_result(async_db):
 
 
 @pytest.mark.asyncio
-async def test_stale_claims_are_reclaimed_with_attempt_accounting(async_db):
+async def test_stale_claims_are_reclaimed_without_double_charging(async_db):
+    """M-01: reclaim does NOT charge the budget — a real claim -> reclaim ->
+    re-claim sequence consumes exactly one attempt per actual claim, and the
+    stale worker's fence token is invalidated by the next claim."""
+    from app.db.base import utc_now
+    from app.soulmate.services.sketch_generation_service import SketchGenerationService as Svc
+
     sess = await seed_generation_session(async_db)
     outcome = await SketchGenerationService.enqueue_sketch_generation(async_db, sess)
 
-    stale = datetime.now(timezone.utc) - timedelta(seconds=settings.job_claim_stale_seconds + 60)
+    # Worker A claims (consumes attempt 1 = its fence token).
+    work = await Svc._claim_and_prepare(
+        db_session_factory=AsyncSessionLocal, now=utc_now(), job_id=outcome.job.id
+    )
+    assert not isinstance(work, str) and work is not None
+    assert work.claim_attempt == 1
 
-    # Simulate a worker that died mid-call (claim committed, process never finished).
+    # A's claim goes stale (worker death) and is reclaimed: no additional charge.
     job = await async_db.get(AIGenerationJob, outcome.job.id)
-    job.status = JOB_PROCESSING
-    job.locked_at = stale
-    artifact = await load_sketch_artifact(async_db, sess.id)
-    artifact.generation_status = "PROCESSING"
+    job.locked_at = datetime.now(timezone.utc) - timedelta(seconds=settings.job_claim_stale_seconds + 60)
     await async_db.commit()
-
-    reclaimed = await SketchGenerationService.reclaim_stale_processing_jobs()
-    assert reclaimed == 1
+    assert await SketchGenerationService.reclaim_stale_processing_jobs() == 1
     await async_db.refresh(job)
     assert job.status == JOB_QUEUED
-    assert job.attempt == 1
+    assert job.attempt == 1  # unchanged by reclaim (charged once, at claim)
     assert job.run_after is not None
-    assert job.error_json["error_code"] == "CLAIM_STALE"
+    history = job.error_json["attempts"]
+    assert history[-1]["event"] == "reclaimed"
 
-    # Fresh claims must not run before run_after (backoff honored; explicit clock).
-    assert await SketchGenerationService.process_next_queued_job(
-        provider=FakeProvider(), sink=RecordingSink(), job_id=outcome.job.id, now=job.run_after - timedelta(seconds=1)
-    ) is None
+    # A's zombie result arriving after the reclaim is discarded at the fence.
+    uploaded: list = []
+
+    class TracingSink:
+        async def persist(self, *, artifact_id, result: SketchGenerationResult):
+            uploaded.append(artifact_id)
+            return f"soulmate/sketches/{artifact_id}/original.webp"
+
+    zombie = SketchGenerationResult(
+        provider="openai",
+        model="gpt-image-2",
+        image_bytes=b"zombie-bytes",
+        image_format="webp",
+        size="1024x1536",
+        quality="medium",
+        provider_request_id="req_zombie",
+        duration_ms=10,
+    )
+    status = await Svc._finalize_success(
+        job_id=outcome.job.id,
+        artifact_id=outcome.artifact.id,
+        claim_attempt=work.claim_attempt,
+        rendered=work.rendered,
+        result=zombie,
+        sink=TracingSink(),
+    )
+    assert status == JOB_QUEUED  # discarded (status no longer PROCESSING)
+    assert uploaded == []
+
+    # Worker B re-claims: consumes attempt 2 and completes with its own metadata.
+    from test_object_storage import ValidWebpProvider
+
+    status_b = await SketchGenerationService.process_next_queued_job(
+        provider=ValidWebpProvider(), sink=TracingSink(), job_id=outcome.job.id,
+        now=job.run_after + timedelta(seconds=1),
+    )
+    assert status_b == JOB_COMPLETED
+    assert len(uploaded) == 1
+
+    async with AsyncSessionLocal() as verify_db:
+        artifact = await verify_db.get(SoulmateArtifact, outcome.artifact.id)
+        job_after = await verify_db.get(AIGenerationJob, outcome.job.id)
+    assert artifact.generation_status == "COMPLETED"
+    assert artifact.provider_request_id == "req_sp605_live"  # B's metadata
+    assert job_after.attempt == 2  # exactly two charges for two claims
+    events = [e["event"] for e in job_after.error_json["attempts"]]
+    assert events == ["claimed", "reclaimed", "fence_discarded", "claimed", "completed"]
 
 
 @pytest.mark.asyncio
-async def test_stale_reclaim_budget_exhaustion_terminates(async_db):
+async def test_crash_loop_budget_enforced_at_claim_time(async_db):
+    """M-01: a crash loop (claim -> die -> reclaim, repeatedly) is bounded by the
+    number of REAL claims; the terminal step happens at claim time without
+    another provider opportunity."""
+    from app.db.base import utc_now
+    from app.soulmate.services.sketch_generation_service import SketchGenerationService as Svc
+
     sess = await seed_generation_session(async_db)
     outcome = await SketchGenerationService.enqueue_sketch_generation(async_db, sess)
-    stale = datetime.now(timezone.utc) - timedelta(seconds=settings.job_claim_stale_seconds + 60)
+    max_attempts = settings.job_retry_max_attempts
 
+    stale_at = datetime.now(timezone.utc) - timedelta(seconds=settings.job_claim_stale_seconds + 60)
     job = await async_db.get(AIGenerationJob, outcome.job.id)
-    artifact = await load_sketch_artifact(async_db, sess.id)
-    for attempt in range(settings.job_retry_max_attempts):
-        job.status = JOB_PROCESSING
-        job.locked_at = stale
-        await async_db.commit()
+    # N crash cycles: claim (charged), then die, then reclaim (not charged).
+    # The stale-set runs in a FRESH session each cycle — the async_db identity
+    # map (expire_on_commit=False) would otherwise skip the UPDATE when the
+    # loaded locked_at value already equals the value being assigned.
+    for _ in range(max_attempts):
+        work = await Svc._claim_and_prepare(
+            db_session_factory=AsyncSessionLocal, now=utc_now(), job_id=outcome.job.id
+        )
+        assert not isinstance(work, str) and work is not None
+        async with AsyncSessionLocal() as stale_db:
+            stale_job = await stale_db.get(AIGenerationJob, outcome.job.id)
+            stale_job.locked_at = stale_at
+            await stale_db.commit()
         await async_db.refresh(job)
-        await SketchGenerationService.reclaim_stale_processing_jobs()
-        await async_db.refresh(job)
+        assert await SketchGenerationService.reclaim_stale_processing_jobs() == 1
 
-    assert job.status == JOB_FAILED_RETRYABLE
-    assert job.attempt == settings.job_retry_max_attempts
-    await async_db.refresh(artifact)
+    await async_db.refresh(job)
+    assert job.status == JOB_QUEUED
+    assert job.attempt == max_attempts  # charged exactly once per claim
+
+    # The next claim terminates the crash loop without a provider call.
+    provider = FakeProvider()
+    status = await SketchGenerationService.process_next_queued_job(
+        provider=provider, sink=RecordingSink(), job_id=outcome.job.id,
+        now=job.run_after + timedelta(seconds=1),
+    )
+    assert status == JOB_FAILED_RETRYABLE
+    assert provider.calls == 0  # no provider opportunity granted
+
+    async with AsyncSessionLocal() as verify_db:
+        artifact = await verify_db.get(SoulmateArtifact, outcome.artifact.id)
+        job_after = await verify_db.get(AIGenerationJob, outcome.job.id)
     assert artifact.generation_status == "FAILED"
-    assert artifact.last_error_code == "CLAIM_STALE"
-    assert artifact.attempt_count == settings.job_retry_max_attempts
+    assert artifact.last_error_code == "ATTEMPT_BUDGET_EXHAUSTED"
+    assert job_after.status == JOB_FAILED_RETRYABLE
+    assert job_after.error_json["attempts"][-1]["event"] == "budget_exhausted"
+    # charges == claims == max_attempts (no reclaim double-charge anywhere)
+    claimed_events = [e for e in job_after.error_json["attempts"] if e["event"] == "claimed"]
+    assert len(claimed_events) == max_attempts
 
 
 # ---------------------------------------------------------------------------
@@ -543,3 +624,184 @@ async def test_upload_failure_inside_fence_is_bounded_retryable(async_db):
     assert artifact.last_error_code is None            # not terminal yet
     assert job.status == JOB_QUEUED
     assert job.error_json["error_code"] == "STORAGE_ERROR"
+
+
+# ---------------------------------------------------------------------------
+# RV-03 H-01: prompt/input materialization failures terminate permanently
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_missing_prompt_template_terminates_permanently(async_db, monkeypatch):
+    """A missing/invalid prompt template must produce FAILED_PERMANENT in phase A
+    (no provider call, no poison re-poll loop, stable attempt count)."""
+    from app.db.base import utc_now
+    from app.soulmate.services.sketch_generation_service import SketchGenerationService as Svc
+
+    monkeypatch.setattr(settings, "soulmate_sketch_prompt_version", "v999")
+    sess = await seed_generation_session(async_db)
+    outcome = await SketchGenerationService.enqueue_sketch_generation(async_db, sess)
+
+    provider = FakeProvider()
+    status = await SketchGenerationService.process_next_queued_job(
+        provider=provider, sink=RecordingSink(), job_id=outcome.job.id
+    )
+    assert status == JOB_FAILED_PERMANENT
+    assert provider.calls == 0  # §12: invalid template fails before provider invocation
+
+    async with AsyncSessionLocal() as verify_db:
+        artifact = await verify_db.get(SoulmateArtifact, outcome.artifact.id)
+        job = await verify_db.get(AIGenerationJob, outcome.job.id)
+    assert artifact.generation_status == "FAILED"
+    assert artifact.last_error_code == "PROMPT_TEMPLATE_INVALID"
+    assert job.status == JOB_FAILED_PERMANENT
+    assert job.attempt == 1  # charged once; terminal — no re-claim loop
+
+    # The terminal job is stable: further polls never re-claim or re-fail it.
+    assert await SketchGenerationService.process_next_queued_job(
+        provider=provider, sink=RecordingSink(), job_id=outcome.job.id
+    ) is None
+    await verify_db.refresh(job) if False else None
+
+
+@pytest.mark.asyncio
+async def test_unmapped_profile_option_terminates_permanently(async_db):
+    """A persisted profile holding an unmapped option code fails the input
+    mapping (§11.2/§12) permanently — never a rollback-requeue poison loop."""
+    from sqlalchemy import update as sa_update
+
+    from app.db.models.session import SoulmateProfile
+    from app.soulmate.services.sketch_generation_service import SketchGenerationService as Svc
+
+    sess = await seed_generation_session(async_db)
+    await async_db.execute(
+        sa_update(SoulmateProfile)
+        .where(SoulmateProfile.session_id == sess.id)
+        .values(preferred_partner_ethnicity="martian")
+    )
+    await async_db.commit()
+
+    outcome = await SketchGenerationService.enqueue_sketch_generation(async_db, sess)
+    provider = FakeProvider()
+    status = await SketchGenerationService.process_next_queued_job(
+        provider=provider, sink=RecordingSink(), job_id=outcome.job.id
+    )
+    assert status == JOB_FAILED_PERMANENT
+    assert provider.calls == 0
+
+    async with AsyncSessionLocal() as verify_db:
+        artifact = await verify_db.get(SoulmateArtifact, outcome.artifact.id)
+        job = await verify_db.get(AIGenerationJob, outcome.job.id)
+    assert artifact.last_error_code == "PROMPT_INPUT_INVALID"
+    assert job.status == JOB_FAILED_PERMANENT
+    assert job.attempt == 1
+
+
+@pytest.mark.asyncio
+async def test_corrupted_profile_row_terminates_permanently(async_db):
+    """A persisted profile that fails model validation (pydantic) is a terminal
+    input failure — the pydantic error class differs from
+    ProfileValidationError and must not escape phase A (H-01)."""
+    from sqlalchemy import update as sa_update
+
+    from app.db.models.session import SoulmateProfile
+    from app.soulmate.services.sketch_generation_service import SketchGenerationService as Svc
+
+    sess = await seed_generation_session(async_db)
+    await async_db.execute(
+        sa_update(SoulmateProfile)
+        .where(SoulmateProfile.session_id == sess.id)
+        .values(preferred_partner_gender="ambiguous")  # violates the Literal[...] field
+    )
+    await async_db.commit()
+
+    outcome = await SketchGenerationService.enqueue_sketch_generation(async_db, sess)
+    provider = FakeProvider()
+    status = await SketchGenerationService.process_next_queued_job(
+        provider=provider, sink=RecordingSink(), job_id=outcome.job.id
+    )
+    assert status == JOB_FAILED_PERMANENT
+    assert provider.calls == 0
+
+    async with AsyncSessionLocal() as verify_db:
+        job = await verify_db.get(AIGenerationJob, outcome.job.id)
+    assert job.status == JOB_FAILED_PERMANENT
+    assert job.error_json["error_code"] == "PROFILE_INVALID"
+
+
+# ---------------------------------------------------------------------------
+# RV-03 M-02: append-only per-attempt provider-call history
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_attempt_history_records_every_provider_call(async_db, monkeypatch):
+    """Every provider call (success or failure) leaves a durable, per-attempt
+    entry with its own provider_request_id on the job — spend is reconstructible
+    from the job row alone (M-02, §11.3/§19)."""
+    from app.db.base import utc_now
+    from app.soulmate.services.sketch_generation_service import SketchGenerationService as Svc
+
+    monkeypatch.setattr(settings, "job_retry_base_backoff_seconds", 0.0)
+    sess = await seed_generation_session(async_db)
+    outcome = await SketchGenerationService.enqueue_sketch_generation(async_db, sess)
+
+    class FlakyThenSuccessProvider(FakeProvider):
+        def __init__(self):
+            super().__init__()
+            self.ids = iter([f"req_call_{i}" for i in range(1, 10)])
+
+        async def generate_image(self, prompt: str) -> SketchGenerationResult:
+            self.calls += 1
+            if self.calls <= 2:
+                raise SketchProviderError(
+                    f"transient failure #{self.calls}",
+                    retryable=True,
+                    provider_code="500",
+                    provider_request_id=next(self.ids),
+                )
+            return SketchGenerationResult(
+                provider="openai",
+                model="gpt-image-2",
+                image_bytes=b"ok-bytes",
+                image_format="webp",
+                size="1024x1536",
+                quality="medium",
+                provider_request_id=next(self.ids),
+                duration_ms=10,
+            )
+
+    provider = FlakyThenSuccessProvider()
+    from test_object_storage import ValidWebpProvider  # noqa: F401 (sink-validated payload below)
+
+    class ValidResultSink(RecordingSink):
+        async def persist(self, *, artifact_id, result: SketchGenerationResult):
+            from app.soulmate.services.object_storage_sink import sketch_storage_key
+
+            return sketch_storage_key(artifact_id, "webp")
+
+    job_id = outcome.job.id
+    # Attempt 1: provider raises a payload the sink rejects? No — provider error path.
+    status1 = await SketchGenerationService.process_next_queued_job(
+        provider=provider, sink=ValidResultSink(), job_id=job_id,
+    )
+    assert status1 == JOB_QUEUED
+    status2 = await SketchGenerationService.process_next_queued_job(
+        provider=provider, sink=ValidResultSink(), job_id=job_id,
+    )
+    assert status2 == JOB_QUEUED
+    status3 = await SketchGenerationService.process_next_queued_job(
+        provider=provider, sink=ValidResultSink(), job_id=job_id,
+    )
+    assert status3 == JOB_COMPLETED
+
+    async with AsyncSessionLocal() as verify_db:
+        job = await verify_db.get(AIGenerationJob, outcome.job.id)
+        artifact = await verify_db.get(SoulmateArtifact, outcome.artifact.id)
+
+    attempts = job.error_json["attempts"]
+    events = [(e["event"], e.get("provider_request_id")) for e in attempts]
+    assert [e for e, _ in events] == ["claimed", "failed", "claimed", "failed", "claimed", "completed"]
+    req_ids = [rid for _, rid in events if rid]
+    assert len(set(req_ids)) == 3  # every call's distinct request id retained
+    assert artifact.provider_request_id == req_ids[-1]  # winning id matches the artifact

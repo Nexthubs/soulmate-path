@@ -55,12 +55,13 @@ import hashlib
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Optional, Protocol, Union, runtime_checkable
+from typing import Any, Dict, Optional, Protocol, Union, runtime_checkable
 from uuid import UUID
 
 from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import ValidationError as PydanticValidationError
 
 from app.core.config import settings
 from app.core.errors import (
@@ -76,7 +77,12 @@ from app.db.session import AsyncSessionLocal
 from app.soulmate.domain.artifact_status import normalize_generation
 from app.soulmate.domain.profile import ProfileValidationError, SoulmateProfileV1
 from app.soulmate.domain.sketch_models import SketchGenerationResult, SketchProviderError
-from app.soulmate.domain.sketch_prompt import RenderedSketchPrompt, build_rendered_sketch_prompt
+from app.soulmate.domain.sketch_prompt import (
+    RenderedSketchPrompt,
+    SketchPromptInputError,
+    SketchPromptTemplateError,
+    build_rendered_sketch_prompt,
+)
 from app.soulmate.services.object_storage_sink import (
     SketchStorageError,
     SketchStorageUnavailableError,
@@ -98,6 +104,11 @@ JOB_FAILED_PERMANENT = "FAILED_PERMANENT"
 RECLAIM_ERROR_CODE = "CLAIM_STALE"
 INTERNAL_ERROR_CODE = "INTERNAL_ERROR"
 STORAGE_NOT_CONFIGURED_CODE = "STORAGE_NOT_CONFIGURED"
+BUDGET_EXHAUSTED_CODE = "ATTEMPT_BUDGET_EXHAUSTED"
+
+# Append-only per-attempt history cap (M-02): every provider call / reclaim /
+# fence discard / retry gets one durable entry on the job.
+MAX_ATTEMPT_HISTORY = 20
 
 
 def sketch_idempotency_key(email_normalized: str, artifact_version: str) -> str:
@@ -118,6 +129,21 @@ def hard_attempt_cap() -> int:
     job can no longer be requeued by user action (§10.3 bounded retry policy).
     """
     return 2 * max(1, settings.job_retry_max_attempts)
+
+
+def _record_job_event(job: AIGenerationJob, entry: Dict[str, Any]) -> None:
+    """
+    Appends one entry to the job's append-only attempt history (M-02, §11.3/§19):
+    every provider call outcome, reclaim, fence discard, and retry is durably
+    recorded with its attempt number and provider request id, so provider spend
+    can be reconstructed from the job row alone. Top-level error fields keep
+    their existing "latest outcome" semantics; `attempts` is the full timeline.
+    """
+    entry = {"at": utc_now().isoformat(), **entry}
+    existing = job.error_json if isinstance(job.error_json, dict) else {}
+    history = list(existing.get("attempts") or [])
+    history.append(entry)
+    job.error_json = {**existing, "attempts": history[-MAX_ATTEMPT_HISTORY:]}
 
 
 @runtime_checkable
@@ -269,6 +295,14 @@ class SketchGenerationService:
                     "user_retry": True,
                     "requeued_at": utc_now().isoformat(),
                 }
+                _record_job_event(
+                    existing_job,
+                    {
+                        "event": "user_retry",
+                        "attempt": existing_job.attempt or 0,
+                        "message": "Explicit user retry requeued the terminal FAILED_RETRYABLE job in place.",
+                    },
+                )
                 artifact.generation_status = "QUEUED"
                 await db.commit()
                 await db.refresh(artifact)
@@ -416,9 +450,25 @@ class SketchGenerationService:
         """
         async with db_session_factory() as db:
             try:
-                job = await cls._claim_next_queued(db, now, job_id)
+                job, budget_exhausted = await cls._claim_next_queued(db, now, job_id)
                 if job is None:
                     return None
+                if budget_exhausted:
+                    # Crash-loop terminal (M-01): the budget was consumed by real
+                    # claims; terminate without another provider opportunity.
+                    artifact = await cls._lock_artifact(db, job.artifact_id)
+                    if artifact is not None:
+                        artifact.generation_status = "FAILED"
+                        artifact.last_error_code = BUDGET_EXHAUSTED_CODE
+                        artifact.last_error_message = (
+                            "Generation attempt budget exhausted after repeated worker loss."
+                        )
+                    await db.commit()
+                    logger.warning(
+                        "Sketch job %s terminated %s at claim time (crash-loop budget exhausted)",
+                        job.id, JOB_FAILED_RETRYABLE,
+                    )
+                    return JOB_FAILED_RETRYABLE
                 claim_attempt = job.attempt or 0
 
                 artifact = await cls._lock_artifact(db, job.artifact_id)
@@ -436,7 +486,14 @@ class SketchGenerationService:
                 if normalize_generation(artifact.generation_status).value == "COMPLETED":
                     job.status = JOB_COMPLETED
                     job.locked_at = None
-                    job.error_json = {"message": "Artifact already completed; provider call skipped."}
+                    _record_job_event(
+                        job,
+                        {
+                            "event": "completed",
+                            "attempt": job.attempt or 0,
+                            "message": "Artifact already completed; provider call skipped.",
+                        },
+                    )
                     await db.commit()
                     logger.info(
                         "Sketch job %s short-circuited: artifact %s already completed",
@@ -450,12 +507,20 @@ class SketchGenerationService:
                 if artifact.generation_started_at is None:
                     artifact.generation_started_at = started_at
 
+                # The DB read stays outside the classification boundary: a
+                # transient database error must keep its rollback-and-retry
+                # semantics. Everything from profile materialization to the
+                # rendered prompt is deterministic, in-process work (H-01): any
+                # failure there is an invalid-input/template failure (§11.6,
+                # §12) and MUST terminate the job permanently instead of
+                # rolling the claim back into a poison-poll loop.
+                profile_row = (
+                    await db.execute(
+                        select(SoulmateProfile).where(SoulmateProfile.session_id == artifact.session_id)
+                    )
+                ).scalar_one_or_none()
+
                 try:
-                    profile_row = (
-                        await db.execute(
-                            select(SoulmateProfile).where(SoulmateProfile.session_id == artifact.session_id)
-                        )
-                    ).scalar_one_or_none()
                     if profile_row is None:
                         raise ProfileValidationError(
                             "Normalized profile is missing for the sketch session; "
@@ -464,13 +529,46 @@ class SketchGenerationService:
                     profile = SoulmateProfileV1.model_validate(profile_row)
                     rendered = build_rendered_sketch_prompt(profile)
                 except ProfileValidationError as exc:
-                    # Invalid/missing generation inputs never resolve by retrying (§11.6).
                     return await cls._fail_job(
                         db, job, artifact,
                         retryable=False,
                         message=exc.message,
                         error_code=exc.error_code.value,
                         details=exc.details,
+                    )
+                except SketchPromptTemplateError as exc:
+                    return await cls._fail_job(
+                        db, job, artifact,
+                        retryable=False,
+                        message=exc.message,
+                        error_code="PROMPT_TEMPLATE_INVALID",
+                        details=getattr(exc, "details", {}) or None,
+                    )
+                except SketchPromptInputError as exc:
+                    return await cls._fail_job(
+                        db, job, artifact,
+                        retryable=False,
+                        message=exc.message,
+                        error_code="PROMPT_INPUT_INVALID",
+                        details=getattr(exc, "details", {}) or None,
+                    )
+                except PydanticValidationError as exc:
+                    return await cls._fail_job(
+                        db, job, artifact,
+                        retryable=False,
+                        message=f"Persisted profile failed validation: {str(exc)[:300]}",
+                        error_code="PROFILE_INVALID",
+                    )
+                except Exception as exc:
+                    # Deterministic non-I/O failure while materializing the
+                    # prompt (e.g. an unmapped encoding edge) — treated as an
+                    # invalid-input terminal state per §11.6, never a
+                    # rollback-requeue loop.
+                    return await cls._fail_job(
+                        db, job, artifact,
+                        retryable=False,
+                        message=f"Prompt materialization failed: {type(exc).__name__}: {str(exc)[:200]}",
+                        error_code="PROMPT_BUILD_FAILED",
                     )
 
                 await db.commit()
@@ -516,6 +614,16 @@ class SketchGenerationService:
                         "Sketch job %s fence mismatch (status=%s attempt=%s claim=%s); "
                         "discarding provider result",
                         job_id, job.status, job.attempt, claim_attempt,
+                    )
+                    _record_job_event(
+                        job,
+                        {
+                            "event": "fence_discarded",
+                            "attempt": claim_attempt,
+                            "provider_request_id": result.provider_request_id,
+                            "job_status": job.status,
+                            "message": "Stale worker result discarded at the fence; no state or storage write.",
+                        },
                     )
                     return job.status
 
@@ -572,7 +680,19 @@ class SketchGenerationService:
 
                 job.status = JOB_COMPLETED
                 job.locked_at = None
-                job.error_json = None
+                # M-02: keep the append-only attempt history on success — the
+                # artifact carries the WINNING request id, the job history carries
+                # every earlier (failed/discarded/reclaimed) call's id too.
+                _record_job_event(
+                    job,
+                    {
+                        "event": "completed",
+                        "attempt": claim_attempt,
+                        "provider_request_id": result.provider_request_id,
+                        "model": result.model,
+                        "storage_key": storage_key,
+                    },
+                )
 
             logger.info(
                 "Sketch generation completed for artifact %s (job %s, model=%s, request_id=%s, key=%s)",
@@ -614,6 +734,17 @@ class SketchGenerationService:
                         "failure result discarded",
                         job_id, job.status, job.attempt, claim_attempt,
                     )
+                    _record_job_event(
+                        job,
+                        {
+                            "event": "fence_discarded",
+                            "attempt": claim_attempt,
+                            "error_code": error_code,
+                            "provider_request_id": provider_request_id,
+                            "job_status": job.status,
+                            "message": "Stale worker failure report discarded at the fence.",
+                        },
+                    )
                     return job.status
 
                 return await cls._write_failure_locked(
@@ -646,9 +777,13 @@ class SketchGenerationService:
         Failure decision written inside the caller's already-locked transaction:
         bounded requeue with exponential backoff while the attempt budget lasts,
         terminal (FAILED_RETRYABLE / FAILED_PERMANENT) once exhausted. The caller's
-        `db.begin()` commits.
+        `db.begin()` commits. The outcome (including its provider request id) is
+        appended to the job's attempt history (M-02).
         """
         job.locked_at = None
+        # Carry the existing attempt history forward before overwriting the
+        # top-level "latest outcome" fields (the claim event lives here too).
+        prior_attempts = list((job.error_json or {}).get("attempts") or []) if isinstance(job.error_json, dict) else []
         job.error_json = {
             "message": message,
             "error_code": error_code,
@@ -656,8 +791,23 @@ class SketchGenerationService:
             "provider_code": provider_code,
             "provider_request_id": provider_request_id,
             "attempt": claim_attempt,
+            "attempts": prior_attempts,
             **({"details": details} if details else {}),
         }
+        # Append AFTER the top-level "latest outcome" fields are set, so the
+        # helper preserves them and grows the attempts timeline (M-02).
+        _record_job_event(
+            job,
+            {
+                "event": "failed",
+                "attempt": claim_attempt,
+                "error_code": error_code,
+                "retryable": retryable,
+                "provider_code": provider_code,
+                "provider_request_id": provider_request_id,
+                "message": message[:300],
+            },
+        )
 
         max_attempts = max(1, settings.job_retry_max_attempts)
         if retryable and claim_attempt < max_attempts:
@@ -691,9 +841,15 @@ class SketchGenerationService:
     async def reclaim_stale_processing_jobs(cls, now: Optional[datetime] = None) -> int:
         """
         Requeue PROCESSING jobs whose claim outlived the staleness threshold
-        (worker death mid-call). Attempts are consumed the same way as ordinary
-        failures so crash loops respect the §11.6 budget, and the fence token
-        change guarantees any late worker from the stale claim is discarded.
+        (worker death mid-call).
+
+        M-01: reclamation does NOT charge the attempt budget — the stale claim
+        was already charged when it was claimed, and charging again at reclaim
+        made one crashed logical attempt consume two budget slots. The budget is
+        instead enforced at claim time (see `_claim_next_queued`), so a crash
+        loop is bounded by the number of actual claims. The fence token stays
+        intact: the next claim bumps `attempt`, discarding any late worker from
+        the stale claim.
         """
         effective_now = now or utc_now()
         stale_before = effective_now - timedelta(seconds=settings.job_claim_stale_seconds)
@@ -712,37 +868,25 @@ class SketchGenerationService:
                 )
                 jobs = (await db.execute(stmt)).scalars().all()
                 for job in jobs:
-                    attempt = (job.attempt or 0) + 1
-                    job.attempt = attempt
+                    attempt = job.attempt or 0
                     job.locked_at = None
-                    max_attempts = max(1, settings.job_retry_max_attempts)
-                    artifact = await cls._lock_artifact(db, job.artifact_id)
-                    if attempt >= max_attempts:
-                        job.status = JOB_FAILED_RETRYABLE
-                        job.error_json = {
-                            "message": "Claim went stale and the retry budget is exhausted.",
-                            "error_code": RECLAIM_ERROR_CODE,
-                            "retryable": False,
+                    job.status = JOB_QUEUED
+                    job.run_after = effective_now + timedelta(seconds=retry_backoff_seconds(max(1, attempt)))
+                    _record_job_event(
+                        job,
+                        {
+                            "event": "reclaimed",
                             "attempt": attempt,
-                        }
-                        if artifact is not None:
-                            artifact.attempt_count = (artifact.attempt_count or 0) + 1
-                            artifact.generation_status = "FAILED"
-                            artifact.last_error_code = RECLAIM_ERROR_CODE
-                            artifact.last_error_message = "Generation claim expired after repeated worker loss."
-                    else:
-                        job.status = JOB_QUEUED
-                        job.run_after = effective_now + timedelta(seconds=retry_backoff_seconds(attempt))
-                        job.error_json = {
-                            "message": "Claim went stale (worker loss mid-generation); requeued.",
                             "error_code": RECLAIM_ERROR_CODE,
                             "retryable": True,
-                            "attempt": attempt,
-                        }
-                        if artifact is not None:
-                            artifact.attempt_count = (artifact.attempt_count or 0) + 1
+                            "message": "Claim went stale (worker loss mid-generation); requeued without charging.",
+                        },
+                    )
                     reclaimed += 1
-                    logger.warning("Reclaimed stale sketch job %s (attempt %s)", job.id, attempt)
+                    logger.warning(
+                        "Reclaimed stale sketch job %s (attempt %s unchanged; budget enforced at claim)",
+                        job.id, attempt,
+                    )
         return reclaimed
 
     # ------------------------------------------------------------------
@@ -755,7 +899,18 @@ class SketchGenerationService:
         db: AsyncSession,
         now: datetime,
         job_id: Optional[UUID] = None,
-    ) -> Optional[AIGenerationJob]:
+    ) -> "tuple[Optional[AIGenerationJob], bool]":
+        """
+        Claims one QUEUED job under row lock.
+
+        Returns `(job, budget_exhausted)`. `budget_exhausted=True` means the job
+        was terminated inside this transaction instead of being claimed: every
+        budget slot had been consumed by REAL claims and the job only returned
+        to QUEUED via stale reclamation (a crash loop) — M-01. The check looks
+        at the last history event so a deliberate user retry (which may push the
+        attempt count past the automatic budget, up to the hard cap) still
+        claims and gets its one provider opportunity.
+        """
         conditions = [
             AIGenerationJob.job_type == JOB_TYPE_SKETCH,
             AIGenerationJob.status == JOB_QUEUED,
@@ -775,14 +930,35 @@ class SketchGenerationService:
         )
         job = (await db.execute(stmt)).scalars().first()
         if job is None:
-            return None
+            return None, False
+
+        max_attempts = max(1, settings.job_retry_max_attempts)
+        history = (job.error_json or {}).get("attempts") or []
+        last_event = history[-1].get("event") if history else None
+        if (job.attempt or 0) >= max_attempts and last_event == "reclaimed":
+            job.status = JOB_FAILED_RETRYABLE
+            job.locked_at = None
+            _record_job_event(
+                job,
+                {
+                    "event": "budget_exhausted",
+                    "attempt": job.attempt or 0,
+                    "error_code": BUDGET_EXHAUSTED_CODE,
+                    "retryable": False,
+                    "message": "Retry budget consumed by prior claims (crash loop); terminated at claim time.",
+                },
+            )
+            await db.flush()
+            return job, True
+
         # Consuming the attempt at claim time doubles as the phase-C fence token:
         # any reclaim or later claim changes it, invalidating stale workers.
         job.attempt = (job.attempt or 0) + 1
         job.status = JOB_PROCESSING
         job.locked_at = utc_now()
+        _record_job_event(job, {"event": "claimed", "attempt": job.attempt or 0})
         await db.flush()
-        return job
+        return job, False
 
     @classmethod
     async def _lock_job(cls, db: AsyncSession, job_id: UUID) -> Optional[AIGenerationJob]:
@@ -811,6 +987,7 @@ class SketchGenerationService:
         """Terminal failure inside the phase-A transaction (input/row problems)."""
         job.status = JOB_FAILED_RETRYABLE if retryable else JOB_FAILED_PERMANENT
         job.locked_at = None
+        prior_attempts = list((job.error_json or {}).get("attempts") or []) if isinstance(job.error_json, dict) else []
         job.error_json = {
             "message": message,
             "error_code": error_code,
@@ -818,8 +995,21 @@ class SketchGenerationService:
             "provider_code": provider_code,
             "provider_request_id": provider_request_id,
             "attempt": job.attempt or 0,
+            "attempts": prior_attempts,
             **({"details": details} if details else {}),
         }
+        _record_job_event(
+            job,
+            {
+                "event": "failed",
+                "attempt": job.attempt or 0,
+                "error_code": error_code,
+                "retryable": retryable,
+                "provider_code": provider_code,
+                "provider_request_id": provider_request_id,
+                "message": message[:300],
+            },
+        )
         if artifact is not None:
             artifact.attempt_count = (artifact.attempt_count or 0) + 1
             artifact.generation_status = "FAILED"

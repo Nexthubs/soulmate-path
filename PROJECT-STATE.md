@@ -6,8 +6,8 @@
 ## 1. Current milestone
 
 ```text
-Current milestone: M4 — Sketch Ready (Wave 6 implementation 100% complete; RV-03 independent review next)
-Status: READY_FOR_REVIEW (reviewer brief: docs/reviews/RV-03-REVIEWER-BRIEF.md, HEAD ed5371d)
+Current milestone: M4 — Sketch Ready (Wave 6 implementation complete; RV-03 review complete)
+Status: BLOCKED (docs/reviews/M4-SKETCH-REVIEW.md; prompt-failure path plus retry/audit findings)
 Latest accepted review: docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md (M3 CONDITIONAL_PASS; M2 PASS restored post-RV-remediation)
 ```
 
@@ -69,13 +69,13 @@ Live Sketch page states (`SP-607`) completed and evidenced in `docs/handoffs/SP-
 | M1 Quiz Funnel Ready | PASS | `docs/reviews/M1-QUIZ-FUNNEL-REVIEW.md` |
 | M2 Sandbox Revenue Ready | PASS (restored post-RV-remediation) | `docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md` §6 |
 | M3 Entitlement / Result Ready | CONDITIONAL_PASS | `docs/reviews/M3-ENTITLEMENT-RESULT-REVIEW.md` |
-| M4 Sketch Ready | READY_FOR_REVIEW (Wave 6 implementation 100% done, 2026-09-26) | `docs/reviews/M4-SKETCH-REVIEW.md` (pending) |
+| M4 Sketch Ready | BLOCKED (RV-03, 2026-09-27) | `docs/reviews/M4-SKETCH-REVIEW.md` |
 | M5 Report Scaffold Ready | NOT_STARTED | `docs/reviews/M5-REPORT-SCAFFOLD-REVIEW.md` |
 | M6 Production Ready | NOT_STARTED | `docs/reviews/M6-PRODUCTION-READINESS-REVIEW.md` |
 
 ## 3. Active / blocked work
 
-Active tasks: M4 review is next (Wave 6 SP-601..607 all DONE). One remaining live item for the M4 gate: a real paid-flow generation (PayPal sandbox → 12h → provider call via the configured OpenAI-compatible endpoint → R2 object → Sketch page). M2 restored to PASS and M3 CONDITIONAL_PASS on 2026-09-26 after RV-01/RV-02 remediation + live sandbox acceptance.
+Active tasks: RV-03 remediation is complete (`docs/handoffs/RV-03-REMEDIATION.md`: H-01 prompt-failure terminalization, M-01 reclaim no-charge + claim-time budget, M-02 append-only attempt history) — M4 remains BLOCKED pending the independent re-review of the affected paths. The prior implementer-run paid flow has independently verified persisted DB/API/R2 state; a fresh reviewer-run paid flow, live retry, and M4-subscription webhook replay (backend on 0.0.0.0:8000) remain NOT_RUN. M2 restored to PASS and M3 CONDITIONAL_PASS on 2026-09-26 after RV-01/RV-02 remediation + live sandbox acceptance.
 
 Blocking decision IDs:
 
@@ -115,6 +115,6 @@ Report production provider: disabled / decision pending
 ## 6. Next safe tasks
 
 ```text
-1. RV-03 independent review of Wave 6 (reviewer: Codex; brief: docs/reviews/RV-03-REVIEWER-BRIEF.md; output: docs/reviews/M4-SKETCH-REVIEW.md).
-2. During review: backend must listen on 0.0.0.0:8000 (WireGuard-reachable) for the PayPal webhook path; stop the backend before running pytest.
+1. Request the independent re-review of the RV-03 affected paths (`docs/handoffs/RV-03-REMEDIATION.md`; H-01/M-01/M-02 fixed, R-01 product ruling requested). Do not advance to Wave 7 as an M4 PASS until the reviewer re-rules.
+2. For any live PayPal webhook recheck, bind the backend on the WireGuard-reachable interface. Keep workers disabled or use the disposable PostgreSQL test runner for backend tests; never let a live worker drain shared test jobs.
 ```

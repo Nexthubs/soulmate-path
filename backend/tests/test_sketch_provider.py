@@ -148,7 +148,14 @@ async def test_request_uses_config_defaults_and_spec_target_model(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_happy_path_returns_bytes_and_tracing_metadata():
+async def test_happy_path_returns_bytes_and_tracing_metadata(monkeypatch):
+    # Hermetic: pin the §22 image settings (a real .env may configure a different
+    # format — e.g. png to match a compatible gateway that ignores output_format).
+    monkeypatch.setattr(settings, "soulmate_image_model", "gpt-image-2")
+    monkeypatch.setattr(settings, "soulmate_image_size", "1024x1536")
+    monkeypatch.setattr(settings, "soulmate_image_quality", "medium")
+    monkeypatch.setattr(settings, "soulmate_image_format", "webp")
+
     captured: dict = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
