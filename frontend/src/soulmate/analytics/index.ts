@@ -85,7 +85,7 @@ export interface SoulmateFunnelEventMap {
   soulmate_payment_failed: { reason_code: string };
   soulmate_result_view: { sketch_availability: string; report_availability: string };
   soulmate_sketch_unlocked: { session_id?: string | null; hours_since_payment?: number | null };
-  soulmate_sketch_viewed: { artifact_version?: string | null };
+  soulmate_sketch_viewed: { artifact_version: string };
   soulmate_sketch_generation_started: { model?: string | null; prompt_version?: string | null };
   soulmate_sketch_generation_completed: { latency_ms?: number | null; attempts?: number | null };
   soulmate_sketch_generation_failed: { error_code: string; attempts?: number | null };
@@ -132,14 +132,15 @@ function resolveSink(): SoulmateAnalyticsSink | null {
   return activeSink ?? defaultSink();
 }
 
-const EMAIL_LIKE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-/** Calendar-date-shaped strings (DOB values); broad on purpose. */
-const DATE_LIKE = /^\d{4}-\d{2}-\d{2}/;
+/** Match email-shaped substrings too, since attribution values are untrusted free text. */
+const EMAIL_LIKE = /[\p{L}\p{M}\p{N}.!#$%&'*+/=?^_`{|}~-]+@[\p{L}\p{M}\p{N}](?:[\p{L}\p{M}\p{N}-]{0,61}[\p{L}\p{M}\p{N}])?(?:\.[\p{L}\p{M}\p{N}](?:[\p{L}\p{M}\p{N}-]{0,61}[\p{L}\p{M}\p{N}])?)+/giu;
+/** Calendar-date-shaped strings (DOB values); broad on purpose and not start-anchored. */
+const DATE_LIKE = /\b\d{4}-\d{2}-\d{2}\b/g;
 
 /** §18.2 defense-in-depth: redact email/DOB-shaped string values. */
 function redactPIIValue(value: unknown): unknown {
-  if (typeof value === "string" && (EMAIL_LIKE.test(value) || DATE_LIKE.test(value))) {
-    return "[redacted]";
+  if (typeof value === "string") {
+    return value.replace(EMAIL_LIKE, "[redacted]").replace(DATE_LIKE, "[redacted]");
   }
   if (Array.isArray(value)) {
     return value.map((item) => redactPIIValue(item));
@@ -206,6 +207,25 @@ export function trackOnce(key: string, event: SoulmateFunnelEvent): boolean {
 }
 
 /**
+ * Track a Result/Sketch/Report view once per authorized session during the
+ * caller's component mount. The caller owns this Set in a useRef, so leaving
+ * and reopening the page starts a fresh view. Missing IDs suppress the event.
+ */
+export function trackSessionViewOnce<K extends SoulmateFunnelEventName>(
+  trackedViewKeys: Set<string>,
+  event: SoulmateFunnelEvent<K>,
+  sessionId?: string | null
+): boolean {
+  const stableSessionId = typeof sessionId === "string" ? sessionId.trim() : "";
+  if (!stableSessionId) return false;
+  const key = `${event.name}:${encodeURIComponent(stableSessionId)}`;
+  if (trackedViewKeys.has(key)) return false;
+  trackedViewKeys.add(key);
+  trackSoulmateEvent(event);
+  return true;
+}
+
+/**
  * First unlocked view of an artifact (§18.1 `soulmate_sketch_unlocked` /
  * `soulmate_report_unlocked`). Deduplicated per tab session across the Result
  * dashboard and the artifact pages, whichever renders the unlocked state first.
@@ -216,7 +236,43 @@ export function trackArtifactUnlocked(
 ): boolean {
   const name: SoulmateFunnelEventName =
     kind === "sketch" ? "soulmate_sketch_unlocked" : "soulmate_report_unlocked";
-  return trackOnce(`${kind}_unlocked`, { name, properties } as SoulmateFunnelEvent);
+  const event = { name, properties } as SoulmateFunnelEvent;
+  const sessionId = typeof properties.session_id === "string" ? properties.session_id.trim() : "";
+  if (!sessionId) {
+    // A stable session identity is required for safe deduplication. Authenticated
+    // status APIs return it even when the caller authenticated by cookie alone.
+    return false;
+  }
+  return trackOnce(
+    `${kind}_unlocked:${encodeURIComponent(sessionId)}`,
+    event
+  );
+}
+
+export interface ResultArtifactUnlockInput {
+  sessionId?: string;
+  sketchAvailability: string;
+  reportAvailability: string;
+  serverTime?: string | null;
+  firstPaymentAt?: string | null;
+}
+
+/**
+ * Track unlocks from every fresh server Result aggregate. Call this even when
+ * a previous aggregate was LOCKED: countdown expiry only refetches, and the
+ * server response is the authority that changes availability.
+ */
+export function trackResultArtifactUnlocks(input: ResultArtifactUnlockInput): void {
+  const properties = {
+    session_id: input.sessionId,
+    hours_since_payment: hoursSincePayment(input.serverTime, input.firstPaymentAt),
+  };
+  if (input.sketchAvailability === "UNLOCKED") {
+    trackArtifactUnlocked("sketch", properties);
+  }
+  if (input.reportAvailability === "UNLOCKED") {
+    trackArtifactUnlocked("report", properties);
+  }
 }
 
 /**

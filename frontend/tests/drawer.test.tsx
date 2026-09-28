@@ -134,6 +134,7 @@ describe("SP-802: status-aware drawer destination (server-authoritative)", () =>
   const aggregateWith = (
     sketchStatus: ResultAggregateResponse["sketch"]["status"]
   ): ResultAggregateResponse => ({
+    session_id: "session-test",
     server_time: "2026-09-27T12:00:00Z",
     subscription: {
       provider: "paypal",

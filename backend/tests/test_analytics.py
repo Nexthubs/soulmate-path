@@ -20,7 +20,7 @@ import pytest
 from sqlalchemy import delete, select
 
 from app.db.models.artifact import AIGenerationJob, SoulmateArtifact
-from app.db.models.billing import Subscription
+from app.db.models.billing import Subscription, SubscriptionPayment
 from app.db.models.session import SoulmateSession
 from app.db.session import AsyncSessionLocal
 from app.soulmate.analytics import (
@@ -200,6 +200,12 @@ async def purge_sp901_data():
             )
         )
         await db.execute(delete(SoulmateArtifact).where(SoulmateArtifact.session_id.in_(sess_ids)))
+        subscription_ids = select(Subscription.id).where(Subscription.session_id.in_(sess_ids))
+        await db.execute(
+            delete(SubscriptionPayment).where(
+                SubscriptionPayment.subscription_id.in_(subscription_ids)
+            )
+        )
         await db.execute(delete(Subscription).where(Subscription.session_id.in_(sess_ids)))
         await db.execute(delete(SoulmateSession).where(SoulmateSession.email.like("sp901_%")))
         await db.commit()
@@ -223,6 +229,12 @@ async def test_first_completed_payment_emits_confirmed_once(async_db, caplog):
             paid_at=datetime.now(timezone.utc) - timedelta(hours=1),
         ),
     )
+    # Payment confirmation follows the durable transaction, not the in-memory
+    # ledger insert: before the caller commits, no funnel event is observable.
+    confirmed = [e for e in funnel_records(caplog) if e[0] == "soulmate_payment_confirmed"]
+    assert confirmed == []
+
+    await async_db.commit()
     confirmed = [e for e in funnel_records(caplog) if e[0] == "soulmate_payment_confirmed"]
     assert len(confirmed) == 1
     _, session_id, extra = confirmed[0]
@@ -242,6 +254,7 @@ async def test_first_completed_payment_emits_confirmed_once(async_db, caplog):
             paid_at=datetime.now(timezone.utc),
         ),
     )
+    await async_db.commit()
     # Duplicate webhook replay of the first payment: idempotency keeps it at one.
     await PaymentLedgerService.record_payment(
         async_db,
@@ -255,6 +268,7 @@ async def test_first_completed_payment_emits_confirmed_once(async_db, caplog):
             paid_at=datetime.now(timezone.utc) - timedelta(hours=1),
         ),
     )
+    await async_db.commit()
     confirmed_after = [e for e in funnel_records(caplog) if e[0] == "soulmate_payment_confirmed"]
     assert len(confirmed_after) == 1
 

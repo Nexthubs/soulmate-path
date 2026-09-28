@@ -26,6 +26,7 @@ from app.db.session import AsyncSessionLocal
 from app.main import app
 from app.soulmate.domain.webhook_models import PayPalWebhookHeaders, PayPalWebhookRawRequest
 from app.soulmate.services.paypal_client import PayPalClient
+from app.soulmate.services.subscription_service import SubscriptionService
 from app.soulmate.services.webhook_service import PayPalWebhookService
 from app.soulmate.services.webhook_verifier import get_webhook_verifier
 
@@ -786,6 +787,80 @@ async def test_failed_webhook_dispatch_retried_on_redelivery(async_db_session: A
 
 
 @pytest.mark.asyncio
+async def test_payment_confirmed_analytics_waits_for_activation_retry(
+    async_db_session: AsyncSession, monkeypatch
+):
+    provider_sub_id = f"I-ANALYTICS-RETRY-{uuid.uuid4().hex[:8]}"
+    _, sub = await create_test_session_and_sub(
+        db=async_db_session,
+        provider_sub_id=provider_sub_id,
+        status="APPROVAL_PENDING",
+    )
+    event_id = f"WH-ANALYTICS-RETRY-{uuid.uuid4().hex[:8]}"
+    sale_id = f"SALE-ANALYTICS-RETRY-{uuid.uuid4().hex[:8]}"
+    event_data = {
+        "id": event_id,
+        "create_time": "2026-09-28T12:00:00Z",
+        "event_type": "PAYMENT.SALE.COMPLETED",
+        "resource": {
+            "id": sale_id,
+            "billing_agreement_id": provider_sub_id,
+            "create_time": "2026-09-28T12:00:00Z",
+            "amount": {"total": "19.00", "currency": "USD"},
+            "state": "completed",
+        },
+    }
+
+    emitted = []
+    monkeypatch.setattr(
+        "app.soulmate.services.ledger_service.track_funnel_event",
+        lambda event_name, **kwargs: emitted.append((event_name, kwargs)),
+    )
+    original_activate = SubscriptionService.activate_from_payment
+    activation_attempts = 0
+
+    async def fail_first_activation(*args, **kwargs):
+        nonlocal activation_attempts
+        activation_attempts += 1
+        if activation_attempts == 1:
+            raise RuntimeError("simulated activation failure after ledger insert")
+        return await original_activate(*args, **kwargs)
+
+    monkeypatch.setattr(SubscriptionService, "activate_from_payment", fail_first_activation)
+
+    with pytest.raises(RuntimeError, match="activation failure"):
+        await PayPalWebhookService.process_webhook(
+            raw_request=make_raw_request(event_data),
+            db=async_db_session,
+            verifier=MockSuccessVerifier(),
+        )
+    assert emitted == []
+    assert (await async_db_session.execute(
+        select(SubscriptionPayment.id).where(SubscriptionPayment.provider_payment_id == sale_id)
+    )).scalar_one_or_none() is None
+
+    retry = await PayPalWebhookService.process_webhook(
+        raw_request=make_raw_request(event_data),
+        db=async_db_session,
+        verifier=MockSuccessVerifier(),
+    )
+    assert retry.status == "success"
+    assert retry.duplicate is False
+    assert activation_attempts == 2
+    assert len(emitted) == 1
+    assert emitted[0][0] == "soulmate_payment_confirmed"
+    assert emitted[0][1]["session_id"] == str(sub.session_id)
+
+    duplicate = await PayPalWebhookService.process_webhook(
+        raw_request=make_raw_request(event_data),
+        db=async_db_session,
+        verifier=MockSuccessVerifier(),
+    )
+    assert duplicate.duplicate is True
+    assert len(emitted) == 1
+
+
+@pytest.mark.asyncio
 async def test_payment_failed_increments_count_and_recovery_resets_issue(async_db_session: AsyncSession):
     """
     H-5 Verification (SP-408, DEV-SPEC §9.4, §9.7, §15.8):
@@ -959,4 +1034,3 @@ async def test_billing_subscription_updated_preserves_unresolved_failure_count(a
     # Preserves failure count and detected timestamp!
     assert sub.failed_payments_count == 2
     assert sub.billing_issue_detected_at == issue_time
-

@@ -108,6 +108,7 @@ class SupportTimelineEvent(BaseModel):
     entity_type: Literal["session", "subscription", "payment", "artifact", "job"]
     entity_id: uuid.UUID
     status: Optional[str] = None
+    status_context: Optional[Literal["at_event", "current_snapshot"]] = None
 
 
 class SupportLookupResult(BaseModel):
@@ -117,3 +118,10 @@ class SupportLookupResult(BaseModel):
     artifacts: list[SupportArtifactStatus] = Field(default_factory=list)
     jobs: list[SupportJobStatus] = Field(default_factory=list)
     timeline: list[SupportTimelineEvent] = Field(default_factory=list)
+    timeline_history_complete: bool = Field(
+        default=False,
+        description=(
+            "False: retained status fields do not provide a complete transition history; "
+            "timeline includes only provable events and current snapshots."
+        ),
+    )

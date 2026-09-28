@@ -230,6 +230,7 @@ describe("SP-504: Server-time calibrated countdown", () => {
 
   it("getResultAggregate requests /result with credentials and parses the aggregate", async () => {
     const mockResponse: ResultAggregateResponse = {
+      session_id: "session-test",
       server_time: "2026-09-26T12:00:00Z",
       subscription: {
         provider: "paypal",

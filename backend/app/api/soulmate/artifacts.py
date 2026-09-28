@@ -109,6 +109,7 @@ async def generate_sketch_endpoint(
     statuses = await ArtifactStatusService.get_artifact_statuses(db, session.id)
 
     return SketchGenerationResponse(
+        session_id=session.public_id,
         server_time=statuses.server_time,
         sketch=statuses.sketch,
         job_status=outcome.job.status if outcome.job is not None else None,
@@ -127,7 +128,7 @@ async def get_sketch_asset_endpoint(
 ) -> SketchAssetResponse:
     """
     Authoritative session-scoped sketch state for the Sketch page (§10.3) plus,
-    when COMPLETED, the display URL of the persisted durable asset. Reads never
+    when COMPLETED, the persisted artifact version and display URL. Reads never
     cross sessions (Decision RECOVERY-01); the display URL is derived from the
     project-owned storage key (ASSET-01) and never from a provider temporary URL.
 
@@ -146,15 +147,22 @@ async def get_sketch_asset_endpoint(
 
     image_url: Optional[str] = None
     storage_key: Optional[str] = None
+    artifact_version: Optional[str] = None
     retry_available: Optional[bool] = None
     if statuses.sketch.status == "COMPLETED":
-        stmt = select(SoulmateArtifact.storage_key, SoulmateArtifact.generation_status).where(
+        stmt = select(
+            SoulmateArtifact.storage_key,
+            SoulmateArtifact.generation_status,
+            SoulmateArtifact.artifact_version,
+        ).where(
             SoulmateArtifact.session_id == session.id,
             SoulmateArtifact.artifact_type == "SKETCH",
+            SoulmateArtifact.artifact_version == "v1",
         )
         row = (await db.execute(stmt)).first()
         if row is not None and row.generation_status == "COMPLETED":
             storage_key = row.storage_key
+            artifact_version = row.artifact_version
             image_url = build_sketch_image_url(storage_key)
     elif statuses.sketch.status == "FAILED":
         # §10.3 Retry/Support split: a FAILED artifact is user-retryable only while
@@ -179,10 +187,12 @@ async def get_sketch_asset_endpoint(
                 )
 
     return SketchAssetResponse(
+        session_id=session.public_id,
         server_time=statuses.server_time,
         sketch=statuses.sketch,
         image_url=image_url,
         storage_key=storage_key,
+        artifact_version=artifact_version,
         retry_available=retry_available,
     )
 
@@ -225,6 +235,7 @@ async def get_report_endpoint(
             content = ReportService.get_report_content(artifact)
 
     return ReportResponse(
+        session_id=session.public_id,
         server_time=statuses.server_time,
         report=statuses.report,
         content=content,
@@ -254,6 +265,7 @@ async def generate_report_endpoint(
     statuses = await ArtifactStatusService.get_artifact_statuses(db, session.id)
 
     return ReportGenerationResponse(
+        session_id=session.public_id,
         server_time=statuses.server_time,
         report=statuses.report,
         job_status=outcome.job.status if outcome.job is not None else None,

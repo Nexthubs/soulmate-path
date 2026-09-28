@@ -14,6 +14,8 @@ import type { ResultArtifactStatus } from "./result";
 import type { SoulmateReportV1 } from "../domain/report";
 
 export interface ReportStatusResponse {
+  /** Public ID of the authenticated session, also present for cookie-only requests. */
+  session_id: string;
   server_time: string;
   report: ResultArtifactStatus;
   /** Validated SoulmateReportV1 content (camelCase); present only when COMPLETED (SP-702). */

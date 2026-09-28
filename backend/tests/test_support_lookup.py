@@ -144,6 +144,7 @@ async def test_lookup_accepts_each_exact_key_and_returns_status_only(async_db: A
         assert data["artifacts"][0]["id"] == str(artifact.id)
         assert data["jobs"][0]["id"] == str(job.id)
         assert data["timeline"]
+        assert data["timeline_history_complete"] is False
         assert [event["occurred_at"] for event in data["timeline"]] == sorted(
             event["occurred_at"] for event in data["timeline"]
         )
@@ -162,6 +163,75 @@ async def test_lookup_accepts_each_exact_key_and_returns_status_only(async_db: A
             "private_job_error_marker",
         ):
             assert protected_value not in response.text
+
+
+@pytest.mark.asyncio
+async def test_timeline_separates_historical_events_from_current_status_snapshots(
+    async_db: AsyncSession, monkeypatch
+):
+    monkeypatch.setattr(settings, "support_api_key", SUPPORT_KEY)
+    email = f"SP905-timeline-{uuid.uuid4().hex[:8]}@example.com"
+    session, subscription, payment, artifact, job = await seed_support_case(
+        async_db,
+        email=email,
+        payment_id=f"CAP-SP905-TIMELINE-{uuid.uuid4().hex}",
+    )
+
+    snapshot_at = datetime.now(timezone.utc)
+    subscription.provider_status = "CANCELLED"
+    subscription.provider_status_updated_at = snapshot_at - timedelta(minutes=1)
+    subscription.cancelled_at = snapshot_at - timedelta(minutes=1)
+    payment.status = "REFUNDED"
+    payment.refunded_at = snapshot_at - timedelta(seconds=30)
+    job.status = "FAILED"
+    job.updated_at = snapshot_at - timedelta(seconds=10)
+    await async_db.commit()
+
+    async with support_client() as client:
+        response = await client.post(
+            "/api/soulmate/support/lookup",
+            json={"session_id": str(session.id)},
+        )
+
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["timeline_history_complete"] is False
+    events = response_data["timeline"]
+
+    def event_for(event_type: str, entity_id: uuid.UUID) -> dict:
+        return next(
+            event
+            for event in events
+            if event["event_type"] == event_type and event["entity_id"] == str(entity_id)
+        )
+
+    # Creation/recording events do not inherit a state read at lookup time.
+    assert event_for("session_created", session.id)["status"] is None
+    assert not any(event["event_type"] == "session_status" for event in events)
+    assert event_for("subscription_created", subscription.id)["status"] is None
+    assert event_for("payment_recorded", payment.id)["status"] is None
+    assert event_for("artifact_created", artifact.id)["status"] is None
+    assert event_for("generation_job_created", job.id)["status"] is None
+
+    # Status transitions carry a status only when the persisted timestamp proves it.
+    cancelled = event_for("subscription_cancelled", subscription.id)
+    assert cancelled["status"] == "CANCELLED"
+    assert cancelled["status_context"] == "at_event"
+    paid = event_for("payment_paid", payment.id)
+    assert paid["status"] == "COMPLETED"
+    assert paid["status_context"] == "at_event"
+
+    # Mutable current values are labeled as snapshots, never as past events.
+    snapshots = {
+        event["entity_id"]: event
+        for event in events
+        if event["event_type"] == "current_status_snapshot"
+    }
+    assert snapshots[str(session.id)]["status"] == session.status
+    assert snapshots[str(subscription.id)]["status"] == "CANCELLED"
+    assert snapshots[str(payment.id)]["status"] == "REFUNDED"
+    assert snapshots[str(job.id)]["status"] == "FAILED"
+    assert all(event["status_context"] == "current_snapshot" for event in snapshots.values())
 
 
 @pytest.mark.asyncio

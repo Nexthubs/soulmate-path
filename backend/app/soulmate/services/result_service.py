@@ -106,6 +106,7 @@ class ResultService:
             )
 
         return ResultAggregateResponse(
+            session_id=session.public_id,
             server_time=statuses.server_time,
             subscription=subscription_view,
             sketch=statuses.sketch,

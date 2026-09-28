@@ -6,11 +6,13 @@ import { SketchViewer, SketchViewState } from "@/soulmate/components/sketch";
 import { useRouteGuard } from "@/soulmate/hooks/useRouteGuard";
 import { useSketchStatus, deriveSketchViewState } from "@/soulmate/hooks/useSketchStatus";
 import { SOULMATE_ROUTES, sanitizeInternalRoute } from "@/soulmate/domain";
-import { trackArtifactUnlocked, trackSoulmateEvent } from "@/soulmate/analytics";
+import { trackArtifactUnlocked, trackSessionViewOnce } from "@/soulmate/analytics";
 
 function SketchPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const sessionId = searchParams.get("session_id") || undefined;
+  const sketchViewTrackedSessionsRef = React.useRef(new Set<string>());
 
   // DEV-SPEC §3, AGENTS.md §5: Production access requires entitlement confirmation.
   // In production, client URL parameters (?state=completed&url=...) must NOT bypass entitlement.
@@ -31,21 +33,25 @@ function SketchPageContent() {
   // polling while GENERATING (SP-505 pattern). The server — never the client —
   // decides whether a generation may start, so refresh can never regenerate.
   const sketch = useSketchStatus({
+    sessionId,
     enabled: isLive && guard.allowed !== false,
     polling: isLive,
   });
+  const sketchData =
+    !sessionId || sketch.data?.session_id === sessionId ? sketch.data : null;
+  const resolvedSessionId = sketchData?.session_id ?? sessionId;
 
   const viewState = isFixture
     ? ((searchParams.get("state") || "completed") as SketchViewState)
-    : deriveSketchViewState(sketch.data?.sketch?.status);
+    : deriveSketchViewState(sketchData?.sketch?.status);
 
   // The viewer renders four states; a LOCKED page is about to redirect to Result
   // (§10.3/TIME-01), and an unloaded page shows the neutral loading card.
   // ASSET-01 defense-in-depth: the live page never substitutes a sample image for
   // the user's portrait — a COMPLETED status without a display URL degrades to the
   // support state instead of rendering a placeholder portrait.
-  const liveImageUrl = sketch.data?.image_url ?? undefined;
-  const liveRetryable = sketch.data?.retry_available !== false;
+  const liveImageUrl = sketchData?.image_url ?? undefined;
+  const liveRetryable = sketchData?.retry_available !== false;
   const effectiveViewState =
     !isFixture && viewState === "completed" && !liveImageUrl ? "failed" : viewState;
   const viewerState: SketchViewState =
@@ -59,9 +65,12 @@ function SketchPageContent() {
       return;
     }
     if (viewState === "locked") {
-      router.replace(SOULMATE_ROUTES.RESULT);
+      const resultRoute = resolvedSessionId
+        ? `${SOULMATE_ROUTES.RESULT}?session_id=${encodeURIComponent(resolvedSessionId)}`
+        : SOULMATE_ROUTES.RESULT;
+      router.replace(resultRoute);
     }
-  }, [isLive, guard.allowed, guard.error, guard.verdict?.redirect_to, viewState, router]);
+  }, [isLive, guard.allowed, guard.error, guard.verdict?.redirect_to, viewState, resolvedSessionId, router]);
 
   const gender = searchParams.get("gender") || "female";
   const defaultUrl =
@@ -72,34 +81,38 @@ function SketchPageContent() {
   const durableUrl = isFixture
     ? searchParams.get("url") || defaultUrl
     : liveImageUrl;
-  const backUrl = sanitizeInternalRoute(searchParams.get("backUrl"));
+  const resultRoute = resolvedSessionId
+    ? `${SOULMATE_ROUTES.RESULT}?session_id=${encodeURIComponent(resolvedSessionId)}`
+    : SOULMATE_ROUTES.RESULT;
+  const backUrl = sanitizeInternalRoute(searchParams.get("backUrl"), resultRoute);
   const showToolbar = isFixture;
 
   // §18.1: first live unlocked view of the sketch page also marks the unlock
   // (deduplicated with the Result dashboard by the analytics wrapper), and the
   // displayed durable asset marks `soulmate_sketch_viewed`.
-  const sketchUnlockedTrackedRef = React.useRef(false);
   React.useEffect(() => {
     if (!isLive || guard.allowed === false) return;
     if (viewState === "locked" || viewState === null) return;
-    if (sketchUnlockedTrackedRef.current) return;
-    sketchUnlockedTrackedRef.current = true;
-    // Identity is cookie-bound on this page (no public session id in scope).
-    trackArtifactUnlocked("sketch", {});
-  }, [isLive, guard.allowed, viewState]);
+    trackArtifactUnlocked("sketch", { session_id: resolvedSessionId });
+  }, [isLive, guard.allowed, viewState, resolvedSessionId]);
 
-  const sketchViewedTrackedRef = React.useRef(false);
   React.useEffect(() => {
-    if (!isLive || effectiveViewState !== "completed" || !liveImageUrl) return;
-    if (sketchViewedTrackedRef.current) return;
-    sketchViewedTrackedRef.current = true;
-    trackSoulmateEvent({
-      name: "soulmate_sketch_viewed",
-      // The artifact version is not exposed by the artifact status API yet;
-      // null documents the intent until the response carries it.
-      properties: { artifact_version: null },
-    });
-  }, [isLive, effectiveViewState, liveImageUrl]);
+    if (
+      !isLive ||
+      effectiveViewState !== "completed" ||
+      !liveImageUrl ||
+      !sketchData?.session_id ||
+      !sketchData.artifact_version
+    ) return;
+    trackSessionViewOnce(
+      sketchViewTrackedSessionsRef.current,
+      {
+        name: "soulmate_sketch_viewed",
+        properties: { artifact_version: sketchData.artifact_version },
+      },
+      sketchData.session_id
+    );
+  }, [isLive, effectiveViewState, liveImageUrl, sketchData?.session_id, sketchData?.artifact_version]);
 
   if (guard.allowed === false && guardEnabled) {
     return (
@@ -144,7 +157,7 @@ function SketchPageContent() {
 
   // Live fetch error with no authoritative state: offer a retry of the READ
   // (never a generation — the server decides when generation may start).
-  if (isLive && sketch.error && !sketch.data) {
+  if (isLive && sketch.error && !sketchData) {
     return (
       <main className="min-h-screen max-w-[390px] mx-auto flex flex-col items-center justify-between p-6 bg-gradient-to-b from-[#fff0f3] via-[#fef4e9] to-[#fef3de] text-neutral-900">
         <header className="w-full flex justify-between items-center py-4">

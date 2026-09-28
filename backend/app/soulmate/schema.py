@@ -400,6 +400,7 @@ class ResultAggregateResponse(BaseModel):
     client does not need to merge multiple authority calls (SP-106, SP-504, SP-505).
     `status` on each artifact is the combined §10.3 state (SP-502 derivation).
     """
+    session_id: str = Field(..., description="Public ID of the authenticated session")
     server_time: datetime = Field(..., description="Server clock UTC instant used for this derivation")
     subscription: Optional[ResultSubscriptionView] = Field(default=None, description="Subscription view for the entitled session")
     sketch: ArtifactStatusView = Field(..., description="Sketch countdown/status view")
@@ -418,6 +419,7 @@ class ReportResponse(BaseModel):
     the stored payload conforms to the V1 schema/content policy. REPORT is strictly
     session-scoped (Decision RECOVERY-01).
     """
+    session_id: str = Field(..., description="Public ID of the authenticated session")
     server_time: datetime = Field(..., description="Server clock UTC instant used for this derivation")
     report: ArtifactStatusView = Field(..., description="Report countdown/status view (session-scoped)")
     content: Optional[Dict[str, Any]] = Field(
@@ -434,6 +436,7 @@ class SketchGenerationResponse(BaseModel):
     Returns the authoritative sketch status after enqueue (GENERATING/COMPLETED/FAILED)
     plus the durable job state when a generation job is attached.
     """
+    session_id: str = Field(..., description="Public ID of the authenticated session")
     server_time: datetime = Field(..., description="Server clock UTC instant used for this derivation")
     sketch: ArtifactStatusView = Field(..., description="Sketch countdown/status view after enqueue")
     job_status: Optional[str] = Field(
@@ -451,6 +454,7 @@ class ReportGenerationResponse(BaseModel):
     when the switch is off — generation-enabled deployments move to GENERATING/
     COMPLETED/FAILED) plus the durable job state when a job is attached.
     """
+    session_id: str = Field(..., description="Public ID of the authenticated session")
     server_time: datetime = Field(..., description="Server clock UTC instant used for this derivation")
     report: ArtifactStatusView = Field(..., description="Report countdown/status view after enqueue")
     job_status: Optional[str] = Field(
@@ -464,13 +468,14 @@ class ReportGenerationResponse(BaseModel):
 class SketchAssetResponse(BaseModel):
     """
     Response for GET /artifacts/sketch (DEV-SPEC §15.10, SP-607).
-    Session-scoped sketch status plus, when COMPLETED, the display URL of the
-    persisted durable asset (ASSET-01: the object storage key is the source of
+    Session-scoped sketch status plus, when COMPLETED, the persisted artifact
+    version and display URL (ASSET-01: the object storage key is the source of
     truth; the URL is a derived, short-lived or CDN-stable display grant).
     `retry_available` is True only when FAILED with a transient-exhausted
     (FAILED_RETRYABLE) terminal job still under the hard attempt cap — the §10.3
     Retry/Support split.
     """
+    session_id: str = Field(..., description="Public ID of the authenticated session")
     server_time: datetime = Field(..., description="Server clock UTC instant used for this derivation")
     sketch: ArtifactStatusView = Field(..., description="Sketch countdown/status view (session-scoped)")
     image_url: Optional[str] = Field(
@@ -480,6 +485,10 @@ class SketchAssetResponse(BaseModel):
     storage_key: Optional[str] = Field(
         default=None,
         description="Project-owned object storage key of the durable asset (§11.7); present only when COMPLETED",
+    )
+    artifact_version: Optional[str] = Field(
+        default=None,
+        description="Persisted artifact version; present when a completed Sketch artifact is available",
     )
     retry_available: Optional[bool] = Field(
         default=None,

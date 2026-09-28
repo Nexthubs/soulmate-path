@@ -1263,7 +1263,7 @@ Copy is derived from actual access date/state and does not promise an unsupporte
 
 **Priority:** P1  
 **Depends:** stable UI/API flows  
-**Status:** REVIEW (2026-09-27 — §18.1 catalog implemented on both sides via central wrappers; evidence in `docs/handoffs/SP-901.md`; production sink pending `ANALYTICS-01`)
+**Status:** DONE (2026-09-28 — audit findings remediated; full isolated PostgreSQL suite previously PASS 879/879; Sketch API 13/13; frontend 415/415 verifies session-keyed mount-only view dedupe, re-entry events, and persisted artifact version; production sink pending `ANALYTICS-01`; see `docs/handoffs/SP-901.md`)
 **Context refs:** DEV-SPEC §18 | Decisions: — | Dependency handoffs: —
 
 
@@ -1358,7 +1358,7 @@ Use existing alerting platform; do not create a second monitoring stack.
 
 **Priority:** P1  
 **Depends:** core DB + payment + artifact tables  
-**Status:** DONE
+**Status:** DONE (2026-09-28 — timeline distinguishes event-time statuses from current snapshots and flags partial history; evidence in `docs/handoffs/SP-905.md`)
 **Context refs:** DEV-SPEC §14, §19–20 | Decisions: PAY-AUTH-01, ASSET-01, SUPPORT-AUTH-01 | Dependency handoffs: —
 
 
@@ -1373,6 +1373,18 @@ Allow authorized support to trace a case by safe identifiers.
 
 ### Acceptance
 Shows timeline/status without exposing provider secrets or unrelated users' data.
+
+## Wave 9 implementation checkpoint
+
+**Status:** PASS (2026-09-28; owner-scoped implementation acceptance)
+
+**Accepted scope:** SP-901, SP-902, SP-903, and SP-905 are DONE with durable handoffs.
+
+**Exit criterion:** All accepted tasks have DONE status and task-specific handoffs; the current tree passes the relevant full backend and frontend regression checks; no open P0/P1 findings remain within the accepted scope.
+
+**Required evidence:** `docs/reviews/WAVE-9-ANALYTICS-OPERATIONS-REVIEW.md` records the reviewed tree, handoffs, current-tree test results, findings, and remaining boundaries.
+
+**Explicit exclusion:** SP-904 remains BLOCKED on the existing alerting platform and owner-provided thresholds/windows/routing. Per the owner's scope ruling, SP-904 is excluded from this implementation checkpoint; this checkpoint does not claim that alerting or full Wave 9 operational readiness is complete. SP-904 remains open, and M6/production readiness is not passed.
 
 ---
 

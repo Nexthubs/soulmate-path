@@ -39,6 +39,8 @@ export interface ResultArtifactStatus {
 }
 
 export interface ResultAggregateResponse {
+  /** Public ID of the authenticated session, also present for cookie-only requests. */
+  session_id: string;
   server_time: string;
   subscription?: ResultSubscriptionView | null;
   sketch: ResultArtifactStatus;

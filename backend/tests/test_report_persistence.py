@@ -403,6 +403,7 @@ async def test_locked_report_returns_status_without_content(async_db):
         resp = await client.get(REPORT_URL)
     assert resp.status_code == 200
     data = resp.json()
+    assert data["session_id"] == sess.public_id
     assert data["report"]["status"] == "LOCKED"
     assert data["content"] is None
     assert data["server_time"] is not None

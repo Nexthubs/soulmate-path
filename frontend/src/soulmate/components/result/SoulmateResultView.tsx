@@ -17,6 +17,9 @@ export interface SoulmateResultViewProps {
    */
   initialData: ResultAggregateData;
 
+  /** Public session ID used to keep artifact navigation and analytics scoped to this case. */
+  sessionId?: string;
+
   /**
    * Client-to-server clock offset in milliseconds (SP-504, TIME-01). Forwarded to the cards
    * for countdown calibration; undefined falls back to `initialData.server_time`.
@@ -108,6 +111,7 @@ export const DEFAULT_RESULT_FIXTURE: ResultAggregateData = {
  */
 export function SoulmateResultView({
   initialData,
+  sessionId,
   clockOffsetMs,
   userEmail = "user@example.com",
   showFixtureToolbar = false,
@@ -130,10 +134,11 @@ export function SoulmateResultView({
       onAction(type);
       return;
     }
+    const sessionQuery = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : "";
     if (type === "sketch") {
-      router.push("/soulmate/sketch");
+      router.push(`/soulmate/sketch${sessionQuery}`);
     } else {
-      router.push("/soulmate/report");
+      router.push(`/soulmate/report${sessionQuery}`);
     }
   };
 

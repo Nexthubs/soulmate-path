@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { DEFAULT_RESULT_FIXTURE, SoulmateResultView } from "@/soulmate/components/result";
 import { useRouteGuard } from "@/soulmate/hooks/useRouteGuard";
 import { useResultAggregate } from "@/soulmate/hooks/useResultAggregate";
-import { hoursSincePayment, trackArtifactUnlocked, trackSoulmateEvent } from "@/soulmate/analytics";
+import { trackResultArtifactUnlocks, trackSessionViewOnce } from "@/soulmate/analytics";
 
 function ResultContent() {
   const searchParams = useSearchParams();
@@ -14,6 +14,7 @@ function ResultContent() {
   );
 
   const sessionId = searchParams.get("session_id") || undefined;
+  const resultViewTrackedSessionsRef = React.useRef(new Set<string>());
   const isProduction = process.env.NODE_ENV === "production";
   // RV round-2 Finding 2: fixture preview is a non-production QA affordance only. In
   // production the parameter is ignored so an entitled user can never freeze the page on
@@ -103,40 +104,42 @@ function ResultContent() {
   // spinner until the aggregate arrives; dev/test keeps the neutral preview
   // shell so the page renders a stable, non-personal skeleton (H-4 contract).
   // ------------------------------------------------------------------
-  const liveData = !isFixture && live.data ? live.data : undefined;
+  const liveData =
+    !isFixture && live.data && (!sessionId || live.data.session_id === sessionId)
+      ? live.data
+      : undefined;
+  const resolvedSessionId = liveData?.session_id ?? sessionId;
 
   // §18.1 result view + artifact unlock moments, derived from the SERVER
   // aggregate only (§18.2/TIME-01 — client clock never feeds analytics).
-  const resultViewTrackedRef = React.useRef(false);
   React.useEffect(() => {
-    if (!liveData || resultViewTrackedRef.current) return;
-    resultViewTrackedRef.current = true;
-    trackSoulmateEvent({
-      name: "soulmate_result_view",
-      properties: {
-        sketch_availability: liveData.sketch.availability,
-        report_availability: liveData.report.availability,
+    if (!liveData) return;
+    trackSessionViewOnce(
+      resultViewTrackedSessionsRef.current,
+      {
+        name: "soulmate_result_view",
+        properties: {
+          sketch_availability: liveData.sketch.availability,
+          report_availability: liveData.report.availability,
+        },
       },
+      liveData.session_id
+    );
+  }, [liveData]);
+
+  // Unlock tracking is independent from the one-time result_view event. A new
+  // server aggregate may transition LOCKED -> UNLOCKED after the countdown
+  // triggers a refetch, so evaluate each fresh server state.
+  React.useEffect(() => {
+    if (!liveData) return;
+    trackResultArtifactUnlocks({
+      sessionId: resolvedSessionId,
+      sketchAvailability: liveData.sketch.availability,
+      reportAvailability: liveData.report.availability,
+      serverTime: liveData.server_time,
+      firstPaymentAt: liveData.subscription?.first_payment_at,
     });
-    if (liveData.sketch.availability === "UNLOCKED") {
-      trackArtifactUnlocked("sketch", {
-        session_id: sessionId,
-        hours_since_payment: hoursSincePayment(
-          liveData.server_time,
-          liveData.subscription?.first_payment_at
-        ),
-      });
-    }
-    if (liveData.report.availability === "UNLOCKED") {
-      trackArtifactUnlocked("report", {
-        session_id: sessionId,
-        hours_since_payment: hoursSincePayment(
-          liveData.server_time,
-          liveData.subscription?.first_payment_at
-        ),
-      });
-    }
-  }, [liveData, sessionId]);
+  }, [liveData, resolvedSessionId]);
 
   if (!isFixture && !liveData) {
     if (live.error) {
@@ -193,6 +196,7 @@ function ResultContent() {
         </div>
         <SoulmateResultView
           initialData={DEFAULT_RESULT_FIXTURE}
+          sessionId={sessionId}
           userEmail={email || "user@example.com"}
           showFixtureToolbar={showToolbar}
           previewEnabled={isFixture}
@@ -213,6 +217,7 @@ function ResultContent() {
       )}
       <SoulmateResultView
         initialData={liveData ?? DEFAULT_RESULT_FIXTURE}
+        sessionId={resolvedSessionId}
         clockOffsetMs={liveData ? live.clockOffsetMs : undefined}
         userEmail={email || "user@example.com"}
         showFixtureToolbar={showToolbar}

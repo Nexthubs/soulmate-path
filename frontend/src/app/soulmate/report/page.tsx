@@ -7,7 +7,7 @@ import { ReportRenderer } from "@/soulmate/components/report";
 import { useRouteGuard } from "@/soulmate/hooks/useRouteGuard";
 import { deriveReportViewState, useReportStatus } from "@/soulmate/hooks/useReportStatus";
 import { SOULMATE_ROUTES, sanitizeInternalRoute } from "@/soulmate/domain";
-import { trackArtifactUnlocked, trackSoulmateEvent } from "@/soulmate/analytics";
+import { trackArtifactUnlocked, trackSessionViewOnce } from "@/soulmate/analytics";
 
 function SharedPageChrome({ children }: { children: React.ReactNode }) {
   return (
@@ -28,6 +28,8 @@ function SharedPageChrome({ children }: { children: React.ReactNode }) {
 function ReportPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const sessionId = searchParams.get("session_id") || undefined;
+  const reportViewTrackedSessionsRef = React.useRef(new Set<string>());
 
   // DEV-SPEC §3, AGENTS.md §5: Production access requires entitlement confirmation.
   // Fixture preview is an explicit dev-mode opt-in (?fixture=true); the default is LIVE.
@@ -49,18 +51,22 @@ function ReportPageContent() {
   // generation is enqueued server-side (idempotent — the server decides), with
   // bounded polling while GENERATING (SP-505 pattern).
   const report = useReportStatus({
+    sessionId,
     enabled: isLive && guard.allowed !== false,
     polling: isLive,
   });
+  const reportData =
+    !sessionId || report.data?.session_id === sessionId ? report.data : null;
+  const resolvedSessionId = reportData?.session_id ?? sessionId;
 
   const viewState = isFixture
     ? "completed"
-    : deriveReportViewState(report.data?.report?.status);
+    : deriveReportViewState(reportData?.report?.status);
 
   // ASSET-01-style defense-in-depth (mirrors the sketch page): a COMPLETED status
   // without validated content degrades to the support state — the page NEVER
   // substitutes the Figma fixture for the user's stored report.
-  const liveContent = report.data?.content ?? null;
+  const liveContent = reportData?.content ?? null;
   const effectiveViewState =
     !isFixture && viewState === "completed" && !liveContent ? "failed" : viewState;
 
@@ -75,35 +81,38 @@ function ReportPageContent() {
   useEffect(() => {
     if (!isLive) return;
     if (viewState === "locked") {
-      router.replace(SOULMATE_ROUTES.RESULT);
+      const resultRoute = resolvedSessionId
+        ? `${SOULMATE_ROUTES.RESULT}?session_id=${encodeURIComponent(resolvedSessionId)}`
+        : SOULMATE_ROUTES.RESULT;
+      router.replace(resultRoute);
     }
-  }, [isLive, viewState, router]);
+  }, [isLive, viewState, resolvedSessionId, router]);
 
-  const backUrl = sanitizeInternalRoute(searchParams.get("backUrl"), SOULMATE_ROUTES.RESULT);
+  const resultRoute = resolvedSessionId
+    ? `${SOULMATE_ROUTES.RESULT}?session_id=${encodeURIComponent(resolvedSessionId)}`
+    : SOULMATE_ROUTES.RESULT;
+  const backUrl = sanitizeInternalRoute(searchParams.get("backUrl"), resultRoute);
 
   // §18.1: first live unlocked view of the report page also marks the unlock
   // (deduplicated with the Result dashboard by the analytics wrapper); the
   // rendered validated content marks `soulmate_report_viewed`.
-  const reportUnlockedTrackedRef = React.useRef(false);
   React.useEffect(() => {
     if (!isLive || guard.allowed === false) return;
     if (viewState === "locked" || viewState === null) return;
-    if (reportUnlockedTrackedRef.current) return;
-    reportUnlockedTrackedRef.current = true;
-    // Identity is cookie-bound on this page (no public session id in scope).
-    trackArtifactUnlocked("report", {});
-  }, [isLive, guard.allowed, viewState]);
+    trackArtifactUnlocked("report", { session_id: resolvedSessionId });
+  }, [isLive, guard.allowed, viewState, resolvedSessionId]);
 
-  const reportViewedTrackedRef = React.useRef(false);
   React.useEffect(() => {
-    if (!isLive || effectiveViewState !== "completed" || !liveContent) return;
-    if (reportViewedTrackedRef.current) return;
-    reportViewedTrackedRef.current = true;
-    trackSoulmateEvent({
-      name: "soulmate_report_viewed",
-      properties: { report_version: liveContent.schemaVersion },
-    });
-  }, [isLive, effectiveViewState, liveContent]);
+    if (!isLive || effectiveViewState !== "completed" || !liveContent || !reportData?.session_id) return;
+    trackSessionViewOnce(
+      reportViewTrackedSessionsRef.current,
+      {
+        name: "soulmate_report_viewed",
+        properties: { report_version: liveContent.schemaVersion },
+      },
+      reportData.session_id
+    );
+  }, [isLive, effectiveViewState, liveContent, reportData?.session_id]);
 
   if (guard.allowed === false && guardEnabled) {    return (
       <SharedPageChrome>
@@ -136,7 +145,7 @@ function ReportPageContent() {
   }
 
   // Live fetch error with no authoritative state: offer a retry of the READ only.
-  if (isLive && report.error && !report.data) {
+  if (isLive && report.error && !reportData) {
     return (
       <SharedPageChrome>
         <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mx-auto text-xl">

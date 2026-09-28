@@ -10,12 +10,16 @@ import { parseApiError } from "./errors";
 import type { ResultArtifactStatus } from "./result";
 
 export interface SketchStatusResponse {
+  /** Public ID of the authenticated session, also present for cookie-only requests. */
+  session_id: string;
   server_time: string;
   sketch: ResultArtifactStatus;
   /** Display URL of the persisted durable asset; present only when COMPLETED (ASSET-01). */
   image_url?: string | null;
   /** Project-owned object storage key (§11.7); present only when COMPLETED. */
   storage_key?: string | null;
+  /** Persisted version of the completed Sketch artifact. */
+  artifact_version?: string | null;
   /** When FAILED: whether the §10.3 Retry action can work (transient-exhausted job under cap). */
   retry_available?: boolean | null;
 }

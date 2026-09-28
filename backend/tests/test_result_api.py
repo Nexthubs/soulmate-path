@@ -131,7 +131,8 @@ async def test_result_aggregate_single_call_supplies_all_authorities(async_db: A
     data = resp.json()
 
     # Top-level shape: server time + subscription + both artifact statuses in one payload
-    assert set(data.keys()) == {"server_time", "subscription", "sketch", "report"}
+    assert set(data.keys()) == {"session_id", "server_time", "subscription", "sketch", "report"}
+    assert data["session_id"] == sess.public_id
     assert data["server_time"] is not None
 
     assert set(data["subscription"].keys()) == EXPECTED_SUBSCRIPTION_KEYS
@@ -250,7 +251,10 @@ async def test_result_aggregate_schema_stable_across_polling(async_db: AsyncSess
 
     assert resp1.status_code == resp2.status_code == 200
     data1, data2 = resp1.json(), resp2.json()
-    assert set(data1.keys()) == set(data2.keys()) == {"server_time", "subscription", "sketch", "report"}
+    assert set(data1.keys()) == set(data2.keys()) == {
+        "session_id", "server_time", "subscription", "sketch", "report"
+    }
+    assert data1["session_id"] == data2["session_id"] == sess.public_id
     assert set(data1["sketch"].keys()) == set(data2["sketch"].keys()) == EXPECTED_ARTIFACT_KEYS
 
     def parse_iso(value: str) -> datetime:

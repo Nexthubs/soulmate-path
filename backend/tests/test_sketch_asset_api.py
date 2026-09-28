@@ -67,7 +67,11 @@ def _webp_bytes(n: int = 4096) -> bytes:
     return b"RIFF\x00\x00\x00\x00WEBP" + b"x" * (n - 12)
 
 
-async def seed_completed_sketch(db: AsyncSession, storage_key: str | None, email: str | None = None):
+async def seed_completed_sketch(
+    db: AsyncSession,
+    storage_key: str | None,
+    email: str | None = None,
+):
     """Entitled session whose sketch artifact is COMPLETED (optionally with a key)."""
     now = datetime.now(timezone.utc)
     paid_at = now - timedelta(hours=2)
@@ -159,6 +163,7 @@ async def test_locked_sketch_returns_status_without_image(async_db):
         resp = await client.get(SKETCH_URL)
     assert resp.status_code == 200
     data = resp.json()
+    assert data["session_id"] == sess.public_id
     assert data["sketch"]["status"] == "LOCKED"
     assert data["image_url"] is None
     assert data["storage_key"] is None
@@ -191,6 +196,22 @@ async def test_completed_sketch_exposes_public_prefix_url(async_db, monkeypatch)
     assert data["sketch"]["status"] == "COMPLETED"
     assert data["storage_key"] == "soulmate/sketches/abc/original.webp"
     assert data["image_url"] == "https://cdn.example.com/assets/soulmate/sketches/abc/original.webp"
+
+
+@pytest.mark.asyncio
+async def test_completed_sketch_returns_persisted_artifact_version(async_db):
+    sess = await seed_completed_sketch(
+        async_db,
+        storage_key="soulmate/sketches/versioned/original.webp",
+    )
+    token = generate_session_token(sess.public_id)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        client.cookies.set("soulmate_sid", token)
+        resp = await client.get(SKETCH_URL)
+    assert resp.status_code == 200
+    assert resp.json()["session_id"] == sess.public_id
+    assert resp.json()["artifact_version"] == "v1"
 
 
 @pytest.mark.asyncio

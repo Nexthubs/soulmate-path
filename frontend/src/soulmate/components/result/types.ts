@@ -32,6 +32,7 @@ export interface ArtifactItemState {
 }
 
 export interface ResultAggregateData {
+  session_id?: string;
   server_time: string;
   subscription?: {
     provider: string;

@@ -51,6 +51,30 @@ const UNLOCK_HELPER_CALLS: Record<string, string[]> = {
   ],
 };
 
+const SESSION_VIEW_CALLS: Record<string, { file: string; sessionId: string; refName: string }[]> = {
+  soulmate_result_view: [
+    {
+      file: "app/soulmate/result/page.tsx",
+      sessionId: "liveData.session_id",
+      refName: "resultViewTrackedSessionsRef",
+    },
+  ],
+  soulmate_sketch_viewed: [
+    {
+      file: "app/soulmate/sketch/page.tsx",
+      sessionId: "sketchData.session_id",
+      refName: "sketchViewTrackedSessionsRef",
+    },
+  ],
+  soulmate_report_viewed: [
+    {
+      file: "app/soulmate/report/page.tsx",
+      sessionId: "reportData.session_id",
+      refName: "reportViewTrackedSessionsRef",
+    },
+  ],
+};
+
 describe("client-side §18.1 instrumentation coverage", () => {
   it("every client-side event name occurs in its owning instrumented module(s)", () => {
     const missing: string[] = [];
@@ -70,10 +94,41 @@ describe("client-side §18.1 instrumentation coverage", () => {
     for (const [kind, files] of Object.entries(UNLOCK_HELPER_CALLS)) {
       for (const file of files) {
         const source = readFileSync(path.join(SRC, file), "utf8");
-        if (!source.includes(`trackArtifactUnlocked("${kind.split("_")[0]}"`)) {
+        const expectedCall = file === "app/soulmate/result/page.tsx"
+          ? "trackResultArtifactUnlocks("
+          : `trackArtifactUnlocked("${kind.split("_")[0]}"`;
+        if (!source.includes(expectedCall)) {
           missing.push(`${kind} @ ${file}`);
         }
       }
+    }
+    expect(missing).toEqual([]);
+  });
+
+  it("keys Result, Sketch, and Report views by the authorized session response", () => {
+    const missing: string[] = [];
+    for (const [event, callSites] of Object.entries(SESSION_VIEW_CALLS)) {
+      for (const { file, sessionId, refName } of callSites) {
+        const source = readFileSync(path.join(SRC, file), "utf8");
+        const eventStart = source.indexOf(`name: "${event}"`);
+        const callStart = source.lastIndexOf("trackSessionViewOnce(", eventStart);
+        const callEnd = source.indexOf(");", eventStart);
+        const eventCall = callStart >= 0 && callEnd >= 0
+          ? source.slice(callStart, callEnd + 2)
+          : "";
+        if (!eventCall.includes(`${refName}.current`) || !eventCall.includes(`${sessionId}`)) {
+          missing.push(`${event} is not keyed by an in-memory mount ref and authorized ID @ ${file}`);
+        }
+        if (!source.includes(`const ${refName} = React.useRef(new Set<string>());`)) {
+          missing.push(`${event} does not create fresh dedupe state per component mount @ ${file}`);
+        }
+      }
+    }
+    const sketchApi = readFileSync(path.join(SRC, "soulmate/api/sketch.ts"), "utf8");
+    const sketchPage = readFileSync(path.join(SRC, "app/soulmate/sketch/page.tsx"), "utf8");
+    if (!sketchApi.includes("artifact_version?: string | null") ||
+        !sketchPage.includes("artifact_version: sketchData.artifact_version")) {
+      missing.push("Sketch view does not send the persisted artifact version");
     }
     expect(missing).toEqual([]);
   });

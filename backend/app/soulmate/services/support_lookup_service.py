@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only
 
 from app.core.errors import ValidationError as DomainValidationError
+from app.db.base import utc_now
 from app.db.models.artifact import AIGenerationJob, SoulmateArtifact
 from app.db.models.billing import Subscription, SubscriptionPayment
 from app.db.models.session import SoulmateSession
@@ -171,6 +172,7 @@ class SupportLookupService:
             entity_type: str,
             entity_id: uuid.UUID,
             status: Optional[str] = None,
+            status_context: Optional[str] = None,
         ) -> None:
             if occurred_at is not None:
                 timeline.append(
@@ -180,42 +182,110 @@ class SupportLookupService:
                         entity_type=entity_type,
                         entity_id=entity_id,
                         status=status,
+                        status_context=status_context,
                     )
                 )
 
-        add_event(session.created_at, "session_created", "session", session.id, session.status)
-        add_event(session.updated_at, "session_status", "session", session.id, session.status)
+        add_event(session.created_at, "session_created", "session", session.id)
         add_event(session.quiz_completed_at, "quiz_completed", "session", session.id)
         add_event(session.email_captured_at, "email_captured", "session", session.id)
         add_event(session.subscription_success_at, "payment_confirmed", "session", session.id)
 
         for row in subscriptions:
-            add_event(row.created_at, "subscription_created", "subscription", row.id, row.provider_status)
-            add_event(row.provider_status_updated_at, "subscription_status", "subscription", row.id, row.provider_status)
+            add_event(row.created_at, "subscription_created", "subscription", row.id)
+            add_event(
+                row.provider_status_updated_at,
+                "subscription_status",
+                "subscription",
+                row.id,
+                row.provider_status,
+                "at_event",
+            )
             add_event(row.first_payment_at, "first_payment", "subscription", row.id)
             add_event(row.next_billing_at, "next_billing_scheduled", "subscription", row.id)
             add_event(row.paid_through_at, "paid_through", "subscription", row.id)
-            add_event(row.cancelled_at, "subscription_cancelled", "subscription", row.id, row.provider_status)
-            add_event(row.suspended_at, "subscription_suspended", "subscription", row.id, row.provider_status)
-            add_event(row.expired_at, "subscription_expired", "subscription", row.id, row.provider_status)
+            add_event(
+                row.cancelled_at,
+                "subscription_cancelled",
+                "subscription",
+                row.id,
+                "CANCELLED",
+                "at_event",
+            )
+            add_event(
+                row.suspended_at,
+                "subscription_suspended",
+                "subscription",
+                row.id,
+                "SUSPENDED",
+                "at_event",
+            )
+            add_event(row.expired_at, "subscription_expired", "subscription", row.id, "EXPIRED", "at_event")
             add_event(row.billing_issue_detected_at, "billing_issue", "subscription", row.id)
 
         for row in payments:
-            add_event(row.created_at, "payment_recorded", "payment", row.id, row.status)
-            add_event(row.paid_at, "payment_paid", "payment", row.id, row.status)
-            add_event(row.refunded_at, "payment_refunded", "payment", row.id, row.status)
+            add_event(row.created_at, "payment_recorded", "payment", row.id)
+            add_event(row.paid_at, "payment_paid", "payment", row.id, "COMPLETED", "at_event")
+            add_event(row.refunded_at, "payment_refunded", "payment", row.id)
 
         for row in artifacts:
-            add_event(row.created_at, "artifact_created", "artifact", row.id, row.generation_status)
-            add_event(row.generation_started_at, "generation_started", "artifact", row.id, row.generation_status)
-            add_event(row.completed_at, "artifact_completed", "artifact", row.id, row.generation_status)
-            add_event(row.updated_at, "artifact_status", "artifact", row.id, row.generation_status)
+            add_event(row.created_at, "artifact_created", "artifact", row.id)
+            add_event(row.generation_started_at, "generation_started", "artifact", row.id)
+            add_event(row.completed_at, "artifact_completed", "artifact", row.id, "COMPLETED", "at_event")
 
         for row in jobs:
-            add_event(row.created_at, "generation_job_created", "job", row.id, row.status)
-            add_event(row.updated_at, "generation_job_status", "job", row.id, row.status)
+            add_event(row.created_at, "generation_job_created", "job", row.id)
 
-        timeline.sort(key=lambda item: (item.occurred_at, item.entity_type, item.event_type, str(item.entity_id)))
+        # The domain tables retain current status, but do not retain every
+        # transition. Publish those values as an explicitly current snapshot
+        # instead of attaching them to older creation/update timestamps.
+        snapshot_at = utc_now()
+        add_event(
+            snapshot_at,
+            "current_status_snapshot",
+            "session",
+            session.id,
+            session.status,
+            "current_snapshot",
+        )
+        for row in subscriptions:
+            add_event(
+                snapshot_at,
+                "current_status_snapshot",
+                "subscription",
+                row.id,
+                row.provider_status,
+                "current_snapshot",
+            )
+        for row in payments:
+            add_event(
+                snapshot_at,
+                "current_status_snapshot",
+                "payment",
+                row.id,
+                row.status,
+                "current_snapshot",
+            )
+        for row in artifacts:
+            add_event(
+                snapshot_at,
+                "current_status_snapshot",
+                "artifact",
+                row.id,
+                row.generation_status,
+                "current_snapshot",
+            )
+        for row in jobs:
+            add_event(snapshot_at, "current_status_snapshot", "job", row.id, row.status, "current_snapshot")
+
+        timeline.sort(
+            key=lambda item: (
+                item.occurred_at,
+                item.entity_type,
+                item.event_type,
+                str(item.entity_id),
+            )
+        )
 
         return SupportLookupResult(
             session=SupportSessionStatus(

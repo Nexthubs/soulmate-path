@@ -12,7 +12,9 @@ import {
   hoursSincePayment,
   setSoulmateAnalyticsSink,
   trackArtifactUnlocked,
+  trackResultArtifactUnlocks,
   trackOnce,
+  trackSessionViewOnce,
   trackSoulmateEvent,
   type SoulmateAnalyticsSink,
 } from "../src/soulmate/analytics";
@@ -95,7 +97,7 @@ describe("§18.1 event catalog", () => {
       soulmate_payment_failed: { reason_code: "confirmation_timeout" },
       soulmate_result_view: { sketch_availability: "LOCKED", report_availability: "LOCKED" },
       soulmate_sketch_unlocked: { session_id: "s1", hours_since_payment: 12.1 },
-      soulmate_sketch_viewed: { artifact_version: null },
+      soulmate_sketch_viewed: { artifact_version: "v1" },
       soulmate_sketch_generation_started: { model: "gpt-image-2", prompt_version: "v1" },
       soulmate_sketch_generation_completed: { latency_ms: 45000, attempts: 1 },
       soulmate_sketch_generation_failed: { error_code: "GENERATION_FAILED", attempts: 3 },
@@ -142,6 +144,33 @@ describe("§18.2 privacy boundary", () => {
     });
     expect(sink.events[0].properties).toEqual({ amount: "19.00", currency: "[redacted]" });
     expect(sink.events[1].properties).toEqual({ from_q: "[redacted]", to_q: "q04" });
+  });
+
+  it("redacts email substrings embedded in untrusted attribution values", () => {
+    const sink = makeSink();
+    setSoulmateAnalyticsSink(sink);
+    trackSoulmateEvent({
+      name: "soulmate_landing_view",
+      // URLSearchParams decodes `invite+jane%40example.com` to this value.
+      properties: { source: "newsletter", campaign: "invite jane@example.com spring" },
+    });
+    expect(sink.events[0].properties).toEqual({
+      source: "newsletter",
+      campaign: "invite [redacted] spring",
+    });
+    expect(JSON.stringify(sink.events[0])).not.toContain("jane@example.com");
+  });
+
+  it("redacts Unicode email substrings embedded in attribution values", () => {
+    const sink = makeSink();
+    setSoulmateAnalyticsSink(sink);
+    trackSoulmateEvent({
+      name: "soulmate_landing_view",
+      properties: { campaign: "紹介 山田@例え.テスト cafe\u0301@example.com spring" },
+    });
+    expect(sink.events[0].properties.campaign).toBe("紹介 [redacted] [redacted] spring");
+    expect(JSON.stringify(sink.events[0])).not.toContain("山田@例え.テスト");
+    expect(JSON.stringify(sink.events[0])).not.toContain("cafe\u0301@example.com");
   });
 
   it("redacts PII inside array values (option_codes defense-in-depth)", () => {
@@ -237,6 +266,36 @@ describe("one-shot + helper contract", () => {
     }
   });
 
+  it("deduplicates views per session during a mount and tracks revisits after remount", () => {
+    const sink = makeSink();
+    setSoulmateAnalyticsSink(sink);
+    const pageEvents = [
+      {
+        name: "soulmate_result_view" as const,
+        properties: { sketch_availability: "LOCKED", report_availability: "LOCKED" },
+      },
+      { name: "soulmate_sketch_viewed" as const, properties: { artifact_version: "v1" } },
+      { name: "soulmate_report_viewed" as const, properties: { report_version: "v1" } },
+    ];
+    for (const event of pageEvents) {
+      const mountedPageKeys = new Set<string>();
+      expect(trackSessionViewOnce(mountedPageKeys, event, "session-a")).toBe(true);
+      expect(trackSessionViewOnce(mountedPageKeys, event, "session-a")).toBe(false);
+      expect(trackSessionViewOnce(mountedPageKeys, event, "session-b")).toBe(true);
+      expect(trackSessionViewOnce(mountedPageKeys, event, "session-b")).toBe(false);
+      expect(trackSessionViewOnce(mountedPageKeys, event, "session-a")).toBe(false);
+      expect(trackSessionViewOnce(mountedPageKeys, event, undefined)).toBe(false);
+
+      // A newly mounted page owns a fresh Set, so revisiting the same session fires again.
+      const revisitedPageKeys = new Set<string>();
+      expect(trackSessionViewOnce(revisitedPageKeys, event, "session-a")).toBe(true);
+    }
+    expect(sink.events).toHaveLength(9);
+    for (const { name } of pageEvents) {
+      expect(sink.events.filter((event) => event.name === name)).toHaveLength(3);
+    }
+  });
+
   it("trackArtifactUnlocked emits the §18.1 unlock event deduplicated per kind", () => {
     const sink = makeSink();
     setSoulmateAnalyticsSink(sink);
@@ -250,10 +309,75 @@ describe("one-shot + helper contract", () => {
     try {
       expect(trackArtifactUnlocked("sketch", { session_id: "s1", hours_since_payment: 12.5 })).toBe(true);
       expect(trackArtifactUnlocked("sketch", { session_id: "s1", hours_since_payment: 12.5 })).toBe(false);
-      expect(trackArtifactUnlocked("report", {})).toBe(true);
+      expect(trackArtifactUnlocked("report", { session_id: "s1" })).toBe(true);
       const names = sink.events.map((e) => e.name);
       expect(names).toEqual(["soulmate_sketch_unlocked", "soulmate_report_unlocked"]);
       expect(sink.events[0].properties).toEqual({ session_id: "s1", hours_since_payment: 12.5 });
+    } finally {
+      delete (globalThis as unknown as { window?: unknown }).window;
+    }
+  });
+
+  it("tracks LOCKED to UNLOCKED after a fresh aggregate and scopes dedupe by session", () => {
+    const sink = makeSink();
+    setSoulmateAnalyticsSink(sink);
+    const store = new Map<string, string>();
+    (globalThis as unknown as { window?: unknown }).window = {
+      sessionStorage: {
+        getItem: (k: string) => store.get(k) ?? null,
+        setItem: (k: string, v: string) => void store.set(k, v),
+      },
+    };
+    try {
+      const aggregate = {
+        sessionId: "session-1",
+        sketchAvailability: "LOCKED",
+        reportAvailability: "LOCKED",
+        serverTime: "2026-09-28T12:00:00Z",
+        firstPaymentAt: "2026-09-28T00:00:00Z",
+      };
+      trackResultArtifactUnlocks(aggregate);
+      expect(sink.events).toHaveLength(0);
+
+      trackResultArtifactUnlocks({ ...aggregate, sketchAvailability: "UNLOCKED" });
+      trackResultArtifactUnlocks({ ...aggregate, sketchAvailability: "UNLOCKED" });
+      expect(sink.events.map((event) => event.name)).toEqual(["soulmate_sketch_unlocked"]);
+      expect(sink.events[0].properties).toEqual({
+        session_id: "session-1",
+        hours_since_payment: 12,
+      });
+
+      // Another session in this same tab has its own first-unlock event.
+      trackResultArtifactUnlocks({
+        ...aggregate,
+        sessionId: "session-2",
+        reportAvailability: "UNLOCKED",
+      });
+      expect(sink.events.map((event) => event.name)).toEqual([
+        "soulmate_sketch_unlocked",
+        "soulmate_report_unlocked",
+      ]);
+      expect(sink.events[1].properties.session_id).toBe("session-2");
+    } finally {
+      delete (globalThis as unknown as { window?: unknown }).window;
+    }
+  });
+
+  it("fails closed when the session identifier is absent", () => {
+    const sink = makeSink();
+    setSoulmateAnalyticsSink(sink);
+    const store = new Map<string, string>();
+    (globalThis as unknown as { window?: unknown }).window = {
+      sessionStorage: {
+        getItem: (k: string) => store.get(k) ?? null,
+        setItem: (k: string, v: string) => void store.set(k, v),
+      },
+    };
+    try {
+      expect(trackArtifactUnlocked("sketch", {})).toBe(false);
+      expect(trackArtifactUnlocked("sketch", {})).toBe(false);
+      expect(sink.events).toHaveLength(0);
+      expect(store.size).toBe(0);
     } finally {
       delete (globalThis as unknown as { window?: unknown }).window;
     }

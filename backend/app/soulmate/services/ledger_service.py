@@ -9,7 +9,7 @@ from decimal import Decimal
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 import uuid
-from sqlalchemy import func, select
+from sqlalchemy import event, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import log_event
@@ -28,6 +28,62 @@ from app.soulmate.domain.ledger_models import (
 )
 
 logger = logging.getLogger(__name__)
+
+_PENDING_FUNNEL_EVENTS_KEY = "soulmate_funnel_events_after_commit"
+
+
+def _emit_pending_funnel_events(session) -> None:
+    """Emit queued funnel events only after the outer database transaction commits."""
+    # `after_commit` also fires when a SAVEPOINT is released. Keep the events
+    # queued until the outer transaction commits the payment and activation.
+    if session.in_nested_transaction():
+        return
+
+    pending = session.info.pop(_PENDING_FUNNEL_EVENTS_KEY, [])
+    for _transaction_chain, event_name, session_id, properties in pending:
+        try:
+            track_funnel_event(event_name, session_id=session_id, properties=properties)
+        except Exception:
+            # Analytics is best-effort and must not make a committed payment
+            # appear to have failed to its caller.
+            logger.exception("Failed to emit committed funnel event %s", event_name)
+
+
+def _discard_rolled_back_funnel_events(session, previous_transaction) -> None:
+    """Drop events whose payment insert belonged to a rolled-back transaction/savepoint."""
+    pending = session.info.get(_PENDING_FUNNEL_EVENTS_KEY)
+    if not pending:
+        return
+    remaining = [entry for entry in pending if previous_transaction not in entry[0]]
+    if remaining:
+        session.info[_PENDING_FUNNEL_EVENTS_KEY] = remaining
+    else:
+        session.info.pop(_PENDING_FUNNEL_EVENTS_KEY, None)
+
+
+def _transaction_chain(session) -> tuple:
+    transaction = session.get_nested_transaction() or session.get_transaction()
+    chain = []
+    while transaction is not None:
+        chain.append(transaction)
+        transaction = transaction.parent
+    return tuple(chain)
+
+
+def _schedule_funnel_event_after_commit(
+    db: AsyncSession,
+    event_name: str,
+    session_id: Optional[str],
+    properties: Dict[str, Any],
+) -> None:
+    sync_session = db.sync_session
+    if not event.contains(sync_session, "after_commit", _emit_pending_funnel_events):
+        event.listen(sync_session, "after_commit", _emit_pending_funnel_events)
+    if not event.contains(sync_session, "after_soft_rollback", _discard_rolled_back_funnel_events):
+        event.listen(sync_session, "after_soft_rollback", _discard_rolled_back_funnel_events)
+    sync_session.info.setdefault(_PENDING_FUNNEL_EVENTS_KEY, []).append(
+        (_transaction_chain(sync_session), event_name, session_id, properties)
+    )
 
 
 class PaymentLedgerService:
@@ -77,6 +133,22 @@ class PaymentLedgerService:
             count = (await db.execute(count_stmt)).scalar() or 0
             cycle_no = count + 1
 
+        # Determine "first payment" from prior successful ledger entries, not
+        # cycle_no: failed attempts can occupy earlier rows/cycle numbers.
+        first_successful_payment = False
+        if create_data.status.upper() == "COMPLETED":
+            prior_success_stmt = (
+                select(SubscriptionPayment.id)
+                .where(
+                    SubscriptionPayment.subscription_id == create_data.subscription_id,
+                    SubscriptionPayment.status.in_(("COMPLETED", "REFUNDED", "REVERSED")),
+                )
+                .limit(1)
+            )
+            first_successful_payment = (
+                await db.execute(prior_success_stmt)
+            ).scalar_one_or_none() is None
+
         # 3. Create durable ledger entry
         payment = SubscriptionPayment(
             subscription_id=create_data.subscription_id,
@@ -107,18 +179,18 @@ class PaymentLedgerService:
                 "provider_event_id": payment.provider_event_id,
             },
         )
-        # §18.1 `soulmate_payment_confirmed` fires exactly once per subscription:
-        # the first durably recorded COMPLETED payment (cycle 1). Both the webhook
-        # path and provider reconciliation converge here, so webhook retries can
-        # never duplicate the event (provider_payment_id idempotency above).
-        if payment.status == "COMPLETED" and payment.cycle_no == 1:
+        # First-confirmed payment analytics is based on earlier successful
+        # ledger rows, not cycle_no: failed attempts can occupy earlier rows.
+        # Emission is deferred until the root transaction commits.
+        if first_successful_payment:
             session_row = (await db.execute(
                 select(Subscription.session_id).where(Subscription.id == payment.subscription_id)
             )).scalar_one_or_none()
-            track_funnel_event(
+            _schedule_funnel_event_after_commit(
+                db,
                 "soulmate_payment_confirmed",
-                session_id=str(session_row) if session_row is not None else None,
-                properties={"amount": str(payment.amount), "currency": payment.currency},
+                str(session_row) if session_row is not None else None,
+                {"amount": str(payment.amount), "currency": payment.currency},
             )
         return payment, True
 

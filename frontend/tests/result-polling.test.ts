@@ -36,6 +36,7 @@ function makeAggregate(
   reportStatus: "LOCKED" | "READY" | "GENERATING" | "COMPLETED" | "FAILED"
 ): ResultAggregateResponse {
   return {
+    session_id: "session-test",
     server_time: "2026-09-26T12:00:00Z",
     subscription: {
       provider: "paypal",

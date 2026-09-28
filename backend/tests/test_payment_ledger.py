@@ -119,6 +119,74 @@ async def test_record_completed_payment_persists_all_durable_fields(async_db: As
 
 
 @pytest.mark.asyncio
+async def test_first_payment_event_uses_success_history_and_waits_for_outer_commit(
+    async_db: AsyncSession, monkeypatch
+):
+    emitted = []
+    monkeypatch.setattr(
+        "app.soulmate.services.ledger_service.track_funnel_event",
+        lambda event_name, **kwargs: emitted.append((event_name, kwargs)),
+    )
+    _, sub = await create_test_session_and_sub(
+        async_db, f"I-FIRST-SUCCESS-{uuid.uuid4().hex[:8]}"
+    )
+
+    await PaymentLedgerService.record_payment(
+        db=async_db,
+        create_data=PaymentRecordCreate(
+            subscription_id=sub.id,
+            provider_payment_id=f"FAILED-FIRST-{uuid.uuid4().hex}",
+            amount=Decimal("19.00"),
+            currency="USD",
+            status="FAILED",
+        ),
+    )
+    await async_db.commit()
+    assert emitted == []
+
+    payment_id = f"SALE-RETRY-{uuid.uuid4().hex}"
+    with pytest.raises(RuntimeError, match="activation failed"):
+        async with async_db.begin_nested():
+            await PaymentLedgerService.record_payment(
+                db=async_db,
+                create_data=PaymentRecordCreate(
+                    subscription_id=sub.id,
+                    provider_payment_id=payment_id,
+                    amount=Decimal("19.00"),
+                    currency="USD",
+                    status="COMPLETED",
+                    paid_at=datetime(2026, 9, 28, 12, 0, 0, tzinfo=timezone.utc),
+                ),
+            )
+            raise RuntimeError("activation failed")
+
+    # A failed activation rolls back the payment savepoint and its queued event.
+    await async_db.commit()
+    assert emitted == []
+
+    async with async_db.begin_nested():
+        payment, created = await PaymentLedgerService.record_payment(
+            db=async_db,
+            create_data=PaymentRecordCreate(
+                subscription_id=sub.id,
+                provider_payment_id=payment_id,
+                amount=Decimal("19.00"),
+                currency="USD",
+                status="COMPLETED",
+                paid_at=datetime(2026, 9, 28, 12, 0, 0, tzinfo=timezone.utc),
+            ),
+        )
+        assert created is True
+        assert payment.cycle_no == 2  # A prior FAILED row is not prior success.
+    # Releasing the webhook savepoint is not the outer transaction commit.
+    assert emitted == []
+
+    await async_db.commit()
+    assert [event_name for event_name, _ in emitted] == ["soulmate_payment_confirmed"]
+    assert emitted[0][1]["session_id"] is not None
+
+
+@pytest.mark.asyncio
 async def test_subsequent_cycle_payments_derive_monotonic_cycle_numbers(async_db: AsyncSession):
     """Verify recurring payments for the same subscription derive cycle_no = 2, 3... monotonically."""
     sub_id = f"I-CYCLES-{uuid.uuid4().hex[:8]}"
