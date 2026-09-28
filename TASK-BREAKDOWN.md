@@ -1429,7 +1429,7 @@ Landing/eligible user -> Subscribe -> PayPal approval -> webhook/payment confirm
 
 **Priority:** P0  
 **Depends:** SP-406/408  
-**Status:** TODO
+**Status:** DONE (2026-09-28, `docs/handoffs/SP-1003.md`)
 **Context refs:** DEV-SPEC §9.5–9.6, §23 | Decisions: PAY-AUTH-01 | Dependency handoffs: SP-406
 
 
