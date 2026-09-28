@@ -242,7 +242,7 @@ export function ResultItemCard({
       data-ui-state={uiState}
       data-availability={state.availability}
       data-generation={state.generation}
-      className={`w-full rounded-3xl p-6 bg-white border border-neutral-100 shadow-sm transition-all duration-300 flex flex-col items-center text-center ${className}`}
+      className={`w-full rounded-3xl p-4 bg-white border border-neutral-100 shadow-sm transition-all duration-300 flex flex-col items-center text-center ${className}`}
     >
       {/* 1. COUNTDOWN STATE (LOCKED, Figma 102:1201) */}
       {uiState === "countdown" && (
@@ -348,24 +348,24 @@ export function ResultItemCard({
            chevron, full-width gradient "Check Now →". */
         <div className="w-full flex flex-col space-y-4" data-testid="card-state-ready">
           <div className="flex items-center justify-between w-full">
-            <div className="flex items-center gap-3">
-              {/* Glowing star badge */}
-              <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-rose-400 to-amber-300 flex items-center justify-center text-white shadow-md">
+            <div className="flex items-center gap-[10px] min-w-0">
+              {/* Glowing star badge — shrink-0 keeps the Figma perfect circle */}
+              <div className="w-12 h-12 shrink-0 rounded-full bg-gradient-to-tr from-rose-400 to-amber-300 flex items-center justify-center text-white shadow-md">
                 <svg className="w-6 h-6 fill-current" viewBox="0 0 24 24">
                   <path d="M12 1.5l2.8 6.6 7.2.6-5.4 4.8 1.6 7-6.2-3.8-6.2 3.8 1.6-7-5.4-4.8 7.2-.6z" />
                 </svg>
               </div>
-              <div className="text-left">
+              <div className="text-left min-w-0 flex-1">
                 <h3 className="font-sans font-bold text-[18px] leading-[24px] text-neutral-900">
                   {cardTitle}
                 </h3>
               </div>
             </div>
 
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 shrink-0">
               <span
                 data-testid="badge-ready"
-                className="px-2.5 py-1 rounded-full bg-rose-50 border border-rose-200 text-rose-600 font-bold text-xs tracking-wider"
+                className="px-2 py-1 rounded-full bg-rose-50 border border-rose-200 text-rose-600 font-bold text-xs tracking-wider"
               >
                 READY!
               </span>

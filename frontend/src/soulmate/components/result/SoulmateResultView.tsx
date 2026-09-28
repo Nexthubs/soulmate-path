@@ -320,8 +320,9 @@ export function SoulmateResultView({
         </h1>
       </div>
 
-      {/* Main Elevated Container (Figma 102:1201) */}
-      <main className="w-full rounded-[32px] bg-white/95 shadow-xl border border-neutral-100 p-5 space-y-6">
+      {/* Main Elevated Container (Figma 102:1201) — p-4 matches the Figma frame's
+          outer padding so the status cards get their designed width at 390px. */}
+      <main className="w-full rounded-[32px] bg-white/95 shadow-xl border border-neutral-100 p-4 space-y-6">
         {/* Sketch Status Card */}
         <ResultItemCard
           type="sketch"
