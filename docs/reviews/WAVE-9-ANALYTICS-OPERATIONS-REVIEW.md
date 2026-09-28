@@ -3,7 +3,7 @@
 - **Review result:** PASS (owner-scoped implementation acceptance)
 - **Reviewer:** Codex
 - **Date:** 2026-09-28
-- **Reviewed branch/commit:** `main` based on `f50b08e`, including the Wave 9 audit-remediation changes in this submission
+- **Reviewed code/test tree:** `main` @ `07aebf9` (this review metadata was finalized in the following documentation commit)
 - **Review source:** `TASK-BREAKDOWN.md` → Wave 9 implementation checkpoint
 
 ## 1. Scope and handoffs reviewed
