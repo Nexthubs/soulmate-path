@@ -168,6 +168,34 @@ describe("SP-106: Result Cards Fixture UI (DEV-SPEC §2, §10; DECISIONS TIME-01
     });
   });
 
+  describe("Ready State Rendering — Sketch (Figma 102:1315 画像生成了)", () => {
+    it("renders the sketch ready card per Figma: uppercase heading, sparkles, Check Now ✦ (no icon/badge)", () => {
+      const state: ArtifactItemState = {
+        unlock_at: "2026-09-22T01:00:00Z",
+        availability: "UNLOCKED",
+        generation: "NOT_STARTED",
+      };
+
+      const html = renderToStaticMarkup(
+        <ResultItemCard
+          type="sketch"
+          state={state}
+        />
+      );
+
+      expect(html).toContain("data-testid=\"result-card-sketch\"");
+      expect(html).toContain("data-ui-state=\"ready\"");
+      expect(html).toContain("Your Soulmate Sketch is Ready!");
+      expect(html).toContain("uppercase");
+      expect(html).toContain("data-testid=\"ready-action-button\"");
+      expect(html).toContain("Check Now");
+      // Figma 102:1315 has no star icon or READY! badge on the sketch card
+      expect(html).not.toContain("data-testid=\"badge-ready\"");
+      // the CTA glyph is the four-pointed sparkle, not the arrow
+      expect(html).toContain("✦");
+    });
+  });
+
   describe("Generating State Rendering", () => {
     it("renders loading spinner and progress bar with aria-busy", () => {
       const state: ArtifactItemState = {

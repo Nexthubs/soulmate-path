@@ -251,10 +251,15 @@ export function ResultItemCard({
             {cardTitle}
           </h3>
 
-          {/* Segmented Ring Graphic */}
+          {/* Segmented Ring Graphic — clockwise looping rotation (owner direction,
+              Figma 102:1201/102:1270); the center countdown stays static. */}
           <div className="relative w-44 h-44 flex items-center justify-center my-2">
             {/* SVG segmented circular arcs matching Figma 102:1201 */}
-            <svg className="w-full h-full transform -rotate-45" viewBox="0 0 100 100">
+            <svg
+              className="w-full h-full animate-[spin_8s_linear_infinite]"
+              viewBox="0 0 100 100"
+              aria-hidden="true"
+            >
               {/* Segment 1 */}
               <circle
                 cx="50"
@@ -318,8 +323,29 @@ export function ResultItemCard({
         </div>
       )}
 
-      {/* 2. READY STATE (UNLOCKED + NOT_STARTED, Figma 102:1332) */}
-      {uiState === "ready" && (
+      {/* 2. READY STATE (UNLOCKED + NOT_STARTED) */}
+      {uiState === "ready" && (type === "sketch" ? (
+        /* Sketch ready — Figma 102:1315 "画像生成了": centered uppercase heading,
+           sparkle accents, full-width gradient "Check Now ✦" (no icon/badge). */
+        <div className="relative w-full flex flex-col items-center space-y-5 py-1" data-testid="card-state-ready">
+          <span aria-hidden="true" className="absolute top-0 right-1 text-amber-400 text-sm">✦</span>
+          <span aria-hidden="true" className="absolute top-6 left-2 text-purple-200 text-xs">✦</span>
+          <h3 className="font-sans font-extrabold text-[18px] leading-[24px] tracking-wide text-neutral-900 text-center uppercase">
+            Your Soulmate Sketch is Ready!
+          </h3>
+          <button
+            type="button"
+            data-testid="ready-action-button"
+            onClick={() => onAction && onAction(type)}
+            className="w-full h-[52px] rounded-2xl bg-gradient-to-r from-[#ff8a7a] to-[#ff4b4b] hover:from-[#ff7a6a] hover:to-[#ff3b3b] active:scale-[0.99] text-white font-sans font-bold text-[16px] shadow-lg shadow-rose-200 transition-all flex items-center justify-center gap-2 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
+          >
+            <span>Check Now</span>
+            <span aria-hidden="true">✦</span>
+          </button>
+        </div>
+      ) : (
+        /* Report ready — Figma 102:1332 "报告产出了": icon left, title, READY! badge,
+           chevron, full-width gradient "Check Now →". */
         <div className="w-full flex flex-col space-y-4" data-testid="card-state-ready">
           <div className="flex items-center justify-between w-full">
             <div className="flex items-center gap-3">
@@ -357,7 +383,7 @@ export function ResultItemCard({
             <span aria-hidden="true">→</span>
           </button>
         </div>
-      )}
+      ))}
 
       {/* 3. GENERATING STATE (UNLOCKED + QUEUED/PROCESSING) */}
       {uiState === "generating" && (
