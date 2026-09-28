@@ -1394,7 +1394,7 @@ Shows timeline/status without exposing provider secrets or unrelated users' data
 
 **Priority:** P1  
 **Depends:** core UI complete  
-**Status:** TODO
+**Status:** DONE (2026-09-28, `docs/handoffs/SP-1001.md`)
 **Context refs:** DEV-SPEC §2, §23 | Decisions: — | Dependency handoffs: —
 
 
