@@ -1449,7 +1449,7 @@ No duplicate entitlements/payments and no invalid state regression.
 
 **Priority:** P0  
 **Depends:** SP-604/606  
-**Status:** TODO
+**Status:** DONE (2026-09-28, `docs/handoffs/SP-1004.md`)
 **Context refs:** DEV-SPEC §11.4–11.6, §23 | Decisions: ASSET-01 | Dependency handoffs: SP-604
 
 
