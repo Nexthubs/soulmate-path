@@ -1410,7 +1410,7 @@ No blocking layout/input/payment UI defects at 390px baseline and supported widt
 
 **Priority:** P0  
 **Depends:** SP-401..410, SP-501..503  
-**Status:** TODO
+**Status:** DONE (2026-09-28, `docs/handoffs/SP-1002.md`)
 **Context refs:** DEV-SPEC §9, §23, §25 | Decisions: PAY-01, PAY-02, PAY-AUTH-01 | Dependency handoffs: SP-401, SP-501
 
 
