@@ -25,6 +25,15 @@
 - **Affected:** SP-403..408, SP-501..505.
 - **Source/evidence:** DEV-SPEC v1.2.
 
+### SUPPORT-AUTH-01 — Internal support lookup authorization
+
+- **Status:** RESOLVED
+- **Date:** 2026-09-28
+- **Context:** SP-905 adds case lookup to the existing `X-Support-Key` support API. The prior guard allowed development/test requests without a key and fell back to the session-signing secret elsewhere.
+- **Decision:** Support endpoints require a dedicated `SUPPORT_API_KEY` of at least 32 non-whitespace characters, distinct from `SESSION_SECRET_KEY`, and compare it in constant time. Missing or invalid configuration disables access; there is no environment bypass. Case lookup accepts one precise identifier; email is sent in a POST body, is normalized for matching, is never returned/logged, and returns an ambiguity response if it matches multiple sessions.
+- **Affected:** SP-407 support ledger endpoints, SP-905, M6 production configuration.
+- **Source/evidence:** Existing support-header pattern in `backend/app/api/soulmate/ledger.py`; implementation and authorization/privacy coverage in `docs/handoffs/SP-905.md`.
+
 ### TIME-01 — Unlock time authority
 
 - **Status:** RESOLVED

@@ -75,6 +75,7 @@ def test_production_validation_fails_on_missing_keys():
     assert "OPENAI_API_KEY" in err_msg
     assert "OBJECT_STORAGE_BUCKET" in err_msg
     assert "SESSION_SECRET_KEY" in err_msg
+    assert "SUPPORT_API_KEY" in err_msg
 
 
 def test_production_validation_passes_when_all_keys_provided():
@@ -96,10 +97,21 @@ def test_production_validation_passes_when_all_keys_provided():
         object_storage_access_key="minio_or_s3_key",
         object_storage_secret_key="minio_or_s3_secret",
         session_secret_key="prod_session_secret_key_at_least_32_chars_long_12345",
+        support_api_key="prod_support_api_key_at_least_32_chars_long_12345",
     )
     assert valid_prod_settings.is_production is True
     # Should complete without error
     valid_prod_settings.validate_production_config()
+
+    weak_support_settings = valid_prod_settings.model_copy(update={"support_api_key": "short-key"})
+    with pytest.raises(ConfigurationError, match="SUPPORT_API_KEY"):
+        weak_support_settings.validate_production_config()
+
+    reused_support_settings = valid_prod_settings.model_copy(
+        update={"support_api_key": valid_prod_settings.session_secret_key}
+    )
+    with pytest.raises(ConfigurationError, match="SUPPORT_API_KEY"):
+        reused_support_settings.validate_production_config()
 
     public_prod_settings = valid_prod_settings.model_copy(
         update={"object_storage_public_url_prefix": "https://cdn.example.com/assets"}
@@ -126,6 +138,7 @@ def test_production_validation_rejects_insecure_and_loopback_urls():
         object_storage_access_key="minio_or_s3_key",
         object_storage_secret_key="minio_or_s3_secret",
         session_secret_key="prod_session_secret_key_at_least_32_chars_long_12345",
+        support_api_key="prod_support_api_key_at_least_32_chars_long_12345",
     )
 
     # 1. Loopback IP http://127.0.0.1:3000

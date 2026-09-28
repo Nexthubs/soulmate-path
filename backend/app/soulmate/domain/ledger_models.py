@@ -49,6 +49,26 @@ class PaymentLedgerRecord(BaseModel):
     customer_email: Optional[str] = None
 
 
+class SupportPaymentLedgerRecord(BaseModel):
+    """Allowlisted payment fields safe for support HTTP responses."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    subscription_id: uuid.UUID
+    provider_payment_id: str
+    cycle_no: Optional[int] = None
+    amount: Decimal
+    currency: str
+    status: str
+    paid_at: Optional[datetime] = None
+    refunded_at: Optional[datetime] = None
+    created_at: datetime
+    provider_subscription_id: Optional[str] = None
+    session_id: Optional[uuid.UUID] = None
+    session_public_id: Optional[str] = None
+
+
 class PaymentLedgerSummary(BaseModel):
     """Aggregate billing summary for a subscription."""
 
@@ -56,6 +76,25 @@ class PaymentLedgerSummary(BaseModel):
     provider_subscription_id: Optional[str] = None
     session_public_id: Optional[str] = None
     customer_email: Optional[str] = None
+    currency: str = "USD"
+    total_payments_count: int = 0
+    completed_payments_count: int = 0
+    failed_payments_count: int = 0
+    refunded_payments_count: int = 0
+    total_amount_paid: Decimal = Decimal("0.00")
+    first_payment_at: Optional[datetime] = None
+    latest_payment_at: Optional[datetime] = None
+    latest_status: str = "NONE"
+
+
+class SupportPaymentLedgerSummary(BaseModel):
+    """Allowlisted payment summary fields safe for support HTTP responses."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    subscription_id: uuid.UUID
+    provider_subscription_id: Optional[str] = None
+    session_public_id: Optional[str] = None
     currency: str = "USD"
     total_payments_count: int = 0
     completed_payments_count: int = 0
@@ -86,6 +125,17 @@ class LedgerSearchResult(BaseModel):
     """Paginated list of payment ledger records."""
 
     items: List[PaymentLedgerRecord]
+    total: int
+    limit: int
+    offset: int
+
+
+class SupportLedgerSearchResult(BaseModel):
+    """Allowlisted paginated payment response for internal support."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    items: List[SupportPaymentLedgerRecord]
     total: int
     limit: int
     offset: int

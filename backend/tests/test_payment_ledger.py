@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.billing import Subscription, SubscriptionPayment
 from app.db.models.session import SoulmateSession
 from app.db.session import AsyncSessionLocal
+from app.core.config import settings
 from app.main import app
 from app.soulmate.domain.ledger_models import (
     LedgerSearchQuery,
@@ -419,7 +420,7 @@ async def test_search_payments_with_filters_and_pagination(async_db: AsyncSessio
 
 
 @pytest.mark.asyncio
-async def test_api_support_lookup_by_provider_payment_id(async_db: AsyncSession):
+async def test_api_support_lookup_by_provider_payment_id(async_db: AsyncSession, monkeypatch):
     """Test GET /api/soulmate/ledger/payments/{provider_payment_id}."""
     sub_id = f"I-APIPAY-{uuid.uuid4().hex[:8]}"
     sess, sub = await create_test_session_and_sub(async_db, sub_id)
@@ -434,12 +435,19 @@ async def test_api_support_lookup_by_provider_payment_id(async_db: AsyncSession)
             currency="USD",
             status="COMPLETED",
             paid_at=datetime(2026, 9, 25, 12, 0, 0, tzinfo=timezone.utc),
+            raw_json={"provider_secret_marker": "must-not-be-in-support-response"},
         ),
     )
     await async_db.commit()
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    support_key = "test-support-api-key-at-least-32-characters-long"
+    monkeypatch.setattr(settings, "support_api_key", support_key)
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"X-Support-Key": support_key},
+    ) as client:
         # Success lookup
         resp = await client.get(f"/api/soulmate/ledger/payments/{sale_id}")
         assert resp.status_code == 200
@@ -450,6 +458,10 @@ async def test_api_support_lookup_by_provider_payment_id(async_db: AsyncSession)
         assert data["status"] == "COMPLETED"
         assert data["provider_subscription_id"] == sub_id
         assert data["session_public_id"] == sess.public_id
+        assert "raw_json" not in data
+        assert "customer_email" not in data
+        assert "provider_secret_marker" not in resp.text
+        assert "must-not-be-in-support-response" not in resp.text
 
         # 404 for unknown payment ID
         resp_404 = await client.get("/api/soulmate/ledger/payments/NON-EXISTENT-SALE-999")
@@ -457,7 +469,7 @@ async def test_api_support_lookup_by_provider_payment_id(async_db: AsyncSession)
 
 
 @pytest.mark.asyncio
-async def test_api_support_ledger_search_endpoint(async_db: AsyncSession):
+async def test_api_support_ledger_search_endpoint(async_db: AsyncSession, monkeypatch):
     """Test GET /api/soulmate/ledger/search."""
     sub_id = f"I-APISEARCH-{uuid.uuid4().hex[:8]}"
     sess, sub = await create_test_session_and_sub(async_db, sub_id)
@@ -476,13 +488,29 @@ async def test_api_support_ledger_search_endpoint(async_db: AsyncSession):
     await async_db.commit()
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    support_key = "test-support-api-key-at-least-32-characters-long"
+    monkeypatch.setattr(settings, "support_api_key", support_key)
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"X-Support-Key": support_key},
+    ) as client:
         resp = await client.get(f"/api/soulmate/ledger/search?provider_subscription_id={sub_id}&limit=10")
         assert resp.status_code == 200
         data = resp.json()
         assert data["total"] >= 1
         items = data["items"]
         assert any(item["provider_payment_id"] == sale_id for item in items)
+        assert all("raw_json" not in item and "customer_email" not in item for item in items)
+
+        broad_resp = await client.get("/api/soulmate/ledger/search?status=COMPLETED")
+        assert broad_resp.status_code == 422
+        email_query = f"private-{uuid.uuid4().hex[:8]}@example.com"
+        rejected_email_query = await client.get(
+            f"/api/soulmate/ledger/search?provider_subscription_id={sub_id}&email={email_query}"
+        )
+        assert rejected_email_query.status_code == 422
+        assert email_query not in rejected_email_query.text
 
 
 @pytest.mark.asyncio

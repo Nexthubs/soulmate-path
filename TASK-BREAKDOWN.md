@@ -1338,7 +1338,7 @@ Copy is derived from actual access date/state and does not promise an unsupporte
 
 **Priority:** P0  
 **Depends:** SP-902/903, existing monitoring  
-**Status:** TODO
+**Status:** BLOCKED (2026-09-28 — existing alert platform and alert policy not specified)
 **Context refs:** DEV-SPEC §19 | Decisions: — | Dependency handoffs: SP-902
 
 
@@ -1358,8 +1358,8 @@ Use existing alerting platform; do not create a second monitoring stack.
 
 **Priority:** P1  
 **Depends:** core DB + payment + artifact tables  
-**Status:** TODO
-**Context refs:** DEV-SPEC §14, §19–20 | Decisions: PAY-AUTH-01, ASSET-01 | Dependency handoffs: —
+**Status:** DONE
+**Context refs:** DEV-SPEC §14, §19–20 | Decisions: PAY-AUTH-01, ASSET-01, SUPPORT-AUTH-01 | Dependency handoffs: —
 
 
 ### Goal

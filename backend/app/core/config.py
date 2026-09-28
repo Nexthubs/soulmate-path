@@ -96,6 +96,12 @@ class Settings(BaseSettings):
     )
     session_cookie_name: str = "soulmate_sid"
     session_cookie_max_age_days: int = 30
+    # Dedicated credential for internal customer-support lookup. Never reuse the
+    # session-signing secret for support authorization.
+    support_api_key: Optional[str] = Field(
+        default=None,
+        description="Dedicated API key for internal support endpoints",
+    )
 
     # --------------------------------------------------------------------------
     # 4. PayPal Integration & Pricing (Spec §9, PAY-01, PAY-02, PAY-AUTH-01)
@@ -299,6 +305,13 @@ class Settings(BaseSettings):
             or len(self.session_secret_key) < 32
         ):
             missing_keys.append("SESSION_SECRET_KEY (must be configured with a secure key >= 32 chars in production)")
+
+        if (
+            not self.support_api_key
+            or len(self.support_api_key.strip()) < 32
+            or self.support_api_key.strip() == self.session_secret_key.strip()
+        ):
+            missing_keys.append("SUPPORT_API_KEY (must be configured with a dedicated secure key >= 32 chars in production)")
 
         if missing_keys:
             error_details = "\n  - " + "\n  - ".join(missing_keys)

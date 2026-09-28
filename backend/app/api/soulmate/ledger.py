@@ -1,62 +1,37 @@
 """
-Payment Ledger Endpoints for Customer Support & Reconciliation (DEV-SPEC §9.4–9.7, §14, SP-407).
-Provides secure lookup capabilities by provider payment ID, subscription ID, email, or date range.
+Payment ledger point lookups for authorized support and reconciliation (SP-407/SP-905).
 """
 
 from datetime import datetime
-import logging
 from typing import Optional
 import uuid
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.core.errors import NotFoundError
 from app.db.session import get_db
 from app.soulmate.domain.ledger_models import (
     LedgerSearchQuery,
-    LedgerSearchResult,
-    PaymentLedgerRecord,
-    PaymentLedgerSummary,
+    SupportLedgerSearchResult,
+    SupportPaymentLedgerRecord,
+    SupportPaymentLedgerSummary,
 )
 from app.soulmate.services.ledger_service import PaymentLedgerService
-
-logger = logging.getLogger(__name__)
+from app.api.soulmate.support_auth import verify_support_access
 
 router = APIRouter()
 
 
-def verify_support_access(
-    x_support_key: Optional[str] = Header(default=None, alias="X-Support-Key"),
-) -> None:
-    """
-    Validate support/internal API access.
-    In development and test environments, allows requests if no secret key is explicitly required.
-    In staging/production, requires X-Support-Key to match configured secret.
-    """
-    if settings.environment in ("development", "test"):
-        return
-
-    # In production/staging, verify secret
-    expected_key = getattr(settings, "support_api_key", None) or settings.session_secret_key
-    if not x_support_key or x_support_key != expected_key:
-        logger.warning("Unauthorized access attempt to customer support ledger endpoints")
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Forbidden: Invalid or missing support authorization key",
-        )
-
-
 @router.get(
     "/payments/{provider_payment_id}",
-    response_model=PaymentLedgerRecord,
+    response_model=SupportPaymentLedgerRecord,
     summary="Lookup payment by provider payment ID (DEV-SPEC §9.4, SP-407)",
 )
 async def get_payment_by_provider_id(
     provider_payment_id: str,
     db: AsyncSession = Depends(get_db),
     _: None = Depends(verify_support_access),
-) -> PaymentLedgerRecord:
+) -> SupportPaymentLedgerRecord:
     """
     Lookup a specific payment in the ledger by provider payment ID (PayPal Capture / Sale ID).
     Used by customer support and automated reconciliation.
@@ -72,14 +47,14 @@ async def get_payment_by_provider_id(
 
 @router.get(
     "/subscriptions/{provider_subscription_id}",
-    response_model=list[PaymentLedgerRecord],
+    response_model=list[SupportPaymentLedgerRecord],
     summary="Lookup payments by provider subscription ID (DEV-SPEC §9.4, SP-407)",
 )
 async def get_payments_by_provider_sub(
     provider_subscription_id: str,
     db: AsyncSession = Depends(get_db),
     _: None = Depends(verify_support_access),
-) -> list[PaymentLedgerRecord]:
+) -> list[SupportPaymentLedgerRecord]:
     """
     Lookup all payments associated with a PayPal subscription ID (e.g. I-...).
     """
@@ -91,14 +66,14 @@ async def get_payments_by_provider_sub(
 
 @router.get(
     "/summary/{subscription_id}",
-    response_model=PaymentLedgerSummary,
+    response_model=SupportPaymentLedgerSummary,
     summary="Get billing and cycle summary for subscription (SP-407)",
 )
 async def get_subscription_summary(
     subscription_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _: None = Depends(verify_support_access),
-) -> PaymentLedgerSummary:
+) -> SupportPaymentLedgerSummary:
     """
     Compute aggregate billing summary for a subscription (total paid, cycles, latest status).
     """
@@ -113,15 +88,15 @@ async def get_subscription_summary(
 
 @router.get(
     "/search",
-    response_model=LedgerSearchResult,
+    response_model=SupportLedgerSearchResult,
     summary="Search payment ledger with filters (DEV-SPEC §9.4, SP-407)",
 )
 async def search_ledger(
+    request: Request,
     provider_payment_id: Optional[str] = Query(default=None, description="PayPal sale/capture ID"),
     provider_subscription_id: Optional[str] = Query(default=None, description="PayPal subscription ID (I-...)"),
     subscription_id: Optional[uuid.UUID] = Query(default=None, description="Internal subscription UUID"),
     session_public_id: Optional[str] = Query(default=None, description="Public session ID"),
-    email: Optional[str] = Query(default=None, description="Customer email address"),
     status: Optional[str] = Query(default=None, description="Payment status (COMPLETED, FAILED, REFUNDED, REVERSED)"),
     start_date: Optional[datetime] = Query(default=None, description="Filter payments after start_date"),
     end_date: Optional[datetime] = Query(default=None, description="Filter payments before end_date"),
@@ -129,16 +104,27 @@ async def search_ledger(
     offset: int = Query(default=0, ge=0, description="Page offset"),
     db: AsyncSession = Depends(get_db),
     _: None = Depends(verify_support_access),
-) -> LedgerSearchResult:
+) -> SupportLedgerSearchResult:
     """
-    Search payments ledger by any combination of customer email, PayPal ID, session ID, status, or date range.
+    Search payments for an exact session, subscription, or payment identifier.
+    Email lookup is available through POST /support/lookup so it is not put in a URL.
     """
+    if "email" in request.query_params:
+        raise HTTPException(
+            status_code=422,
+            detail="Email lookup requires POST /support/lookup with a JSON body.",
+        )
+    if not any((provider_payment_id, provider_subscription_id, subscription_id, session_public_id)):
+        raise HTTPException(
+            status_code=422,
+            detail="Specify an exact session, subscription, or payment identifier; use POST /support/lookup for email.",
+        )
+
     query = LedgerSearchQuery(
         provider_payment_id=provider_payment_id,
         provider_subscription_id=provider_subscription_id,
         subscription_id=subscription_id,
         session_public_id=session_public_id,
-        email=email,
         status=status,
         start_date=start_date,
         end_date=end_date,
