@@ -240,7 +240,7 @@ function SubscribeContent() {
         ) : (
           <div data-testid="offer-fallback" className="py-2 space-y-2">
             <p className="text-sm text-neutral-600 leading-relaxed">
-              PayPal monthly subscription checkout will be integrated in Wave 4 (SP-401/SP-402).
+              Subscription checkout is temporarily unavailable. Please try again.
             </p>
             {error && (
               <p className="text-xs text-neutral-400 italic">
@@ -333,7 +333,7 @@ function SubscribeContent() {
               onError={handleError}
             />
             <p className="text-[11px] text-neutral-400 text-center pt-2">
-              Payment secured by PayPal. Results unlock upon server confirmation (PAY-AUTH-01).
+              Payment secured by PayPal. Results unlock upon server confirmation.
             </p>
           </div>
         ) : (
@@ -347,7 +347,7 @@ function SubscribeContent() {
               🔒 Complete Payment to Access Results
             </button>
             <p className="text-xs text-neutral-400 text-center">
-              Soulmate results dashboard is unlocked after payment confirmation (DEV-SPEC §3, §9.1).
+              Soulmate results dashboard is unlocked after payment confirmation.
             </p>
           </div>
         )}

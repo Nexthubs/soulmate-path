@@ -242,7 +242,7 @@ class SubscriptionService:
             provider_status=new_subscription.provider_status,
             session_id=session.public_id,
             created_at=new_subscription.created_at,
-            message="Subscription registered successfully. Pending payment reconciliation (PAY-AUTH-01).",
+            message="Subscription registered successfully. Pending payment reconciliation.",
         )
 
     @classmethod
@@ -708,7 +708,7 @@ class SubscriptionService:
             sub.paid_through_at, effective_now
         ):
             raise ForbiddenOwnershipError(
-                "Paid access period has ended (PAID-THROUGH-01). Re-subscribe to regain access."
+                "Paid access period has ended. Re-subscribe to regain access."
             )
 
     @classmethod

@@ -146,7 +146,7 @@ class ReportGenerationService:
 
         if session.subscription_success_at is None:
             raise ForbiddenOwnershipError(
-                "Report generation is available only after a confirmed first payment (PAY-AUTH-01)."
+                "Report generation is available only after a confirmed first payment."
             )
 
         # PAID-THROUGH-01: a known-and-passed paid window cannot start new
@@ -155,7 +155,7 @@ class ReportGenerationService:
 
         if not settings.is_report_generation_enabled:
             raise ReportGenerationDisabledError(
-                "Report generation is not enabled on this deployment (REPORT-01/02)."
+                "Report generation is not enabled on this deployment."
             )
 
         # SP-501 self-heal (idempotent; acquires the session advisory lock itself).
@@ -234,7 +234,7 @@ class ReportGenerationService:
         # TIME-01: the persisted unlock time gates generation server-side.
         if artifact.unlock_at is None or effective_now < artifact.unlock_at:
             raise LockedAssetError(
-                "Report is still locked; generation unlocks at the persisted server time (TIME-01)."
+                "Report is still locked; generation unlocks at the persisted server time."
             )
 
         created = False

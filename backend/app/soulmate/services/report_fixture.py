@@ -26,7 +26,7 @@ from app.soulmate.domain.report import SoulmateReportV1, parse_soulmate_report_v
 MOCK_REPORT_TITLE = "[MOCK] Soulmate Report — Test Fixture, Not a Real Reading"
 MOCK_REPORT_INTRO = (
     "Deterministic mock fixture content used only for renderer and E2E testing. "
-    "Production report generation stays disabled (REPORT-01/REPORT-02)."
+    "Production report generation stays disabled."
 )
 MOCK_REPORT_CLOSING = "[MOCK] End of test fixture."
 
@@ -51,7 +51,7 @@ MOCK_REPORT_JSON: dict = {
                 },
                 {
                     "title": "Clearly Non-Production",
-                    "body": "The [MOCK] label and REPORT-01/REPORT-02 references mark this as test content.",
+                    "body": "The [MOCK] label marks this as test content.",
                 },
             ],
         },

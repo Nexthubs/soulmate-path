@@ -509,7 +509,7 @@ def test_guard_paid_through_window_matrix():
         )
         assert r["allowed"] is False, route
         assert r["redirect_to"] == "/soulmate/subscribe", route
-        assert "PAID-THROUGH-01" in r["reason"]
+        assert "Paid access period has ended" in r["reason"]
         assert r["paid_through_ended"] is True
 
     # 2b. Cached ACTIVE alone no longer extends a passed paid-through date.
@@ -554,7 +554,7 @@ def test_guard_paid_through_window_matrix():
         first_payment_at=None, paid_through_at=future_end, server_time=now,
     )
     assert r["allowed"] is False
-    assert "PAY-AUTH-01" in r["reason"]
+    assert "First payment must be confirmed" in r["reason"]
 
     # 6. Paid-through denial wins over unlock: sketch 12h-unlocked but window over
     r = evaluate_route_guard(
@@ -611,7 +611,7 @@ async def test_guard_service_enforces_cancelled_paid_through_window(async_db, db
     v_after = await GuardService.evaluate_guard(db=async_db, target_route="/soulmate/result", session=sess)
     assert v_after.allowed is False
     assert v_after.redirect_to == "/soulmate/subscribe"
-    assert "PAID-THROUGH-01" in v_after.reason
+    assert "Paid access period has ended" in v_after.reason
 
     # Sketch: unlocked (40 days > 12h) yet denied — the window rule wins
     v_sketch = await GuardService.evaluate_guard(db=async_db, target_route="/soulmate/sketch", session=sess)

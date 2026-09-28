@@ -142,7 +142,7 @@ async def get_sketch_asset_endpoint(
 
     if statuses.sketch.status != "COMPLETED" and await _paid_window_ended(db, session):
         raise ForbiddenOwnershipError(
-            "Paid access period has ended (PAID-THROUGH-01). Re-subscribe to regain access."
+            "Paid access period has ended. Re-subscribe to regain access."
         )
 
     image_url: Optional[str] = None
@@ -225,7 +225,7 @@ async def get_report_endpoint(
 
     if statuses.report.status != "COMPLETED" and await _paid_window_ended(db, session):
         raise ForbiddenOwnershipError(
-            "Paid access period has ended (PAID-THROUGH-01). Re-subscribe to regain access."
+            "Paid access period has ended. Re-subscribe to regain access."
         )
 
     content = None

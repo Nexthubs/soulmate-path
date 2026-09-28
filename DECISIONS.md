@@ -197,6 +197,18 @@
 - **Source/evidence:** docs/handoffs/SP-901.md (§2, §9).
 - **Supersedes / superseded by:** —
 
+### UI-COPY-01 — No internal contract IDs in user-facing copy
+
+- **Status:** RESOLVED
+- **Date:** 2026-09-28
+- **Owner/approver:** product owner (this session directive during SP-1001 review)
+- **Context:** SP-1001 browser matrix flagged P2 copy defects: user-visible strings exposed internal contract/decision identifiers — "PAY-AUTH-01" (subscribe checkout note, payment-processing note, result restricted fallback), "(PAY-02)" (returning-subscriber banner reason from the offer API), "(PAID-THROUGH-01)" / "(TIME-01)" (guard and generation deny reasons), "DEV-SPEC §9.8, ASSET-01" (settings guarantee card), "DEV-SPEC §3" (sketch/report locked fallbacks), "Wave 4 (SP-401/SP-402)" (subscribe offer fallback), "REPORT-01/REPORT-02" ([MOCK] fixture copy and disabled-generation error messages).
+- **Decision:** user-facing copy (page text, API `reason`/`message` strings rendered by the UI, mock content that can render on a page) must not contain internal contract identifiers — decision IDs (PAY-xx, TIME-01, ASSET-01, …), DEV-SPEC section references, task IDs (SP-xxx), or wave numbers. Invariants stay fully referenced in code comments, docstrings, structured-log fields, operator-facing startup/validation errors, and this register. Existing user-visible strings were cleaned accordingly; tests that asserted the identifiers now assert the semantic copy instead (guard/deny invariants unchanged).
+- **Rationale:** internal jargon is meaningless (and confidence-eroding) to end users; the register and code remain the canonical place for contract traceability.
+- **Affected:** SP-1001 (cleanup executed), subscribe/payment-processing/result/sketch/report/settings pages, guard/generation/offer/result services, [MOCK] report fixtures (backend + frontend copies), M6 release QA (any new copy must follow this rule).
+- **Source/evidence:** owner directive 2026-09-28; docs/handoffs/SP-1001.md (§6 re-verification: backend 880/880, frontend 415/415, browser 390px checks clean).
+- **Supersedes / superseded by:** —
+
 ## Decision entry template
 
 ```md

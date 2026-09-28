@@ -147,7 +147,7 @@ function SettingsContent() {
         )}
 
         <div className="rounded-2xl bg-amber-500/10 border border-amber-500/20 p-4 text-xs text-amber-900 space-y-1">
-          <p className="font-semibold">✦ Artifact Preservation Guarantee (DEV-SPEC §9.8, ASSET-01)</p>
+          <p className="font-semibold">✦ Artifact Preservation Guarantee</p>
           <p className="text-[11px] leading-relaxed text-amber-800">
             Even if you cancel your subscription, all your generated Soulmate Sketches and Personality Reports
             remain permanently saved and accessible in your account.

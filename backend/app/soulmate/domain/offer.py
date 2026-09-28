@@ -91,7 +91,7 @@ def evaluate_resubscription_eligibility(
         "plan_class": "blocked",
         "policy": policy_clean,
         "is_blocked": True,
-        "reason": "Returning subscriber intro pricing policy is blocked pending product resolution (PAY-02).",
+        "reason": "Returning subscriber intro pricing policy is blocked pending product resolution.",
     }
 
 

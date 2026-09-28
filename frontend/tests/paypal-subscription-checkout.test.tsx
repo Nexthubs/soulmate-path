@@ -312,7 +312,7 @@ describe("SP-402: PayPal JS Subscription Checkout", () => {
 
       const html = renderToStaticMarkup(<SoulmatePaymentProcessingPage />);
       expect(html).not.toContain("data-testid=\"subscribe-result-link\"");
-      expect(html).toContain("PAY-AUTH-01");
+      expect(html).toContain("server-verified payment completion");
     });
   });
 });

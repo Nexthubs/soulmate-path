@@ -87,7 +87,7 @@ class ReportGenerationDisabledError(SoulmateAppError):
     a provider.
     """
 
-    def __init__(self, message: str = "Report generation is disabled (REPORT-01/02 pending)."):
+    def __init__(self, message: str = "Report generation is disabled."):
         super().__init__(
             error_code=SoulmateErrorCode.PROVIDER_UNAVAILABLE,
             message=message,

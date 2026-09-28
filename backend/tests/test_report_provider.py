@@ -136,7 +136,7 @@ async def test_mock_provider_is_deterministic_and_unmistakably_test_content(gene
     b = await MockReportProvider().generate(generation_input)
     assert a.report == b.report
     assert a.report.title.startswith("[MOCK]")
-    assert "REPORT-01" in a.report.intro or "REPORT-02" in a.report.intro
+    assert "mock fixture" in a.report.intro
 
 
 # ---------------------------------------------------------------------------
@@ -154,7 +154,8 @@ def test_missing_template_file_fails_closed(tmp_path, monkeypatch):
     monkeypatch.setattr(rp, "REPORT_PROMPTS_DIR", tmp_path)
     with pytest.raises(ReportPromptTemplateError) as exc_info:
         load_report_prompt_template("v1")
-    assert "REPORT-02" in exc_info.value.message
+    assert "not found" in exc_info.value.message
+    assert "not yet available" in exc_info.value.message
 
 
 def test_template_rejects_disallowed_placeholders(tmp_path, monkeypatch):

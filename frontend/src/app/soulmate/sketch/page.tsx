@@ -129,7 +129,7 @@ function SketchPageContent() {
           <p className="text-sm text-neutral-600 leading-relaxed">
             {guard.error
               ? `Verification failed: ${guard.error}. Please retry.`
-              : guard.verdict?.reason || "Active payment is required to unlock your soulmate sketch (DEV-SPEC §3)."}
+              : guard.verdict?.reason || "Active payment is required to unlock your soulmate sketch."}
           </p>
           {guard.error ? (
             <button

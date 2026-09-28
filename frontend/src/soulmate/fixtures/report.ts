@@ -15,7 +15,7 @@ import type { SoulmateReportV1 } from "@/soulmate/domain/report";
 export const MOCK_REPORT_TITLE = "[MOCK] Soulmate Report — Test Fixture, Not a Real Reading";
 export const MOCK_REPORT_INTRO =
   "Deterministic mock fixture content used only for renderer and E2E testing. " +
-  "Production report generation stays disabled (REPORT-01/REPORT-02).";
+  "Production report generation stays disabled.";
 export const MOCK_REPORT_CLOSING = "[MOCK] End of test fixture.";
 
 export const MOCK_REPORT_FIXTURE: SoulmateReportV1 = {
@@ -36,7 +36,7 @@ export const MOCK_REPORT_FIXTURE: SoulmateReportV1 = {
         },
         {
           title: "Clearly Non-Production",
-          body: "The [MOCK] label and REPORT-01/REPORT-02 references mark this as test content.",
+          body: "The [MOCK] label marks this as test content.",
         },
       ],
     },

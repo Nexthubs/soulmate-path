@@ -68,7 +68,8 @@ async def purge_sp705_data():
 def test_fixture_is_unmistakably_non_production():
     assert MOCK_REPORT_TITLE.startswith("[MOCK]")
     assert "Not a Real Reading" in MOCK_REPORT_TITLE
-    assert "REPORT-01" in MOCK_REPORT_INTRO and "REPORT-02" in MOCK_REPORT_INTRO
+    assert "mock fixture" in MOCK_REPORT_INTRO
+    assert "stays disabled" in MOCK_REPORT_INTRO
     assert MOCK_REPORT_JSON["closing"].startswith("[MOCK]")
 
 

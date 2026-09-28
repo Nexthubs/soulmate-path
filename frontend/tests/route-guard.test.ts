@@ -39,7 +39,7 @@ describe("SP-304: Route Guard Client API & Fail-Closed Guard Policy", () => {
     allowed: false,
     target_route: "/soulmate/result",
     redirect_to: "/soulmate/subscribe",
-    reason: "First payment must be confirmed to access result dashboard (PAY-AUTH-01).",
+    reason: "First payment must be confirmed to access result dashboard.",
     server_time: "2026-09-24T12:00:00Z",
     session_id: "sess_test_123",
     quiz_completed: true,

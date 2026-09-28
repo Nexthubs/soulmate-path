@@ -23,8 +23,8 @@ describe("SP-705: canonical report mock fixture", () => {
   it("is unmistakably non-production content", () => {
     expect(MOCK_REPORT_TITLE.startsWith("[MOCK]")).toBe(true);
     expect(MOCK_REPORT_TITLE).toContain("Not a Real Reading");
-    expect(MOCK_REPORT_INTRO).toContain("REPORT-01");
-    expect(MOCK_REPORT_INTRO).toContain("REPORT-02");
+    expect(MOCK_REPORT_INTRO).toContain("mock fixture");
+    expect(MOCK_REPORT_INTRO).toContain("stays disabled");
     expect(MOCK_REPORT_FIXTURE.closing?.startsWith("[MOCK]")).toBe(true);
   });
 

@@ -72,7 +72,7 @@ function ResultContent() {
           <p className="text-sm text-neutral-600 leading-relaxed">
             {guard.error
               ? `Verification failed: ${guard.error}. Please check your connection and retry.`
-              : guard.verdict?.reason || "Active payment is required to view your soulmate results (PAY-AUTH-01)."}
+              : guard.verdict?.reason || "Active payment is required to view your soulmate results."}
           </p>
           {guard.error ? (
             <button
@@ -154,7 +154,7 @@ function ResultContent() {
           </h2>
           <p className="text-sm text-neutral-600 leading-relaxed max-w-[300px]">
             {isForbidden
-              ? "An active payment is required to view your soulmate results (PAY-AUTH-01)."
+              ? "An active payment is required to view your soulmate results."
               : live.error}
           </p>
           {isForbidden ? (

@@ -138,7 +138,7 @@ async def test_result_aggregate_denied_after_paid_window(async_db: AsyncSession)
     async with auth_client(sess) as client:
         resp = await client.get(RESULT_URL)
     assert resp.status_code == 403
-    assert "PAID-THROUGH-01" in resp.json()["message"]
+    assert "Paid access period has ended" in resp.json()["message"]
 
 
 @pytest.mark.asyncio
@@ -273,7 +273,7 @@ async def test_sketch_generation_denied_after_paid_window(async_db: AsyncSession
     async with auth_client(sess) as client:
         resp = await client.post(SKETCH_GENERATE_URL)
     assert resp.status_code == 403
-    assert "PAID-THROUGH-01" in resp.json()["message"]
+    assert "Paid access period has ended" in resp.json()["message"]
 
 
 @pytest.mark.asyncio
@@ -284,7 +284,7 @@ async def test_report_generation_denied_after_paid_window(async_db: AsyncSession
     async with auth_client(sess) as client:
         resp = await client.post(REPORT_GENERATE_URL)
     assert resp.status_code == 403
-    assert "PAID-THROUGH-01" in resp.json()["message"]
+    assert "Paid access period has ended" in resp.json()["message"]
 
 
 @pytest.mark.asyncio
@@ -300,7 +300,7 @@ async def test_sketch_read_denied_for_non_completed_state_after_window(
     async with auth_client(sess) as client:
         resp = await client.get(SKETCH_URL)
     assert resp.status_code == 403
-    assert "PAID-THROUGH-01" in resp.json()["message"]
+    assert "Paid access period has ended" in resp.json()["message"]
 
 
 @pytest.mark.asyncio
@@ -337,7 +337,7 @@ async def test_report_read_denied_for_non_completed_state_after_window(
     async with auth_client(sess) as client:
         resp = await client.get(REPORT_URL)
     assert resp.status_code == 403
-    assert "PAID-THROUGH-01" in resp.json()["message"]
+    assert "Paid access period has ended" in resp.json()["message"]
 
 
 @pytest.mark.asyncio

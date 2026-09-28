@@ -121,7 +121,7 @@ def evaluate_route_guard(
             **base_context,
             "allowed": False,
             "redirect_to": "/soulmate/subscribe",
-            "reason": "Paid access period has ended (PAID-THROUGH-01). Re-subscribe to regain access.",
+            "reason": "Paid access period has ended. Re-subscribe to regain access.",
         }
 
     # 1. /soulmate/quiz: requires active session. If missing -> /soulmate (new session)
@@ -187,7 +187,7 @@ def evaluate_route_guard(
                 **base_context,
                 "allowed": False,
                 "redirect_to": "/soulmate/subscribe",
-                "reason": "First payment must be confirmed to access result dashboard (PAY-AUTH-01).",
+                "reason": "First payment must be confirmed to access result dashboard.",
             }
         if paid_through_ended:
             return _paid_access_ended()
@@ -209,7 +209,7 @@ def evaluate_route_guard(
                 **base_context,
                 "allowed": False,
                 "redirect_to": "/soulmate/result",
-                "reason": "Sketch view is locked until the 12-hour countdown completes (TIME-01).",
+                "reason": "Sketch view is locked until the 12-hour countdown completes.",
             }
         return {**base_context, "allowed": True, "redirect_to": None, "reason": None}
 
@@ -229,7 +229,7 @@ def evaluate_route_guard(
                 **base_context,
                 "allowed": False,
                 "redirect_to": "/soulmate/result",
-                "reason": "Report view is locked until the 24-hour countdown completes (TIME-01).",
+                "reason": "Report view is locked until the 24-hour countdown completes.",
             }
         return {**base_context, "allowed": True, "redirect_to": None, "reason": None}
 

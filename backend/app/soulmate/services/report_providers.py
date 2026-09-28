@@ -128,7 +128,7 @@ def _load_report_template_cached(version: str) -> ReportPromptTemplate:
         # invents one. A configured version without a template file stays disabled.
         raise ReportPromptTemplateError(
             f"Report prompt template for version '{version}' not found at '{path}'; "
-            "report prompt content is an unresolved REPORT-02 decision.",
+            "report prompt content is not yet available for this deployment.",
             details={"version": version, "path": str(path)},
         )
     text = path.read_text(encoding="utf-8")

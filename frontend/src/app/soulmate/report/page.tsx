@@ -123,7 +123,7 @@ function ReportPageContent() {
         <p className="text-sm text-neutral-600 leading-relaxed">
           {guard.error
             ? `Verification failed: ${guard.error}. Please retry.`
-            : guard.verdict?.reason || "Active payment is required to unlock your detailed report (DEV-SPEC §3)."}
+            : guard.verdict?.reason || "Active payment is required to unlock your detailed report."}
         </p>
         {guard.error ? (
           <button

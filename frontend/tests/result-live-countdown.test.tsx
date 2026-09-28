@@ -274,7 +274,7 @@ describe("SP-504: Server-time calibrated countdown", () => {
       status: 403,
       json: async () => ({
         error_code: "FORBIDDEN_OWNERSHIP",
-        message: "Result is available only after a confirmed first payment (PAY-AUTH-01).",
+        message: "Result is available only after a confirmed first payment.",
       }),
     });
 

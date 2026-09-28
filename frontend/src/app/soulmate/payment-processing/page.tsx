@@ -292,7 +292,7 @@ function PaymentProcessingContent() {
 
         {/* Invariant note (PAY-AUTH-01): Entitlement cannot be granted client-side */}
         <div className="pt-2 text-[11px] text-neutral-400">
-          <p>Results dashboard unlocks upon server-verified payment completion (PAY-AUTH-01).</p>
+          <p>Results dashboard unlocks upon server-verified payment completion.</p>
         </div>
 
         {/* Navigation fallback for missing subscription or terminal failure */}

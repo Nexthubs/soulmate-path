@@ -200,7 +200,7 @@ describe("App Router Page-Level Behavioral Integration (M-3 Audit Remediation)",
       expect(html).toContain("data-testid=\"processing-subscription-badge\"");
       expect(html).toContain("I-TEST-SUB-999");
       // PAY-AUTH-01: Must not grant paid entitlement or mark success directly
-      expect(html).toContain("PAY-AUTH-01");
+      expect(html).toContain("server-verified payment completion");
       expect(html).not.toContain("data-testid=\"subscribe-result-link\"");
     });
 

@@ -99,7 +99,7 @@ describe("SP-410: Payment-Processing Frontend State", () => {
       expect(html).toContain("Confirming Payment");
       expect(html).toContain("data-testid=\"processing-subscription-badge\"");
       expect(html).toContain("I-SUB-POLL-12345");
-      expect(html).toContain("PAY-AUTH-01");
+      expect(html).toContain("server-verified payment completion");
       // Must not link to result directly in markup without server confirmation
       expect(html).not.toContain("data-testid=\"subscribe-result-link\"");
     });

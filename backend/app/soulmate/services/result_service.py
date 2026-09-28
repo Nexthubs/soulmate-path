@@ -48,7 +48,7 @@ class ResultService:
 
         if session.subscription_success_at is None:
             raise ForbiddenOwnershipError(
-                "Result is available only after a confirmed first payment (PAY-AUTH-01)."
+                "Result is available only after a confirmed first payment."
             )
 
         # Latest subscription for the session (same selection semantics as get_subscription_status)
@@ -69,7 +69,7 @@ class ResultService:
             sub.paid_through_at, effective_now
         ):
             raise ForbiddenOwnershipError(
-                "Paid access period has ended (PAID-THROUGH-01). Re-subscribe to regain access."
+                "Paid access period has ended. Re-subscribe to regain access."
             )
 
         statuses = await ArtifactStatusService.get_artifact_statuses(

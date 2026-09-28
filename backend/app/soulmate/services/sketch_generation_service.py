@@ -238,7 +238,7 @@ class SketchGenerationService:
         # PAY-AUTH-01: server-confirmed entitlement only.
         if session.subscription_success_at is None:
             raise ForbiddenOwnershipError(
-                "Sketch generation is available only after a confirmed first payment (PAY-AUTH-01)."
+                "Sketch generation is available only after a confirmed first payment."
             )
 
         # PAID-THROUGH-01: a known-and-passed paid window cannot start new
@@ -347,7 +347,7 @@ class SketchGenerationService:
         # the same server-side rule regardless of which entitled session triggers.
         if artifact.unlock_at is None or effective_now < artifact.unlock_at:
             raise LockedAssetError(
-                "Sketch is still locked; generation unlocks at the persisted server time (TIME-01)."
+                "Sketch is still locked; generation unlocks at the persisted server time."
             )
 
         created = False
@@ -709,7 +709,7 @@ class SketchGenerationService:
                     storage_key = await sink.persist(artifact_id=artifact.id, result=result)
                     if not storage_key or not str(storage_key).strip():
                         raise SketchStorageUnavailableError(
-                            "Sink returned an empty storage key; refusing to complete (ASSET-01)."
+                            "Sink returned an empty storage key; refusing to complete."
                         )
                 except SketchStorageUnavailableError as exc:
                     logger.error("Sketch job %s: %s", job_id, exc)
