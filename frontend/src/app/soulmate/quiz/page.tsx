@@ -16,6 +16,8 @@ import {
   SessionCurrentResponse,
 } from "@/soulmate/api/session";
 import { getSafeUserErrorMessage } from "@/soulmate/api/errors";
+import { FlowShellFallback } from "@/soulmate/components/flow/FlowShellFallback";
+import { useSharedFlow } from "@/soulmate/components/flow/SharedFlowContext";
 import { trackOnce, trackSoulmateEvent } from "@/soulmate/analytics";
 import quizData from "@/soulmate/quiz/soulmate-quiz-v1.json";
 
@@ -35,6 +37,7 @@ function syncQuestionUrl(code: string) {
 function QuizPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const sharedFlow = useSharedFlow();
 
   const isProduction = process.env.NODE_ENV === "production";
   // Fixture mode is strictly isolated and only available in development when ?fixture=true
@@ -145,6 +148,32 @@ function QuizPageContent() {
     let isCancelled = false;
 
     async function bootstrapSession() {
+      // Warm path (persistent /soulmate shared flow state): the layout-level
+      // provider already holds this browser's session and the session-pinned
+      // quiz config from an earlier funnel page — hydrate locally with zero
+      // network and no skeleton swap, so entering the quiz from a transition
+      // renders the question immediately.
+      if (sharedFlow.sessionId && sharedFlow.sessionData && sharedFlow.quizConfig) {
+        setSessionId(sharedFlow.sessionId);
+        setSessionData(sharedFlow.sessionData);
+        setActiveQuizConfig(sharedFlow.quizConfig);
+        const urlCode = initialCodeRef.current;
+        const warmStep =
+          urlCode && sharedFlow.quizConfig.questions.some((q) => q.code === urlCode)
+            ? urlCode
+            : sharedFlow.sessionData.current_step?.startsWith("q")
+            ? sharedFlow.sessionData.current_step
+            : "q02";
+        setActiveStepCode(warmStep);
+        questionStartTime.current = Date.now();
+        restoreAnswerForQuestion(
+          warmStep,
+          sharedFlow.sessionData.answers[warmStep],
+          sharedFlow.quizConfig
+        );
+        return;
+      }
+
       setIsLoading(true);
       setError(null);
 
@@ -173,6 +202,9 @@ function QuizPageContent() {
 
         setSessionId(currentSess.session_id);
         setSessionData(currentSess);
+        // Persist into the shared flow state (session + answers cache) so the
+        // next funnel page hydrates without re-running its bootstrap.
+        sharedFlow.setSession(currentSess.session_id, currentSess);
 
         const serverStep = currentSess.current_step;
 
@@ -204,6 +236,9 @@ function QuizPageContent() {
           if (!isCancelled) {
             setActiveQuizConfig(config);
             loadedConfig = config;
+            // Persist into the shared flow state so the next funnel page
+            // hydrates without re-running this bootstrap.
+            sharedFlow.setQuizConfig(config);
           }
         } catch {
           // Keep local fallback if offline
@@ -693,9 +728,7 @@ function QuizPageContent() {
 
 export default function SoulmateQuizPage() {
   return (
-    <Suspense
-      fallback={<div className="min-h-screen flex items-center justify-center">Loading quiz...</div>}
-    >
+    <Suspense fallback={<FlowShellFallback />}>
       <QuizPageContent />
     </Suspense>
   );

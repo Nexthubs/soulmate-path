@@ -49,6 +49,13 @@ export interface TransitionShellProps {
   loading?: boolean;
 
   /**
+   * Disables Continue (without a spinner) until the session and the server
+   * step validation for this screen have completed — the server must advance
+   * the flow before any navigation.
+   */
+  continueDisabled?: boolean;
+
+  /**
    * Non-blocking error message and optional retry callback.
    */
   error?: { message: string; onRetry?: () => void } | string | null;
@@ -73,6 +80,7 @@ export function TransitionShell({
   onContinue,
   continueLabel = "Continue",
   loading = false,
+  continueDisabled = false,
   error = null,
   className = "",
 }: TransitionShellProps) {
@@ -155,7 +163,7 @@ export function TransitionShell({
         <button
           type="button"
           onClick={onContinue}
-          disabled={loading}
+          disabled={loading || continueDisabled}
           className="w-full h-[54px] rounded-xl bg-black hover:bg-neutral-800 active:bg-neutral-900 text-white font-sans font-semibold text-[17px] leading-[25.5px] tracking-[0.425px] shadow-md transition-all flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-600 focus-visible:ring-offset-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           aria-label={continueLabel}
         >

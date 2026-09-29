@@ -3,6 +3,7 @@
 import React, { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { EmailCaptureView } from "@/soulmate/components/email";
+import { FlowShellFallback } from "@/soulmate/components/flow/FlowShellFallback";
 import { useRouteGuard } from "@/soulmate/hooks/useRouteGuard";
 import { SOULMATE_ROUTES } from "@/soulmate/domain";
 import {
@@ -249,13 +250,7 @@ function EmailPageContent() {
 
 export default function SoulmateEmailPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="flex items-center justify-center min-h-screen text-neutral-400">
-          Loading...
-        </div>
-      }
-    >
+    <Suspense fallback={<FlowShellFallback />}>
       <EmailPageContent />
     </Suspense>
   );

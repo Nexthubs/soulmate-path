@@ -25,11 +25,14 @@ import {
   FlowStateResponse,
 } from "@/soulmate/api/session";
 import { getSafeUserErrorMessage } from "@/soulmate/api/errors";
+import { FlowShellFallback } from "@/soulmate/components/flow/FlowShellFallback";
+import { useSharedFlow } from "@/soulmate/components/flow/SharedFlowContext";
 import { trackSoulmateEvent } from "@/soulmate/analytics";
 
 function LoadingContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const sharedFlow = useSharedFlow();
 
   // Test environment initial state hook for static markup assertions
   const testFlowState =
@@ -44,6 +47,9 @@ function LoadingContent() {
   const [error, setError] = useState<{ message: string; onRetry?: () => void } | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [flowState, setFlowState] = useState<FlowStateResponse | null>(testFlowState);
+  // Continue stays disabled until the session is resolved AND the server-side
+  // step validation for the rendered transition has completed (live mode).
+  const [flowChecked, setFlowChecked] = useState<boolean>(false);
 
   // Step 0 through 5 from query param, defaulting to 0
   const stepParam = parseInt(searchParams.get("step") || "0", 10);
@@ -57,6 +63,10 @@ function LoadingContent() {
       process.env.NEXT_PUBLIC_ENABLE_MARKETING_CLAIMS === "true");
 
   const isFixtureMode = !isProduction && searchParams.get("fixture") === "true";
+
+  // Continue stays disabled until the session is resolved AND the server-side
+  // step validation for the rendered transition has completed (live mode).
+  const continueDisabled = !isFixtureMode && (!sessionId || !flowChecked);
 
   // Dynamic copy injection parameters
   const qualityParam = searchParams.get("quality");
@@ -105,10 +115,18 @@ function LoadingContent() {
     let isCancelled = false;
     async function initSession() {
       setError(null);
+      // Warm path: the persistent shared flow state already resolved this
+      // browser's session on an earlier funnel page — adopt it without a
+      // network round trip.
+      if (sharedFlow.sessionId) {
+        setSessionId(sharedFlow.sessionId);
+        return;
+      }
       try {
         const sess = await getCurrentSession();
         if (!isCancelled) {
           setSessionId(sess.session_id);
+          sharedFlow.setSession(sess.session_id, sess);
         }
       } catch (err: unknown) {
         if (isSessionMissingError(err)) {
@@ -116,6 +134,7 @@ function LoadingContent() {
             const created = await createSession();
             if (!isCancelled) {
               setSessionId(created.session_id);
+              sharedFlow.setSession(created.session_id, null);
             }
           } catch (createErr: unknown) {
             if (!isCancelled) {
@@ -179,23 +198,28 @@ function LoadingContent() {
   React.useEffect(() => {
     if (isFixtureMode || !sessionId) return;
     let isCancelled = false;
+    setFlowChecked(false);
     async function loadFlowState() {
       try {
         const state = await getFlowState(sessionId as string);
         if (!isCancelled) {
           setFlowState(state);
+          sharedFlow.setFlowState(state);
           routeToServerStep(state.current_step);
         }
       } catch {
         // Flow state metadata fallback: without a server verdict we cannot
-        // validate the step, so stay on the current screen.
+        // validate the step, so stay on the current screen; the server's flow
+        // guard still protects Continue.
+      } finally {
+        if (!isCancelled) setFlowChecked(true);
       }
     }
     loadFlowState();
     return () => {
       isCancelled = true;
     };
-  }, [isFixtureMode, sessionId, step, routeToServerStep]);
+  }, [isFixtureMode, sessionId, step, routeToServerStep, sharedFlow]);
 
   // §18.1 transition view per rendered step (fixture preview stays untracked).
   const transitionTrackedStepRef = React.useRef<number | null>(null);
@@ -210,7 +234,7 @@ function LoadingContent() {
     // for UI inspection only, and intentionally bypasses the backend flow state machine.
     // In live mode (standard dev and all production), continueTransition() strictly queries
     // the server resolver to advance authoritatively per DEV-SPEC §5.
-    if (isFixtureMode || !sessionId) {
+    if (isFixtureMode) {
       switch (step) {
         case 0:
           router.push("/soulmate/quiz?code=q02");
@@ -235,6 +259,11 @@ function LoadingContent() {
       }
       return;
     }
+
+    // Live mode race guard: without a resolved session there is no server
+    // authority to advance — never take the fixture's local jump branch.
+    // (Continue is disabled until session + step validation complete.)
+    if (!sessionId) return;
 
     setIsLoading(true);
     setError(null);
@@ -361,6 +390,7 @@ function LoadingContent() {
             )
           }
           onContinue={handleContinue}
+          continueDisabled={continueDisabled}
           loading={isLoading}
           error={error}
         >
@@ -438,6 +468,7 @@ function LoadingContent() {
             />
           }
           onContinue={handleContinue}
+          continueDisabled={continueDisabled}
           loading={isLoading}
           error={error}
         />
@@ -460,6 +491,7 @@ function LoadingContent() {
             />
           }
           onContinue={handleContinue}
+          continueDisabled={continueDisabled}
           loading={isLoading}
           error={error}
         />
@@ -490,6 +522,7 @@ function LoadingContent() {
             />
           }
           onContinue={handleContinue}
+          continueDisabled={continueDisabled}
           loading={isLoading}
           error={error}
         />
@@ -512,6 +545,7 @@ function LoadingContent() {
             />
           }
           onContinue={handleContinue}
+          continueDisabled={continueDisabled}
           loading={isLoading}
           error={error}
         />
@@ -524,6 +558,7 @@ function LoadingContent() {
           title="Connecting to the universe"
           continueLabel="See Results"
           onContinue={handleContinue}
+          continueDisabled={continueDisabled}
           loading={isLoading}
           error={error}
         >
@@ -547,7 +582,7 @@ function LoadingContent() {
 
 export default function SoulmateLoadingPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
+    <Suspense fallback={<FlowShellFallback />}>
       <LoadingContent />
     </Suspense>
   );
