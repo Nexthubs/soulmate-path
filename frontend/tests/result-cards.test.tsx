@@ -323,6 +323,55 @@ describe("SP-106: Result Cards Fixture UI (DEV-SPEC §2, §10; DECISIONS TIME-01
       expect(html).not.toContain("Accelerated Access Coming Soon");
       expect(html).not.toContain("disabled=\"\"");
     });
+
+    it("hides the Accelerated teaser once no card is in the countdown state (owner direction 2026-09-28)", () => {
+      const baseData: ResultAggregateData = {
+        server_time: "2026-09-22T13:00:00Z",
+        subscription: {
+          provider: "paypal",
+          provider_status: "ACTIVE",
+          first_payment_at: "2026-09-22T13:00:00Z",
+          next_billing_at: "2026-10-22T13:00:00Z",
+        },
+        sketch: { unlock_at: "2026-09-23T01:00:00Z", availability: "UNLOCKED", generation: "NOT_STARTED" },
+        report: { unlock_at: "2026-09-23T13:00:00Z", availability: "UNLOCKED", generation: "NOT_STARTED" },
+      };
+      const readyHtml = renderToStaticMarkup(
+        <SoulmateResultView initialData={baseData} userEmail="user@example.com" />
+      );
+      expect(readyHtml).not.toContain("data-testid=\"accelerated-teaser\"");
+      expect(readyHtml).not.toContain("Just 5 minutes");
+
+      const completedData: ResultAggregateData = {
+        ...baseData,
+        sketch: { ...baseData.sketch, generation: "COMPLETED" },
+        report: { ...baseData.report, generation: "COMPLETED" },
+      };
+      const completedHtml = renderToStaticMarkup(
+        <SoulmateResultView initialData={completedData} userEmail="user@example.com" />
+      );
+      expect(completedHtml).not.toContain("data-testid=\"accelerated-teaser\"");
+    });
+
+    it("scopes the early-look copy to the artifact still counting down", () => {
+      const reportOnly: ResultAggregateData = {
+        server_time: "2026-09-22T13:00:00Z",
+        subscription: {
+          provider: "paypal",
+          provider_status: "ACTIVE",
+          first_payment_at: "2026-09-22T13:00:00Z",
+          next_billing_at: "2026-10-22T13:00:00Z",
+        },
+        sketch: { unlock_at: "2026-09-23T01:00:00Z", availability: "UNLOCKED", generation: "NOT_STARTED" },
+        report: { unlock_at: "2026-09-23T13:00:00Z", availability: "LOCKED", generation: "NOT_STARTED" },
+      };
+      const html = renderToStaticMarkup(
+        <SoulmateResultView initialData={reportOnly} userEmail="user@example.com" />
+      );
+      expect(html).toContain("data-testid=\"accelerated-teaser\"");
+      expect(html).toContain("your report!");
+      expect(html).not.toContain("your portrait &amp; report!");
+    });
   });
 
   describe("Time Formatting Helpers", () => {

@@ -8,6 +8,7 @@ import {
   ArtifactType,
   CombinedUIState,
   ResultAggregateData,
+  deriveCombinedUIState,
 } from "./types";
 
 export interface SoulmateResultViewProps {
@@ -126,6 +127,18 @@ export function SoulmateResultView({
   // aggregate data always reaches the mounted cards without a prop->state sync effect.
   const [previewOverride, setPreviewOverride] = useState<ResultAggregateData | null>(null);
   const data = previewOverride ?? initialData;
+
+  // Accelerated teaser is a countdown-phase upsell (owner direction 2026-09-28):
+  // it exists only while at least one artifact is still waiting on its unlock,
+  // and disappears for ready/generating/completed/failed states.
+  const sketchCountdown = deriveCombinedUIState(data.sketch) === "countdown";
+  const reportCountdown = deriveCombinedUIState(data.report) === "countdown";
+  const showAcceleratedTeaser = sketchCountdown || reportCountdown;
+  const earlyLookLine = sketchCountdown && reportCountdown
+    ? <>Get an early look at<br />your portrait &amp; report!</>
+    : sketchCountdown
+      ? <>Get an early look at<br />your portrait!</>
+      : <>Get an early look at<br />your report!</>;
 
   const handleAction = (type: ArtifactType) => {
     if (onAction) {
@@ -347,48 +360,51 @@ export function SoulmateResultView({
           onVisibleRefresh={onVisibleRefresh}
         />
 
-        {/* Accelerated Early-Access Teaser Banner (Figma 102:1201; PAY-01 Compliance Gate) */}
-        <section
-          data-testid="accelerated-teaser"
-          className="w-full pt-4 border-t border-neutral-100 flex flex-col items-center text-center space-y-3"
-        >
-          <div className="space-y-1">
-            <h4 className="font-sans font-bold text-[18px] text-neutral-900">Just 5 minutes</h4>
-            <p className="font-sans font-bold text-[15px] leading-snug text-neutral-800">
-              Get an early look at<br />
-              your portrait &amp; report!
-            </p>
-          </div>
-
-          {acceleratedPrice ? (
-            <div data-testid="accelerated-pricing-line" className="text-xs font-semibold text-neutral-600">
-              Proceed to Payment: <strong className="text-neutral-900 text-sm">{acceleratedPrice}</strong>
-            </div>
-          ) : (
-            <div data-testid="accelerated-pricing-line" className="text-xs font-medium text-neutral-500">
-              Accelerated Access Coming Soon
-            </div>
-          )}
-
-          <button
-            type="button"
-            data-testid="accelerated-cta-button"
-            onClick={() => {
-              if (acceleratedPrice) {
-                handleAction("sketch");
-              }
-            }}
-            disabled={!acceleratedPrice}
-            className={`w-full h-[52px] rounded-2xl font-sans font-bold text-[16px] transition-all flex items-center justify-center gap-2 ${
-              acceleratedPrice
-                ? "bg-gradient-to-r from-[#ff6b6b] to-[#ff5252] hover:from-[#ff5b5b] hover:to-[#ff4242] active:scale-[0.99] text-white shadow-lg shadow-rose-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
-                : "bg-neutral-100 text-neutral-400 border border-neutral-200 cursor-not-allowed shadow-none"
-            }`}
+        {/* Accelerated Early-Access Teaser Banner (Figma 102:1201; PAY-01 Compliance Gate).
+            Countdown-phase only (owner direction 2026-09-28): hidden once both artifacts
+            leave the countdown state. */}
+        {showAcceleratedTeaser && (
+          <section
+            data-testid="accelerated-teaser"
+            className="w-full pt-4 border-t border-neutral-100 flex flex-col items-center text-center space-y-3"
           >
-            <span>{acceleratedPrice ? "Accelerated" : "Accelerated (Coming Soon)"}</span>
-            <span aria-hidden="true">✦</span>
-          </button>
-        </section>
+            <div className="space-y-1">
+              <h4 className="font-sans font-bold text-[18px] text-neutral-900">Just 5 minutes</h4>
+              <p className="font-sans font-bold text-[15px] leading-snug text-neutral-800">
+                {earlyLookLine}
+              </p>
+            </div>
+
+            {acceleratedPrice ? (
+              <div data-testid="accelerated-pricing-line" className="text-xs font-semibold text-neutral-600">
+                Proceed to Payment: <strong className="text-neutral-900 text-sm">{acceleratedPrice}</strong>
+              </div>
+            ) : (
+              <div data-testid="accelerated-pricing-line" className="text-xs font-medium text-neutral-500">
+                Accelerated Access Coming Soon
+              </div>
+            )}
+
+            <button
+              type="button"
+              data-testid="accelerated-cta-button"
+              onClick={() => {
+                if (acceleratedPrice) {
+                  handleAction("sketch");
+                }
+              }}
+              disabled={!acceleratedPrice}
+              className={`w-full h-[52px] rounded-2xl font-sans font-bold text-[16px] transition-all flex items-center justify-center gap-2 ${
+                acceleratedPrice
+                  ? "bg-gradient-to-r from-[#ff6b6b] to-[#ff5252] hover:from-[#ff5b5b] hover:to-[#ff4242] active:scale-[0.99] text-white shadow-lg shadow-rose-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
+                  : "bg-neutral-100 text-neutral-400 border border-neutral-200 cursor-not-allowed shadow-none"
+              }`}
+            >
+              <span>{acceleratedPrice ? "Accelerated" : "Accelerated (Coming Soon)"}</span>
+              <span aria-hidden="true">✦</span>
+            </button>
+          </section>
+        )}
       </main>
     </div>
   );
