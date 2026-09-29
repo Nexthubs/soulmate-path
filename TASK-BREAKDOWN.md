@@ -1467,7 +1467,7 @@ DB invariants hold; exactly one owned sketch is created for one eligible identit
 
 **Priority:** P0  
 **Depends:** all user APIs  
-**Status:** TODO
+**Status:** DONE (docs/handoffs/SP-1005.md; 2026-09-29 — 6 attack classes regression-locked at HTTP level, no existence/content leak)  
 **Context refs:** DEV-SPEC §20, §23 | Decisions: PAY-AUTH-01, TIME-01 | Dependency handoffs: —
 
 
