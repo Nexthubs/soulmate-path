@@ -241,9 +241,17 @@ npm run build        # prebuild 会自动同步 canonical quiz 配置
 npm run check:prod-config   # 前端生产配置门禁：全部通过才继续
 ```
 
+**`.env.production` 加载策略（重要）：**
+
+1. **构建期**：`next build` / `next start` 自动加载 `frontend/.env.production`，并把所有 `NEXT_PUBLIC_*` **内联进打包产物**——它们是构建期常量，不是运行时读取。改了值必须重新 `npm run build` 才生效（build 日志的 `- Environments: .env.production` 行即加载确认）。
+2. **优先级**（高→低）：shell 环境变量 → `.env.production.local` → `.env.local` → `.env.production` → `.env`。⚠️ `.env.local` **未入库且优先级更高**——如果它被手工拷贝到服务器，会用 localhost 值覆盖你的生产配置。服务器上保持没有这个文件（`ls frontend/.env.local` 确认；正常 git 克隆不会带下来）。
+3. **门禁脚本**：`check:prod-config.mjs` 是裸 Node 脚本，Node 不会自动加载 `.env` 文件——已修复为经 `--env-file-if-exists` 按 Next 同款优先级链自行加载（`git pull` 后直接 `npm run check:prod-config` 即可，无需手工 export）。
+
 ---
 
 ## 10. systemd 常驻服务
+
+> **路径与用户适配：** 下面两个 unit 文件假定仓库在 `/home/soulmate/soulmate`、运行用户 `soulmate`。若实际布局不同（例如 `ubuntu` 用户的 `~/soulmate-path`），把 `User=`、`WorkingDirectory=`、`ExecStart=` 中的绝对路径全部替换成你的真实值后再启用。
 
 ```bash
 sudo tee /etc/systemd/system/soulmate-backend.service <<'EOF'
@@ -366,4 +374,5 @@ Caddy 首次启动会自动向 Let's Encrypt 签发证书（前提：§2 的 DNS
 | Sketch 一直 QUEUED/PROCESSING | worker 是否在跑（`JOB_WORKER_ENABLED=true`）；图片网关 `OPENAI_BASE_URL` 是否可达（注意必须带 `/v1`）；看 `generation_metric` 日志 |
 | Sketch 图挂了但状态 COMPLETED | R2 凭证/endpoint；`OBJECT_STORAGE_PUBLIC_URL_PREFIX` 必须为空（走预签名） |
 | 前端 API 全 404/405 | Caddy 是否把 `/api/*` 给了后端而不是 Next；`NEXT_PUBLIC_API_BASE_URL` 是否含 `/api/soulmate` 路径且**重新 build 过** |
+| `check:prod-config` 全部报缺失 | 你在跑修复前的旧脚本或未 `git pull`；确认 `package.json` 的 `check:prod-config` 带 `--env-file-if-exists` 参数链。另检查服务器上是否存在会被更高优先级加载的 `frontend/.env.local`（有则删除后重新 build） |
 | 改了 .env 不生效 | `sudo systemctl restart soulmate-backend soulmate-frontend`；前端变量是构建期内联，改完必须 `npm run build` 再重启 |

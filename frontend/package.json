@@ -11,7 +11,7 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "check:prod-config": "node scripts/check-prod-config.mjs",
+    "check:prod-config": "node --env-file-if-exists=.env --env-file-if-exists=.env.production --env-file-if-exists=.env.local --env-file-if-exists=.env.production.local scripts/check-prod-config.mjs",
     "test": "vitest run"
   },
   "dependencies": {
