@@ -115,6 +115,10 @@ describe("SP-106: Result Cards Fixture UI (DEV-SPEC §2, §10; DECISIONS TIME-01
       expect(html).toContain("11:58:04");
       expect(html).toContain("✦ HAND-CRAFTING ✦");
       expect(html).toContain("stroke=\"#7c3aed\"");
+      expect(html.match(/data-testid=\"countdown-ring-segment\"/g)).toHaveLength(1);
+      expect(html).toContain("stroke-dasharray=\"36.5 26.33\"");
+      expect(html).not.toContain("#a78bfa");
+      expect(html).not.toContain("Locked until server unlock time");
     });
 
     it("TIME-01 Invariant: zero countdown does not unlock card if server availability is LOCKED", () => {
@@ -140,6 +144,7 @@ describe("SP-106: Result Cards Fixture UI (DEV-SPEC §2, §10; DECISIONS TIME-01
       expect(html).toContain("00:00:00");
       expect(html).not.toContain("READY!");
       expect(html).not.toContain("Check Now");
+      expect(html).not.toContain("Locked until server unlock time");
     });
   });
 
@@ -309,24 +314,14 @@ describe("SP-106: Result Cards Fixture UI (DEV-SPEC §2, §10; DECISIONS TIME-01
       expect(html).toContain("data-testid=\"result-card-sketch\"");
       expect(html).toContain("data-testid=\"result-card-report\"");
 
-      // Verify accelerated teaser matching Figma 102:1201 (PAY-01: no hardcoded $3.99 by default)
+      // The Result teaser uses the shared owner-approved accelerated price by default.
       expect(html).toContain("data-testid=\"accelerated-teaser\"");
       expect(html).toContain("Just 5 minutes");
       expect(html).toContain("Get an early look at");
-      expect(html).toContain("Accelerated Access Coming Soon");
-      expect(html).not.toContain("$3.99");
-      expect(html).toContain("disabled=\"\"");
-
-      // When acceleratedPrice is supplied via prop (e.g. from offer API)
-      const htmlWithOffer = renderToStaticMarkup(
-        <SoulmateResultView
-          initialData={aggregateData}
-          acceleratedPrice="$3.99"
-        />
-      );
-      expect(htmlWithOffer).toContain("Proceed to Payment: ");
-      expect(htmlWithOffer).toContain("$3.99");
-      expect(htmlWithOffer).not.toContain("disabled=\"\"");
+      expect(html).toContain("Proceed to Payment: ");
+      expect(html).toContain("$3.99");
+      expect(html).not.toContain("Accelerated Access Coming Soon");
+      expect(html).not.toContain("disabled=\"\"");
     });
   });
 

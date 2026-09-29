@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
+import { clientConfig } from "@/soulmate/config";
 import { ResultItemCard } from "./ResultItemCard";
 import {
   ArtifactType,
@@ -66,10 +67,7 @@ export interface SoulmateResultViewProps {
    */
   onVisibleRefresh?: () => void;
 
-  /**
-   * Optional accelerated checkout offer price (e.g. from server offer config).
-   * Per PAY-01, defaults to undefined (no hardcoded production price).
-   */
+  /** Optional offer override; otherwise use the shared accelerated teaser price. */
   acceleratedPrice?: string;
 
   /**
@@ -120,7 +118,7 @@ export function SoulmateResultView({
   onRetry,
   onCountdownZero,
   onVisibleRefresh,
-  acceleratedPrice,
+  acceleratedPrice = clientConfig.acceleratedPrice || undefined,
   className = "",
 }: SoulmateResultViewProps) {
   const router = useRouter();

@@ -254,36 +254,22 @@ export function ResultItemCard({
           {/* Segmented Ring Graphic — clockwise looping rotation (owner direction,
               Figma 102:1201/102:1270); the center countdown stays static. */}
           <div className="relative w-44 h-44 flex items-center justify-center my-2">
-            {/* SVG segmented circular arcs matching Figma 102:1201 */}
+            {/* Four evenly spaced, single-color arcs matching Figma 102:1201. */}
             <svg
               className="w-full h-full animate-[spin_8s_linear_infinite]"
               viewBox="0 0 100 100"
               aria-hidden="true"
             >
-              {/* Segment 1 */}
               <circle
+                data-testid="countdown-ring-segment"
                 cx="50"
                 cy="50"
                 r="40"
                 fill="none"
                 stroke="#7c3aed"
                 strokeWidth="7"
-                strokeDasharray="45 15"
+                strokeDasharray="36.5 26.33"
                 strokeLinecap="round"
-                className="opacity-90"
-              />
-              {/* Segment 2 */}
-              <circle
-                cx="50"
-                cy="50"
-                r="40"
-                fill="none"
-                stroke="#a78bfa"
-                strokeWidth="7"
-                strokeDasharray="25 35"
-                strokeDashoffset="70"
-                strokeLinecap="round"
-                className="opacity-70"
               />
             </svg>
 
@@ -303,10 +289,6 @@ export function ResultItemCard({
               </span>
             </div>
           </div>
-
-          <p className="text-xs text-neutral-400">
-            Locked until server unlock time. Client timer is display-only.
-          </p>
 
           {/* Visible manual refresh entry once bounded zero-retries are exhausted
               (RV round-2, Finding 1): the server response, not the local zero, decides. */}

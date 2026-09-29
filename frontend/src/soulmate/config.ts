@@ -10,6 +10,8 @@ export interface ClientConfig {
   currency: string;
   introPrice: string | null;
   regularPrice: string | null;
+  /** Shared accelerated early-access teaser price; defaults to the owner-approved $3.99. */
+  acceleratedPrice?: string | null;
   /** Optional configured support contact (mailto: or https://). Empty = in-product panel only. */
   supportUrl?: string | null;
 }
@@ -21,6 +23,9 @@ export const clientConfig: ClientConfig = {
   currency: process.env.NEXT_PUBLIC_SOULMATE_CURRENCY || "USD",
   introPrice: process.env.NEXT_PUBLIC_SOULMATE_INTRO_PRICE || null,
   regularPrice: process.env.NEXT_PUBLIC_SOULMATE_REGULAR_PRICE || null,
+  acceleratedPrice: process.env.NEXT_PUBLIC_ACCELERATED_PRICE?.trim()
+    ? `$${process.env.NEXT_PUBLIC_ACCELERATED_PRICE.trim()}`
+    : "$3.99",
   supportUrl: process.env.NEXT_PUBLIC_SUPPORT_URL || null,
 };
 
