@@ -104,16 +104,12 @@ Blocking decision IDs:
 
 | Decision | Blocks |
 |---|---|
-| PAY-01 | PayPal production pricing / M6 |
-| PAY-02 | re-subscription intro-price policy |
-| AGE-01 | final DOB/legal rule |
+| (PAY-01 RESOLVED 2026-09-29 — production USD 0.10 intro / 29.90 regular, PayPal sandbox-proven; PAY-02 RESOLVED 2026-09-29 — `single_intro`, production env must set it explicitly; DOMAIN-01 RESOLVED 2026-09-29 — `https://soulmate.giaogiao.work` on an internet-facing Ubuntu server; AGE-01 | final DOB/legal rule if legally/product-required; production PayPal credentials + hosting access + remaining SP-1006 inputs) | M6 |
 | COPY-02 | complete Transition-2 production copy |
 | COPY-03 | final Transition-4 dynamic behavior |
-| (REFUND-01 RESOLVED 2026-09-27 — approved refund copy shipped; PAID-THROUGH-01 RESOLVED 2026-09-27 — guards+APIs honor `paid_through_at`; REPORT-01/02 RESOLVED; SP-706 DONE — remaining M6 gates: production provider config, real paid flow, PAY-01, DOMAIN-01) | M6 |
-| RECOVERY-01 | same-email second paid session Sketch recovery path; 2026-09-27 owner ruling: session-scoped read isolation is INTENTIONAL (`不得恢复裸邮箱跨会话读取`), verified-identity recovery deferred to a future iteration; still gates PAY-02 resolution away from `blocked` |
+| RECOVERY-01 | same-email second paid session Sketch recovery path; 2026-09-27 owner ruling: session-scoped read isolation is INTENTIONAL (`不得恢复裸邮箱跨会话读取`), verified-identity recovery deferred to a future iteration; its former block on PAY-02 was discharged 2026-09-29 by the informed `single_intro` ruling (second-session trade-off accepted) |
 | PROMPT-01 | future Sketch input-quality change |
-| DOMAIN-01 | canonical production URLs |
-| LEGAL-01 | production testimonials/statistics |
+| (LEGAL-01, ANALYTICS-01 remain OPEN) | production testimonials/statistics; production analytics sink — both gate SP-1006/M6 |
 
 Details and current handling → `DECISIONS.md`.
 
@@ -122,7 +118,7 @@ Details and current handling → `DECISIONS.md`.
 ```text
 Quiz config: soulmate-quiz-v1 (canonical JSON & seeded in DB soulmate_quiz_versions)
 DB migration: 0006_price_verification (head) applied to shared dev and verified round-trip; 0005 normalized legacy post-payment session status to SUBSCRIBED; 0006 adds subscriptions.price_verified_at for provider price snapshot provenance (Wave 8 audit H-2)
-Config checkpoint: DEV-SPEC §22 groups verified, centralized Decimal pricing, RFC 1123 domain syntax check, multi-layer frontend gate; §13.3 report provider env configured in dev (litellm.giaogiao.work / gemma-4-26b / key set; provider switch stays empty per REPORT-01/02)
+Config checkpoint: DEV-SPEC §22 groups verified, centralized Decimal pricing, RFC 1123 domain syntax check, multi-layer frontend gate; §13.3 report provider env configured in dev (litellm.giaogiao.work / gemma-4-26b / key set; provider switch stays empty per REPORT-01/02). Production values RESOLVED 2026-09-29: PAY-01 USD 0.10 intro / 29.90 regular (PayPal sandbox plans created + cadence/disclosure VERIFIED — production-account provisioning pending credentials), PAY-02 `single_intro` (must be set explicitly in production env; code default stays `blocked`), DOMAIN-01 `https://soulmate.giaogiao.work` (internet-facing Ubuntu hosting); production config-shape validated by `validate_production_config()` with negative controls — template in docs/handoffs/SP-1006.md §6.1
 API checkpoint: DEV-SPEC v1.2 baseline; error taxonomy, correlation middleware, and structured logging established (SP-005); report scaffold endpoints added (SP-702 GET /artifacts/report)
 Payment provider: PayPal monthly subscription with intro first month + regular monthly renewal
 Sketch target model: gpt-image-2 via provider adapter
@@ -140,6 +136,6 @@ Report production provider: ENABLED in dev (REPORT-01/02 RESOLVED; on_demand via
 ```text
 1. Report generation is live in dev (SP-706 DONE). M6 must verify production provider configuration, run a real paid-flow acceptance, reword-review READY/FAILED copy if needed, and re-check exact 390px visual parity. M6 must independently verify release configuration, exact 390px visual parity and a real paid flow. Release QA must also reword the Report page READY-state copy (it currently says the report is being prepared although generation is off — M5 re-review Low note).
 2. WAVE 8 (authorized): SP-802/805 DONE (latest access re-review fix documented in docs/handoffs/SP-805.md); SP-803/804 in REVIEW after round-2 fixes (plan-row price gating; unpaid access promises; cancel-entry/renewal-sentence gating by subscription state). `REFUND-01` approved wording is shipped; real Sandbox cancel E2E owner-scheduled and NOT_RUN. Wave 9 implementation checkpoint PASS, owner-scoped to SP-901/902/903/905 (`docs/reviews/WAVE-9-ANALYTICS-OPERATIONS-REVIEW.md`); SP-904 (alerts) remains BLOCKED on existing platform/policy details (`docs/handoffs/SP-904.md`) and is explicitly excluded from this checkpoint. This does not represent full Wave 9 operational readiness or M6/release acceptance. M6 production readiness remains unpassed: release QA should also decide on full Figma parity for the Settings page chrome (see docs/handoffs/SP-803.md §9) and resolve ANALYTICS-01 (production analytics sink) before go-live.
-3. Wave 10 tail: SP-1001..1005 DONE (matrix, sandbox full-flow, replay/out-of-order, concurrency, security/IDOR). SP-1006 (production smoke) BLOCKED 2026-09-29 (`docs/handoffs/SP-1006.md`): smoke runbook + rollback/disable strategy prepared; all nine smoke items NOT_RUN pending owner inputs — PAY-01, PAY-02, DOMAIN-01, LEGAL-01, AGE-01 (conditional), COPY-02/03, ANALYTICS-01, SP-904 platform, production credentials/hosting, and the release policy for the controlled payment test. M6 gate work resumes immediately on delivery of those inputs.
+3. Wave 10 tail: SP-1001..1005 DONE (matrix, sandbox full-flow, replay/out-of-order, concurrency, security/IDOR). SP-1006 (production smoke) BLOCKED 2026-09-29 (`docs/handoffs/SP-1006.md`) with major inputs now RESOLVED: PAY-01 (USD 0.10/29.90, PayPal sandbox-proven), PAY-02 (`single_intro`), DOMAIN-01 (`https://soulmate.giaogiao.work`, Ubuntu hosting); production `.env` template ready (handoff §6.1). Remaining owners inputs: LEGAL-01, AGE-01 (conditional), COPY-02/03, ANALYTICS-01, SP-904 platform, production PayPal credentials + hosting access, and the release policy for the controlled payment test. Smoke execution and M6 gate work resume immediately on delivery.
 4. Preserve M4's signed-only storage rule for deployment; M6 must recheck the production bucket and affected consumers. Follow later tasks only when separately authorized.
 ```

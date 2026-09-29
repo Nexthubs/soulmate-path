@@ -71,22 +71,26 @@
 
 ### PAY-01 — First-month promotional price
 
-- **Status:** OPEN
-- **Context:** product requires first month at a promotional price, then regular monthly billing; exact amounts are not in the supplied source materials.
-- **Decision:** TBD. Until resolved, use config placeholders `INTRO_PRICE` / `REGULAR_PRICE`; never invent production values.
-- **Affected:** SP-303, SP-401, SP-402, M2 production configuration, M6.
+- **Status:** RESOLVED
+- **Date:** 2026-09-29
+- **Context:** product requires first month at a promotional price, then regular monthly billing; exact amounts were not in the supplied source materials.
+- **Decision:** production first-month promotional price is **USD 0.10**; the regular monthly renewal is **USD 29.90** (currency USD per the established `SOULMATE_CURRENCY` checkpoint). Dev keeps its existing sandbox prices; production deployment must set `SOULMATE_INTRO_PRICE=0.10` / `SOULMATE_REGULAR_PRICE=29.90` explicitly (the production validator rejects missing/non-positive prices). PayPal acceptance of the $0.10 cycle is verified by real sandbox provisioning (plans created ACTIVE, monthly cadence + disclosure parity VERIFIED; sandbox evidence IDs `PROD-8P691118RU8268612` / `P-4P4826888W778062ENK5V6NA` / `P-32R04621GG544483CNK5V6NY` are NOT production config — production plans must be provisioned in the production account at go-live).
+- **Affected:** SP-303, SP-401, SP-402, M2 production configuration, SP-1006, M6.
+- **Source/evidence:** product-owner ruling 2026-09-29; `backend/scripts/provision_paypal.py` sandbox run (SP-1006 handoff §8).
 
 ### PAY-02 — Re-subscription introductory-price eligibility
 
-- **Status:** OPEN
-- **Context:** source materials do not specify whether a returning subscriber can receive the intro price again.
-- **Decision:** TBD. Keep eligibility policy configurable/blocked rather than guessing.
-- **Affected:** subscription offer selection, historical eligibility query, M6.
-- **Update 2026-09-26 (RV follow-up):** under the current `blocked` policy, a same-email second paid session is **not reachable** — the offer is blocked and `confirm`/unknown-subscription reconciliation reject it server-side (`_validate_new_subscription_plan`). If this decision resolves to `single_intro` or `allow_intro`, that path becomes payable and RECOVERY-01 below must be resolved first.
+- **Status:** RESOLVED
+- **Date:** 2026-09-29
+- **Context:** source materials do not specify whether a returning subscriber can receive the intro price again. The RECOVERY-01 note below recorded that any policy other than `blocked` makes the same-email second paid session reachable.
+- **Decision:** adopt **`single_intro`** — a returning subscriber may re-subscribe only on the standard plan at the regular price; the intro price is granted once per identity. The code default stays `blocked` (safest); production deployment must explicitly set `SOULMATE_RESUBSCRIPTION_POLICY=single_intro` or the validator-visible default will silently keep returning subscribers blocked. Server-side enforcement already exists (`_validate_new_subscription_plan` on both confirm and reconcile paths; offer eligibility per SP-303) — config-only change, no code change.
+- **Accepted trade-off (owner-informed):** with `single_intro`, a same-email second paid session becomes payable at the standard price. Per the 2026-09-27 RECOVERY-01 ruling that second session receives Report while its Sketch panel remains in the by-design session-isolated state until the deferred verified-identity recovery iteration ships; support/refund handling is the fallback. This trade-off was explicitly presented to and accepted by the owner with this ruling.
+- **Affected:** subscription offer selection, historical eligibility query, SP-1006, M6.
+- **Update 2026-09-26 (RV follow-up):** under the `blocked` policy, a same-email second paid session is **not reachable** — the offer is blocked and `confirm`/unknown-subscription reconciliation reject it server-side (`_validate_new_subscription_plan`). RESOLVED 2026-09-29 to `single_intro` per owner ruling; see accepted trade-off above.
 
 ### RECOVERY-01 — Sketch recovery for a second paid session on the same email
 
-- **Status:** OPEN — blocks PAY-02 resolution away from `blocked`
+- **Status:** OPEN — future-iteration placeholder (its former "blocks PAY-02 resolution away from `blocked`" relationship was discharged 2026-09-29: PAY-02 resolved to `single_intro` by explicit informed owner ruling, accepting the second-session trade-off recorded there)
 - **Context:** artifact creation dedupes by email (`uq_soulmate_one_sketch_per_email`) while artifact reads are strictly session-scoped (§20 — contact email is not verified identity). A second paid session on the same email therefore receives a REPORT placeholder but its Sketch shows LOCKED with no unlock time, and the create/ensure self-heal cannot fill it (the sketch row belongs to the first session). Isolation is intentional; the recovery path is the open product question.
 - **Decision:** TBD. Options: (a) verified-identity recovery flow that binds existing email-scoped assets to the new session after authentication; (b) block the second purchase before payment when the email already owns a sketch; (c) product accepts second-session Sketch as a separate purchasable asset. Do NOT restore bare-email cross-session reads.
 - **Affected:** SP-501 (ensure semantics), SP-502/SP-503 (status reads), PAY-02, checkout funnel, M6.
@@ -148,10 +152,12 @@
 
 ### DOMAIN-01 — Canonical production domain
 
-- **Status:** OPEN
-- **Context:** supplied PRD uses both `stell.love` and `stella.love`.
-- **Decision:** TBD. Use deployment config `APP_BASE_URL`; no hard-coded canonical host.
-- **Affected:** redirects, OAuth/payment return URLs, production deployment.
+- **Status:** RESOLVED
+- **Date:** 2026-09-29
+- **Context:** supplied PRD used inconsistent placeholder hosts; owner has now supplied the real production domain and hosting plan.
+- **Decision:** canonical production base URL is **`https://soulmate.giaogiao.work`** (owner-confirmed spelling). It remains deployment configuration via `APP_BASE_URL` — no hard-coded canonical host in code. Production hosting is an internet-facing Ubuntu server (deployment access and environment provisioning are ops inputs tracked in SP-1006).
+- **Affected:** redirects, OAuth/payment return URLs, PayPal webhook registration, production deployment, SP-1006.
+- **Source/evidence:** product-owner ruling 2026-09-29.
 
 ### LEGAL-01 — Testimonials and statistics
 
