@@ -204,7 +204,6 @@ function LoadingContent() {
         const state = await getFlowState(sessionId as string);
         if (!isCancelled) {
           setFlowState(state);
-          sharedFlow.setFlowState(state);
           routeToServerStep(state.current_step);
         }
       } catch {
@@ -219,7 +218,10 @@ function LoadingContent() {
     return () => {
       isCancelled = true;
     };
-  }, [isFixtureMode, sessionId, step, routeToServerStep, sharedFlow]);
+    // NOTE: intentionally does NOT depend on the shared flow context — writing
+    // context state inside an effect that also reads the context re-triggers
+    // the effect on every context identity change (infinite refetch loop).
+  }, [isFixtureMode, sessionId, step, routeToServerStep]);
 
   // §18.1 transition view per rendered step (fixture preview stays untracked).
   const transitionTrackedStepRef = React.useRef<number | null>(null);
