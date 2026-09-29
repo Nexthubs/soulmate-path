@@ -5,15 +5,17 @@ import React, { useEffect, useMemo, useRef } from "react";
 /**
  * Wheel-style date-of-birth picker (owner-directed q08 redesign, 2026-09-29).
  *
- * Three snap-scroll columns (MONTH / DAY / YEAR) with a center-selected row and
- * a "SELECTED <date>" pill, matching the owner-supplied reference. Produces a
- * plain YYYY-MM-DD string through onChange — the submitAnswer contract, zodiac
- * derivation (SP-204) and restore-on-refresh flow are unchanged; this is an
- * input-UX swap only. Day lists adapt to the selected month/year (leap years),
- * clamping an out-of-range day instead of emitting an invalid date.
+ * Three snap-scroll columns (MONTH / DAY / YEAR) under ONE full-width center
+ * selection band, with a "SELECTED <date>" pill, matching the owner-supplied
+ * reference. Produces a plain YYYY-MM-DD string through onChange — the
+ * submitAnswer contract, zodiac derivation (SP-204) and restore-on-refresh
+ * flow are unchanged; this is an input-UX swap only. Day lists adapt to the
+ * selected month/year (leap years), clamping an out-of-range day instead of
+ * emitting an invalid date.
  */
 
 const ROW_HEIGHT = 44;
+const WHEEL_HEIGHT = ROW_HEIGHT * 5;
 const DEFAULT_DOB = { year: 1995, month: 5, day: 15 } as const;
 
 export const MONTH_NAMES = [
@@ -53,7 +55,6 @@ export function serializeDateValue(year: number, monthIndex: number, day: number
 
 interface WheelColumnProps {
   ariaLabel: string;
-  headerLabel: string;
   items: string[];
   selectedIndex: number;
   onSelect: (index: number) => void;
@@ -63,7 +64,6 @@ interface WheelColumnProps {
 
 function WheelColumn({
   ariaLabel,
-  headerLabel,
   items,
   selectedIndex,
   onSelect,
@@ -72,14 +72,18 @@ function WheelColumn({
 }: WheelColumnProps) {
   const listRef = useRef<HTMLDivElement | null>(null);
 
-  // Keep the scroll position on the selected row when the selection moves
-  // programmatically (restore, month-length clamp).
+  // Programmatic selection moves (restore, month-length clamp): glide to the
+  // target row. Scroll-ORIGINATED selection changes are deliberately NOT
+  // re-scrolled here — `round(scrollTop / ROW_HEIGHT)` implies a scroll-origin
+  // change is always within half a row of its target, so within that band the
+  // finger/snap is in control and re-centering mid-drag would teleport against
+  // the user's gesture.
   useEffect(() => {
     const el = listRef.current;
     if (!el) return;
     const target = selectedIndex * ROW_HEIGHT;
-    if (Math.abs(el.scrollTop - target) < 2) return;
-    el.scrollTo({ top: target });
+    if (Math.abs(el.scrollTop - target) <= ROW_HEIGHT * 0.6) return;
+    el.scrollTo({ top: target, behavior: "smooth" });
   }, [selectedIndex, items.length]);
 
   const handleScroll = () => {
@@ -89,60 +93,51 @@ function WheelColumn({
     if (idx !== selectedIndex) onSelect(idx);
   };
 
+  // Tap-to-select: glide the tapped row into the center band. During the glide
+  // the passing rows update the selection live through handleScroll.
+  const handleItemClick = (index: number) => {
+    const el = listRef.current;
+    if (el) el.scrollTo({ top: index * ROW_HEIGHT, behavior: "smooth" });
+    if (index !== selectedIndex) onSelect(index);
+  };
+
   const alignClass =
     align === "start"
-      ? "justify-start pl-6"
+      ? "justify-start pl-5"
       : align === "end"
-      ? "justify-end pr-6"
+      ? "justify-end pr-5"
       : "justify-center";
 
   return (
     <div className={`min-w-0 ${flexClassName}`}>
-      <div className="mb-2 text-center text-[11px] font-bold tracking-[0.14em] text-neutral-400">
-        {headerLabel}
-      </div>
-      <div className="relative">
-        {/* Center selection band, under the scrolling text */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 top-1/2 z-0 h-[44px] -translate-y-1/2 rounded-2xl bg-white shadow-[0_12px_30px_rgba(36,26,74,0.14)] ring-1 ring-black/5"
-        />
-        <div
-          ref={listRef}
-          role="listbox"
-          aria-label={ariaLabel}
-          onScroll={handleScroll}
-          className="relative z-10 h-[220px] snap-y snap-mandatory overflow-y-scroll overscroll-contain py-[88px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        >
-          {items.map((label, i) => {
-            const distance = Math.abs(i - selectedIndex);
-            const tone =
-              distance === 0
-                ? "text-neutral-900 font-bold"
-                : distance === 1
-                ? "text-neutral-400 font-medium"
-                : "text-neutral-300 font-medium";
-            return (
-              <div
-                key={`${label}-${i}`}
-                role="option"
-                aria-selected={i === selectedIndex}
-                className={`flex h-[44px] shrink-0 snap-center select-none items-center text-[19px] leading-none ${alignClass} ${tone}`}
-              >
-                {label}
-              </div>
-            );
-          })}
-        </div>
-        {/* Edge fades toward the card background */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 top-0 z-20 h-[70px] bg-gradient-to-b from-white via-white/70 to-transparent"
-        />
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-[70px] bg-gradient-to-t from-white via-white/70 to-transparent"
-        />
+      <div
+        ref={listRef}
+        role="listbox"
+        aria-label={ariaLabel}
+        onScroll={handleScroll}
+        style={{ height: WHEEL_HEIGHT }}
+        className="relative z-10 snap-y snap-mandatory overflow-y-scroll overscroll-contain py-[88px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        {items.map((label, i) => {
+          const distance = Math.abs(i - selectedIndex);
+          const tone =
+            distance === 0
+              ? "text-neutral-900 font-bold"
+              : distance === 1
+              ? "text-neutral-400 font-medium"
+              : "text-neutral-300 font-medium";
+          return (
+            <div
+              key={`${label}-${i}`}
+              role="option"
+              aria-selected={i === selectedIndex}
+              onClick={() => handleItemClick(i)}
+              className={`flex h-[44px] shrink-0 cursor-pointer snap-center select-none items-center text-[17px] leading-none ${alignClass} ${tone}`}
+            >
+              {label}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -186,6 +181,8 @@ export function WheelDatePicker({
 
   const dayItems = Array.from({ length: maxDay }, (_, i) => String(i + 1));
 
+  const headerClass = "text-center text-[11px] font-bold tracking-[0.14em] text-neutral-400";
+
   return (
     <div
       className="w-full"
@@ -208,36 +205,55 @@ export function WheelDatePicker({
           disabled ? "pointer-events-none opacity-60" : ""
         }`}
       >
-        <div className="flex items-stretch gap-2">
-          <WheelColumn
-            ariaLabel="Birth month"
-            headerLabel="MONTH"
-            items={MONTH_NAMES}
-            selectedIndex={effective.month}
-            onSelect={(i) =>
-              setYMD(clampedYear, i, Math.min(day, getDaysInMonth(clampedYear, i)))
-            }
-            align="start"
-            flexClassName="flex-[1.35]"
+        {/* Column headers */}
+        <div className="mb-2 flex items-stretch gap-2">
+          <div className={`flex-[1.35] ${headerClass}`}>MONTH</div>
+          <div className={`flex-1 ${headerClass}`}>DAY</div>
+          <div className={`flex-1 ${headerClass}`}>YEAR</div>
+        </div>
+
+        {/* Wheels row with ONE full-width center band + edge fades */}
+        <div className="relative">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-x-2 top-1/2 z-0 h-[44px] -translate-y-1/2 rounded-2xl bg-white shadow-[0_12px_30px_rgba(36,26,74,0.14)] ring-1 ring-black/5"
           />
-          <WheelColumn
-            ariaLabel="Birth day"
-            headerLabel="DAY"
-            items={dayItems}
-            selectedIndex={day - 1}
-            onSelect={(i) => setYMD(clampedYear, effective.month, i + 1)}
-            align="center"
-            flexClassName="flex-1"
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 top-0 z-20 h-[70px] bg-gradient-to-b from-white via-white/70 to-transparent"
           />
-          <WheelColumn
-            ariaLabel="Birth year"
-            headerLabel="YEAR"
-            items={years.map(String)}
-            selectedIndex={clampedYear - years[0]}
-            onSelect={(i) => setYMD(years[i], effective.month, day)}
-            align="end"
-            flexClassName="flex-1"
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-[70px] bg-gradient-to-t from-white via-white/70 to-transparent"
           />
+          <div className="relative z-10 flex items-stretch gap-2">
+            <WheelColumn
+              ariaLabel="Birth month"
+              items={MONTH_NAMES}
+              selectedIndex={effective.month}
+              onSelect={(i) =>
+                setYMD(clampedYear, i, Math.min(day, getDaysInMonth(clampedYear, i)))
+              }
+              align="start"
+              flexClassName="flex-[1.35]"
+            />
+            <WheelColumn
+              ariaLabel="Birth day"
+              items={dayItems}
+              selectedIndex={day - 1}
+              onSelect={(i) => setYMD(clampedYear, effective.month, i + 1)}
+              align="center"
+              flexClassName="flex-1"
+            />
+            <WheelColumn
+              ariaLabel="Birth year"
+              items={years.map(String)}
+              selectedIndex={clampedYear - years[0]}
+              onSelect={(i) => setYMD(years[i], effective.month, day)}
+              align="end"
+              flexClassName="flex-1"
+            />
+          </div>
         </div>
       </div>
     </div>
