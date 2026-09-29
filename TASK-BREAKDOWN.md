@@ -1488,7 +1488,7 @@ All unauthorized paths denied without leaking target existence/content more than
 
 **Priority:** P0  
 **Depends:** all release tasks + required TBD closure  
-**Status:** TODO
+**Status:** BLOCKED (docs/handoffs/SP-1006.md; 2026-09-29 — runbook + rollback/disable strategy prepared; all nine smoke items NOT_RUN pending owner inputs: PAY-01, PAY-02, DOMAIN-01, LEGAL-01, AGE-01, COPY-02/03, ANALYTICS-01, SP-904 platform, production credentials/release policy)  
 **Context refs:** DEV-SPEC §21–23, §26 | Decisions: PAY-01, PAY-02, DOMAIN-01, LEGAL-01, REPORT-01, REPORT-02 | Dependency handoffs: —
 
 
