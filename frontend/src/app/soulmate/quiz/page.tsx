@@ -21,6 +21,17 @@ import quizData from "@/soulmate/quiz/soulmate-quiz-v1.json";
 
 type PreviewQuestionType = "single" | "date" | "multi";
 
+/**
+ * Shallow URL sync for question-to-question movement (Next.js-sanctioned
+ * window.history.replaceState): keeps ?code= deep-linkable without a router
+ * navigation — no RSC refetch, no Suspense swap, no client-state loss. The
+ * in-product Back button remains server-authoritative via navigateBack.
+ */
+function syncQuestionUrl(code: string) {
+  if (typeof window === "undefined") return;
+  window.history.replaceState(null, "", `/soulmate/quiz?code=${code}`);
+}
+
 function QuizPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -31,6 +42,9 @@ function QuizPageContent() {
   const showDevToolbar = !isProduction && isFixtureMode;
 
   const codeParam = searchParams.get("code");
+  // Bootstrap reads the entry-time ?code= once; question movement updates the
+  // URL shallowly afterwards, so the bootstrap must never re-run on it.
+  const initialCodeRef = useRef(codeParam);
 
   // In fixture mode, allow switching between the three core question types (Single, Date, Multi)
   const [currentType, setCurrentType] = useState<PreviewQuestionType>("single");
@@ -58,6 +72,9 @@ function QuizPageContent() {
   // Loading & In-flight locking (Acceptance: rapid taps are locked while request is in flight)
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  // Back navigation pending: current question stays rendered (controls disabled) —
+  // the full-screen skeleton is reserved for real entry/loading, not step moves.
+  const [isBackPending, setIsBackPending] = useState<boolean>(false);
   const [error, setError] = useState<{ message: string; onRetry?: () => void } | null>(null);
 
   const questionStartTime = useRef<number>(Date.now());
@@ -192,14 +209,19 @@ function QuizPageContent() {
           // Keep local fallback if offline
         }
 
-        // Authoritative step resolution:
-        // Use codeParam if valid question in loaded config, else serverStep if question, else "q02"
-        const targetStep =
-          codeParam && loadedConfig.questions.some((q) => q.code === codeParam)
-            ? codeParam
-            : serverStep.startsWith("q")
-            ? serverStep
-            : "q02";
+        // Authoritative step resolution (DEV-SPEC §6): the server's persisted
+        // current_step wins over a deep-linked/stale ?code= on refresh; an
+        // inconsistent URL is corrected below rather than steering the session.
+        const urlCode = initialCodeRef.current;
+        const targetStep = serverStep.startsWith("q")
+          ? serverStep
+          : urlCode && loadedConfig.questions.some((q) => q.code === urlCode)
+          ? urlCode
+          : "q02";
+
+        if (urlCode !== targetStep) {
+          syncQuestionUrl(targetStep);
+        }
 
         setActiveStepCode(targetStep);
         questionStartTime.current = Date.now();
@@ -226,7 +248,7 @@ function QuizPageContent() {
     return () => {
       isCancelled = true;
     };
-  }, [isFixtureMode, codeParam, router]);
+  }, [isFixtureMode, router]);
 
   // §18.1 quiz_completed: the quiz ends when an answer resolves to any
   // non-question step (transition/interstitial/email). One-shot per session.
@@ -248,8 +270,10 @@ function QuizPageContent() {
       const stepNum = nextStep.replace("transition_", "");
       router.push(`/soulmate/loading?step=${stepNum}`);
     } else if (nextStep.startsWith("q")) {
+      // Pure client-state advance + shallow URL sync: no router navigation, so
+      // the rendered quiz is never swapped for a Suspense fallback or skeleton.
       setActiveStepCode(nextStep);
-      router.push(`/soulmate/quiz?code=${nextStep}`);
+      syncQuestionUrl(nextStep);
       const nextSaved = sessionData?.answers[nextStep];
       restoreAnswerForQuestion(nextStep, nextSaved);
     } else if (
@@ -266,7 +290,7 @@ function QuizPageContent() {
   // 2. Single-Select Option Click Handler (DEV-SPEC §4.2)
   const handleSingleOptionClick = async (optionCode: string) => {
     // Rapid taps locking (Acceptance)
-    if (isSubmitting || isLoading) return;
+    if (isSubmitting || isLoading || isBackPending) return;
 
     setSingleValue(optionCode);
     setError(null);
@@ -331,7 +355,7 @@ function QuizPageContent() {
 
   // 3. Date Submit Handler (DEV-SPEC §4.4)
   const handleDateSubmit = async () => {
-    if (isSubmitting || isLoading || !dateValue) return;
+    if (isSubmitting || isLoading || isBackPending || !dateValue) return;
 
     setError(null);
 
@@ -389,7 +413,7 @@ function QuizPageContent() {
 
   // 4. Multi-Select Submit Handler (DEV-SPEC §4.3)
   const handleMultiSubmit = async () => {
-    if (isSubmitting || isLoading || multiValues.length === 0) return;
+    if (isSubmitting || isLoading || isBackPending || multiValues.length === 0) return;
 
     setError(null);
 
@@ -446,7 +470,7 @@ function QuizPageContent() {
 
   // 5. Back Navigation (DEV-SPEC §4.2, SP-203, SP-207)
   const handleBack = async () => {
-    if (isSubmitting || isLoading) return;
+    if (isSubmitting || isLoading || isBackPending) return;
 
     if (isFixtureMode) {
       if (currentType === "multi") {
@@ -464,7 +488,9 @@ function QuizPageContent() {
       return;
     }
 
-    setIsLoading(true);
+    // In-flight back keeps the CURRENT question rendered (controls disabled)
+    // and switches only when the server-authoritative response arrives.
+    setIsBackPending(true);
     setError(null);
 
     try {
@@ -485,7 +511,7 @@ function QuizPageContent() {
 
       if (prevStep.startsWith("q")) {
         setActiveStepCode(prevStep);
-        router.push(`/soulmate/quiz?code=${prevStep}`);
+        syncQuestionUrl(prevStep);
         const saved = sessionData?.answers[prevStep];
         restoreAnswerForQuestion(prevStep, saved);
       } else {
@@ -498,7 +524,7 @@ function QuizPageContent() {
         onRetry: () => handleBack(),
       });
     } finally {
-      setIsLoading(false);
+      setIsBackPending(false);
     }
   };
 
@@ -568,6 +594,7 @@ function QuizPageContent() {
           title={currentQuestion.title}
           subtitle={currentQuestion.subtitle || "Select one option to continue"}
           onBack={handleBack}
+          backDisabled={isBackPending}
           isLoading={isLoading}
           error={error}
         >
@@ -578,7 +605,7 @@ function QuizPageContent() {
                 label={opt.label}
                 selected={singleValue === opt.code}
                 selectionType="single"
-                disabled={isSubmitting || isLoading}
+                disabled={isSubmitting || isLoading || isBackPending}
                 onClick={() => handleSingleOptionClick(opt.code)}
               />
             ))}
@@ -592,12 +619,13 @@ function QuizPageContent() {
           title={currentQuestion.title}
           subtitle={currentQuestion.subtitle}
           onBack={handleBack}
+          backDisabled={isBackPending}
           isLoading={isLoading}
           error={error}
           bottomAction={
             <QuizNextButton
               onClick={handleDateSubmit}
-              disabled={!dateValue || isSubmitting || isLoading}
+              disabled={!dateValue || isSubmitting || isLoading || isBackPending}
               loading={isSubmitting}
               label="Next"
               ariaLabel="Confirm date and continue"
@@ -612,7 +640,7 @@ function QuizPageContent() {
               id="birthdate-input"
               type="date"
               value={dateValue}
-              disabled={isSubmitting || isLoading}
+              disabled={isSubmitting || isLoading || isBackPending}
               onChange={(e) => setDateValue(e.target.value)}
               className="w-full px-4 py-3 rounded-xl border border-neutral-300 bg-white text-neutral-800 text-center font-medium focus:ring-2 focus:ring-purple-600 focus:outline-none disabled:opacity-50"
               aria-label="Your birth date"
@@ -627,12 +655,13 @@ function QuizPageContent() {
           title={currentQuestion.title}
           subtitle={currentQuestion.subtitle || "Select all that apply"}
           onBack={handleBack}
+          backDisabled={isBackPending}
           isLoading={isLoading}
           error={error}
           bottomAction={
             <QuizNextButton
               onClick={handleMultiSubmit}
-              disabled={multiValues.length === 0 || isSubmitting || isLoading}
+              disabled={multiValues.length === 0 || isSubmitting || isLoading || isBackPending}
               loading={isSubmitting}
               label={`Next (${multiValues.length})`}
               ariaLabel="Confirm choices and continue"
@@ -645,9 +674,9 @@ function QuizPageContent() {
               label={opt.label}
               selected={multiValues.includes(opt.code)}
               selectionType="multi"
-              disabled={isSubmitting || isLoading}
+              disabled={isSubmitting || isLoading || isBackPending}
               onClick={() => {
-                if (isSubmitting || isLoading) return;
+                if (isSubmitting || isLoading || isBackPending) return;
                 setMultiValues((prev) =>
                   prev.includes(opt.code)
                     ? prev.filter((c) => c !== opt.code)

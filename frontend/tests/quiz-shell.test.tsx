@@ -55,6 +55,20 @@ describe("SP-102: Shared Quiz Layout Shell (QuizShell)", () => {
 
       expect(html).not.toContain("data-testid=\"quiz-back-button\"");
     });
+
+    it("disables (not hides) the back button while back is in-flight, keeping content rendered", () => {
+      const html = renderToStaticMarkup(
+        <QuizShell title="Select your gender" backDisabled>
+          <div data-testid="test-content">Option content</div>
+        </QuizShell>
+      );
+
+      // The in-flight back keeps the current question rendered — only the
+      // button is disabled (flash-free back navigation, DEV-SPEC §4.2).
+      expect(html).toContain("data-testid=\"quiz-back-button\"");
+      expect(html).toContain("disabled");
+      expect(html).toContain("data-testid=\"test-content\"");
+    });
   });
 
   describe("Shared Support for Diverse Question Types (Acceptance Criteria)", () => {

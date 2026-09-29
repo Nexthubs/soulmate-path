@@ -40,6 +40,12 @@ export interface QuizShellProps {
   isLoading?: boolean;
 
   /**
+   * Disables the back button while an in-flight back navigation resolves,
+   * WITHOUT swapping the rendered question for a skeleton.
+   */
+  backDisabled?: boolean;
+
+  /**
    * Non-blocking error message and optional retry callback (DEV-SPEC §4.2).
    */
   error?: { message: string; onRetry?: () => void } | string | null;
@@ -60,6 +66,7 @@ export function QuizShell({
   subtitle,
   showBack = true,
   onBack,
+  backDisabled = false,
   children,
   bottomAction,
   isLoading = false,
@@ -89,7 +96,8 @@ export function QuizShell({
           <button
             type="button"
             onClick={handleBack}
-            className="flex items-center justify-center w-9 h-9 rounded-full bg-white/60 hover:bg-white text-neutral-800 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 shadow-sm cursor-pointer"
+            disabled={backDisabled}
+            className="flex items-center justify-center w-9 h-9 rounded-full bg-white/60 hover:bg-white text-neutral-800 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white/60"
             aria-label="Go back to previous step"
             data-testid="quiz-back-button"
           >
