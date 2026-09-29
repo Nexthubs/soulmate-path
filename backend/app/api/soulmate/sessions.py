@@ -261,7 +261,7 @@ async def get_session_profile_endpoint(
 
     if not profile:
         raise NotFoundError(
-            f"Normalized profile not available for session '{public_id}'. Complete quiz questions (q02-q18) first."
+            "Profile is not available yet. Complete the quiz first."
         )
 
     return SoulmateProfileV1.model_validate(profile)

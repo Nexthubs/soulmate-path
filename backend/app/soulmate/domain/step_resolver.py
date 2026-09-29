@@ -190,8 +190,10 @@ def validate_can_answer_question(
     prereqs = get_prerequisite_questions_for_question(question_code)
     missing = [q for q in prereqs if q not in answered_codes]
     if missing:
+        # UI-COPY-01: step codes stay in `details` (machine-readable), never in
+        # the user-facing message.
         raise InvalidFlowStateError(
-            f"Cannot answer '{question_code}': intermediate required questions not answered: {missing}",
+            "Please answer the earlier questions before continuing.",
             details={"missing_prerequisites": missing, "attempted_question": question_code},
         )
 
@@ -212,7 +214,7 @@ def validate_can_advance_transition(
     missing = [q for q in prereqs if q not in answered_codes]
     if missing:
         raise InvalidFlowStateError(
-            f"Cannot advance '{transition_code}': required questions incomplete: {missing}",
+            "Please answer all earlier questions before continuing.",
             details={"missing_prerequisites": missing, "transition_code": transition_code},
         )
 
@@ -234,7 +236,7 @@ def validate_can_answer_interstitial(
     missing = [q for q in prereqs if q not in answered_codes]
     if missing:
         raise InvalidFlowStateError(
-            f"Cannot answer interstitial '{interstitial_code}': prerequisites not answered: {missing}",
+            "Please answer the earlier prompts before continuing.",
             details={"missing_prerequisites": missing, "attempted_interstitial": interstitial_code},
         )
 
@@ -257,7 +259,7 @@ def validate_can_submit_question(
     # 2. Cannot bypass transition screens
     if current_step.startswith("transition_"):
         raise InvalidFlowStateError(
-            f"Cannot answer '{question_code}': current active step is transition '{current_step}'. Transition must be continued first.",
+            "This question is not available yet. Continue through the current screen first.",
             details={"current_step": current_step, "attempted_question": question_code},
         )
 
@@ -268,7 +270,7 @@ def validate_can_submit_question(
     # 4. First-time answer requires current_step == question_code
     if current_step != question_code:
         raise InvalidFlowStateError(
-            f"Cannot answer '{question_code}': current active step is '{current_step}'.",
+            "This question is not available for your session right now. Continue from where you left off.",
             details={"current_step": current_step, "attempted_question": question_code},
         )
 
@@ -291,7 +293,7 @@ def validate_can_submit_interstitial(
     # 2. Cannot bypass transition screens (e.g. transition_5)
     if current_step.startswith("transition_"):
         raise InvalidFlowStateError(
-            f"Cannot answer interstitial '{interstitial_code}': current active step is transition '{current_step}'. Transition must be continued first.",
+            "This screen is not available yet. Continue through the current screen first.",
             details={"current_step": current_step, "attempted_interstitial": interstitial_code},
         )
 
@@ -302,7 +304,7 @@ def validate_can_submit_interstitial(
     # 4. First-time answer requires current_step == interstitial_code
     if current_step != interstitial_code:
         raise InvalidFlowStateError(
-            f"Cannot answer interstitial '{interstitial_code}': current active step is '{current_step}'.",
+            "This screen is not available for your session right now. Continue from where you left off.",
             details={"current_step": current_step, "attempted_interstitial": interstitial_code},
         )
 

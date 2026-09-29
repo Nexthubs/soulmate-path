@@ -50,8 +50,9 @@ class IdentityService:
             SessionStatus.SUBSCRIBED.value,
         )
         if not is_quiz_completed:
+            # UI-COPY-01: spec references stay out of user-facing messages.
             raise InvalidFlowStateError(
-                "Quiz must be completed before capturing email (DEV-SPEC §3).",
+                "Quiz must be completed before capturing email.",
                 details={
                     "current_step": session.current_step,
                     "status": session.status,

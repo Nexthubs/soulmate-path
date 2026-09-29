@@ -89,7 +89,12 @@ class FlowService:
 
         next_step = get_next_step(transition_code)
         if next_step is None:
-            raise InvalidFlowStateError(f"Transition '{transition_code}' has no subsequent step.")
+            # Flow-config integrity failure: the code is operator diagnostics,
+            # not user copy (UI-COPY-01).
+            raise InvalidFlowStateError(
+                "This step cannot be completed because the flow configuration is invalid. Please try again later.",
+                details={"transition_code": transition_code},
+            )
 
         # Idempotent return if already advanced
         if session.current_step == next_step:
@@ -102,8 +107,10 @@ class FlowService:
 
         # Ensure session is currently at this transition
         if session.current_step != transition_code:
+            # UI-COPY-01: the step codes stay in `details` (machine-readable),
+            # never in the user-facing message.
             raise InvalidFlowStateError(
-                f"Cannot continue '{transition_code}': current active step is '{session.current_step}'.",
+                "This step is not available for your session right now. Continue from where you left off.",
                 details={"current_step": session.current_step, "transition_code": transition_code},
             )
 

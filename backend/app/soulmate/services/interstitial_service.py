@@ -47,7 +47,7 @@ class InterstitialService:
                 if lowered in ("false", "no", "0"):
                     return False
             raise ValidationError(
-                f"Invalid answer for '{interstitial_code}': expected boolean or 'yes'/'no', got '{val}'."
+                f"Invalid answer: expected 'yes' or 'no', got '{val}'."
             )
 
         if interstitial_code == "warning_response":
@@ -62,7 +62,7 @@ class InterstitialService:
                 if lowered in ("false", "0"):
                     return "no"
             raise ValidationError(
-                f"Invalid answer for 'warning_response': expected 'yes' or 'no', got '{val}'."
+                f"Invalid answer: expected 'yes' or 'no', got '{val}'."
             )
 
         raise ValidationError(

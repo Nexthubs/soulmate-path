@@ -303,7 +303,9 @@ async def test_question_submission_cannot_bypass_active_transition():
         )
         assert q02_bypass.status_code == 409
         assert q02_bypass.json()["error_code"] == "INVALID_FLOW_STATE"
-        assert "transition_0" in q02_bypass.json()["message"]
+        # UI-COPY-01: the message is semantic; the step codes live in details.
+        assert "not available" in q02_bypass.json()["message"]
+        assert "transition_0" in q02_bypass.json()["details"]["current_step"]
 
         # Advance transition_0
         await client.post(f"/api/soulmate/sessions/{session_id}/transitions/transition_0/continue")
@@ -329,7 +331,8 @@ async def test_question_submission_cannot_bypass_active_transition():
         )
         assert q07_bypass.status_code == 409
         assert q07_bypass.json()["error_code"] == "INVALID_FLOW_STATE"
-        assert "transition_1" in q07_bypass.json()["message"]
+        assert "not available" in q07_bypass.json()["message"]
+        assert "transition_1" in q07_bypass.json()["details"]["current_step"]
 
         # Advance transition_1
         await client.post(f"/api/soulmate/sessions/{session_id}/transitions/transition_1/continue")
@@ -405,7 +408,8 @@ async def test_interstitial_submission_cannot_bypass_active_transition(db_sessio
         )
         assert inter_bypass.status_code == 409
         assert inter_bypass.json()["error_code"] == "INVALID_FLOW_STATE"
-        assert "transition_5" in inter_bypass.json()["message"]
+        assert "not available" in inter_bypass.json()["message"]
+        assert "transition_5" in inter_bypass.json()["details"]["current_step"]
 
         # Continue transition_5
         t5_res = await client.post(f"/api/soulmate/sessions/{session_id}/transitions/transition_5/continue")
