@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { QuizShell, QuizNextButton, OptionCard, RadioGroup } from "@/soulmate/components/quiz";
+import { QuizShell, QuizNextButton, OptionCard, RadioGroup, WheelDatePicker } from "@/soulmate/components/quiz";
 import {
   createSession,
   getCurrentSession,
@@ -667,20 +667,11 @@ function QuizPageContent() {
             />
           }
         >
-          <div className="w-full p-6 rounded-2xl bg-white/70 border border-neutral-200/60 shadow-xs flex flex-col items-center gap-4">
-            <label htmlFor="birthdate-input" className="text-xs font-medium text-neutral-600">
-              Select your date of birth
-            </label>
-            <input
-              id="birthdate-input"
-              type="date"
-              value={dateValue}
-              disabled={isSubmitting || isLoading || isBackPending}
-              onChange={(e) => setDateValue(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl border border-neutral-300 bg-white text-neutral-800 text-center font-medium focus:ring-2 focus:ring-purple-600 focus:outline-none disabled:opacity-50"
-              aria-label="Your birth date"
-            />
-          </div>
+          <WheelDatePicker
+            value={dateValue}
+            onChange={setDateValue}
+            disabled={isSubmitting || isLoading || isBackPending}
+          />
         </QuizShell>
       )}
 

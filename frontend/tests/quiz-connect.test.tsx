@@ -69,13 +69,13 @@ describe("SP-207: Connect Quiz UI to Live APIs & State Management", () => {
       expect(html).toContain("Female");
     });
 
-    it("renders date input question structure for Q08", () => {
+    it("renders date question structure for Q08 as the wheel picker", () => {
       mockSearchParams = new URLSearchParams({ code: "q08" });
       const html = renderToStaticMarkup(<SoulmateQuizPage />);
 
       expect(html).toContain("What&#x27;s your date of birth?");
-      expect(html).toContain("id=\"birthdate-input\"");
-      expect(html).toContain("type=\"date\"");
+      expect(html).toContain('data-testid="dob-wheel-picker"');
+      expect(html).toContain("June 15, 1995");
       expect(html).toContain("Next");
     });
 
