@@ -99,18 +99,16 @@ function LoadingContent() {
   const transition3DecisionCopy =
     serverDecisionCopy || transition3Data.decisionCopy;
 
-  // Bootstrap session and flow state if in live mode
+  // Bootstrap session once per mount (live mode): resolve or create the session.
   React.useEffect(() => {
     if (isFixtureMode) return;
     let isCancelled = false;
     async function initSession() {
       setError(null);
-      let sId: string | null = null;
       try {
         const sess = await getCurrentSession();
         if (!isCancelled) {
           setSessionId(sess.session_id);
-          sId = sess.session_id;
         }
       } catch (err: unknown) {
         if (isSessionMissingError(err)) {
@@ -118,7 +116,6 @@ function LoadingContent() {
             const created = await createSession();
             if (!isCancelled) {
               setSessionId(created.session_id);
-              sId = created.session_id;
             }
           } catch (createErr: unknown) {
             if (!isCancelled) {
@@ -136,23 +133,69 @@ function LoadingContent() {
           return;
         }
       }
-
-      if (sId && !isCancelled) {
-        try {
-          const state = await getFlowState(sId);
-          if (!isCancelled) {
-            setFlowState(state);
-          }
-        } catch {
-          // Flow state metadata fallback
-        }
-      }
     }
     initSession();
     return () => {
       isCancelled = true;
     };
   }, [isFixtureMode]);
+
+  // DEV-SPEC §3/§6 server authority: follow the session's ACTUAL persisted step.
+  // History/refresh can land the user on a transition screen the session has
+  // already passed (or not reached); route them to the real step instead of
+  // letting Continue fail against the server's flow guard.
+  const routeToServerStep = React.useCallback(
+    (serverStep: string) => {
+      if (serverStep.startsWith("transition_")) {
+        const stepNum = serverStep.replace("transition_", "");
+        if (Number(stepNum) !== step) {
+          router.push(`/soulmate/loading?step=${stepNum}`);
+        }
+        return;
+      }
+      if (
+        ["spiritual_person", "familiar_psychic_artistry", "warning_response"].includes(serverStep)
+      ) {
+        router.push("/soulmate/loading?step=5");
+        return;
+      }
+      if (serverStep === "email") {
+        router.push("/soulmate/email");
+        return;
+      }
+      if (serverStep.startsWith("q")) {
+        router.push(`/soulmate/quiz?code=${serverStep}`);
+        return;
+      }
+      // Advanced/unknown state (checkout, result, ...): the landing page's
+      // server guard resolves the correct destination for the session.
+      router.push("/soulmate");
+    },
+    [router, step]
+  );
+
+  // Authoritative flow state per rendered transition step: supplies transition
+  // metadata AND validates that this screen matches the session's server step.
+  React.useEffect(() => {
+    if (isFixtureMode || !sessionId) return;
+    let isCancelled = false;
+    async function loadFlowState() {
+      try {
+        const state = await getFlowState(sessionId as string);
+        if (!isCancelled) {
+          setFlowState(state);
+          routeToServerStep(state.current_step);
+        }
+      } catch {
+        // Flow state metadata fallback: without a server verdict we cannot
+        // validate the step, so stay on the current screen.
+      }
+    }
+    loadFlowState();
+    return () => {
+      isCancelled = true;
+    };
+  }, [isFixtureMode, sessionId, step, routeToServerStep]);
 
   // §18.1 transition view per rendered step (fixture preview stays untracked).
   const transitionTrackedStepRef = React.useRef<number | null>(null);
@@ -198,10 +241,11 @@ function LoadingContent() {
     trackSoulmateEvent({ name: "soulmate_transition_continue", properties: { step } });
     try {
       const res = await continueTransition(sessionId, `transition_${step}`);
-      if (res.flow_state) {
-        setFlowState(res.flow_state);
-      }
       if (step === 5) {
+        // Step 5 stays on this page through the interstitial popups, so the
+        // advanced flow state is retained for metadata; steps 0–4 navigate
+        // immediately and the destination screen loads its own state.
+        setFlowState(res.flow_state ?? null);
         setActivePopup("spiritual");
       } else if (res.next_step.startsWith("q")) {
         router.push(`/soulmate/quiz?code=${res.next_step}`);
@@ -212,7 +256,22 @@ function LoadingContent() {
         router.push("/soulmate/quiz");
       }
     } catch (err: unknown) {
-      // Do NOT advance on error; retain current screen and show retryable error (DEV-SPEC §6, Finding 2)
+      // Do NOT advance the flow on error (DEV-SPEC §6, Finding 2). If the
+      // server's flow guard refused because the session already moved on
+      // (e.g. another tab advanced it), re-sync to the server's actual step
+      // instead of dead-ending in a retry loop against a 409.
+      if (!isFixtureMode && sessionId) {
+        try {
+          const state = await getFlowState(sessionId);
+          if (state.current_step !== `transition_${step}`) {
+            setFlowState(state);
+            routeToServerStep(state.current_step);
+            return;
+          }
+        } catch {
+          // Re-sync unavailable; fall through to the retryable error below.
+        }
+      }
       const msg = err instanceof Error ? err.message : "Failed to continue transition";
       setError({
         message: msg,
