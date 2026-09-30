@@ -25,7 +25,9 @@ export default function SoulmateLayout({
   }
 
   return (
-    <main className="w-full max-w-[390px] min-h-screen mx-auto flex flex-col relative shadow-sm bg-white">
+    // Full-width host (batch 1): no 390px card, no forced background here —
+    // each page/shell owns its background and centers its own content slot.
+    <main className="w-full flex flex-col relative sp-fill-vh">
       <ConfigValidator />
       <SharedFlowProvider>
         <SoulmateDrawerProvider>{children}</SoulmateDrawerProvider>

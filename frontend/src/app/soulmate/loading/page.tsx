@@ -27,6 +27,7 @@ import {
 import { getSafeUserErrorMessage } from "@/soulmate/api/errors";
 import { FlowShellFallback } from "@/soulmate/components/flow/FlowShellFallback";
 import { useSharedFlow } from "@/soulmate/components/flow/SharedFlowContext";
+import { prefetchFlowRoute } from "@/soulmate/components/flow/flowTargets";
 import { trackSoulmateEvent } from "@/soulmate/analytics";
 
 function LoadingContent() {
@@ -45,11 +46,28 @@ function LoadingContent() {
   const [activePopup, setActivePopup] = useState<InterstitialType | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<{ message: string; onRetry?: () => void } | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [flowState, setFlowState] = useState<FlowStateResponse | null>(testFlowState);
-  // Continue stays disabled until the session is resolved AND the server-side
-  // step validation for the rendered transition has completed (live mode).
-  const [flowChecked, setFlowChecked] = useState<boolean>(false);
+  // Session resolution (batch 3 §6.4): a warm entry adopts the shared
+  // provider's session synchronously (no effect round-trip); only a cold entry
+  // resolves or creates one.
+  const [createdSessionId, setCreatedSessionId] = useState<string | null>(null);
+  const sessionId = createdSessionId ?? sharedFlow.sessionId ?? null;
+  // Transition-5 continuation: after Continue succeeds on step 5 the flow moves
+  // past validation, so the warm prepared entry must stop pinning state.
+  const [continued, setContinued] = useState<boolean>(false);
+  const [fetchedFlowState, setFetchedFlowState] = useState<FlowStateResponse | null>(
+    testFlowState
+  );
+  const [coldFlowChecked, setColdFlowChecked] = useState<boolean>(false);
+
+  // Component-lifetime guard (audit P1): async continuations must never route
+  // or mutate after this page unmounted.
+  const mountedRef = React.useRef(true);
+  React.useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   // Step 0 through 5 from query param, defaulting to 0
   const stepParam = parseInt(searchParams.get("step") || "0", 10);
@@ -63,6 +81,28 @@ function LoadingContent() {
       process.env.NEXT_PUBLIC_ENABLE_MARKETING_CLAIMS === "true");
 
   const isFixtureMode = !isProduction && searchParams.get("fixture") === "true";
+
+  // Batch 3 §6.3/§6.4: a prepared result for THIS session+step that the server
+  // already validated (current_step matches the rendered transition) enables
+  // Continue on the FIRST render — no disable-then-enable round trip on the
+  // warm path. Everything is derived from the preparation store (a stable ref),
+  // so this reads synchronously during render without re-render churn.
+  const transitionKey = `transition_${step}`;
+  const preparedEntry = sessionId ? sharedFlow.getPrepared(sessionId, transitionKey) : null;
+  const warmValidated = !!(
+    !isFixtureMode &&
+    !continued &&
+    preparedEntry?.status === "ready" &&
+    preparedEntry.flowState &&
+    preparedEntry.flowState.session_id === sessionId &&
+    preparedEntry.flowState.current_step === transitionKey
+  );
+  const flowState = continued
+    ? fetchedFlowState
+    : warmValidated && preparedEntry?.flowState
+    ? preparedEntry.flowState
+    : fetchedFlowState;
+  const flowChecked = warmValidated || coldFlowChecked;
 
   // Continue stays disabled until the session is resolved AND the server-side
   // step validation for the rendered transition has completed (live mode).
@@ -112,20 +152,17 @@ function LoadingContent() {
   // Bootstrap session once per mount (live mode): resolve or create the session.
   React.useEffect(() => {
     if (isFixtureMode) return;
+    // Warm entry (batch 3 §6.4): the shared provider already resolved this
+    // browser's session — adoption is fully synchronous through the derived
+    // sessionId above, with zero network and zero effect round-trips.
+    if (sharedFlow.sessionId) return;
     let isCancelled = false;
     async function initSession() {
       setError(null);
-      // Warm path: the persistent shared flow state already resolved this
-      // browser's session on an earlier funnel page — adopt it without a
-      // network round trip.
-      if (sharedFlow.sessionId) {
-        setSessionId(sharedFlow.sessionId);
-        return;
-      }
       try {
         const sess = await getCurrentSession();
         if (!isCancelled) {
-          setSessionId(sess.session_id);
+          setCreatedSessionId(sess.session_id);
           sharedFlow.setSession(sess.session_id, sess);
         }
       } catch (err: unknown) {
@@ -133,7 +170,7 @@ function LoadingContent() {
           try {
             const created = await createSession();
             if (!isCancelled) {
-              setSessionId(created.session_id);
+              setCreatedSessionId(created.session_id);
               sharedFlow.setSession(created.session_id, null);
             }
           } catch (createErr: unknown) {
@@ -157,6 +194,9 @@ function LoadingContent() {
     return () => {
       isCancelled = true;
     };
+    // NOTE: intentionally narrow deps — the cold path writes the shared context
+    // once and the warm-read guard above settles; a whole-context dependency
+    // would re-trigger this effect on every context identity change (223fc60).
   }, [isFixtureMode]);
 
   // DEV-SPEC §3/§6 server authority: follow the session's ACTUAL persisted step.
@@ -195,33 +235,47 @@ function LoadingContent() {
 
   // Authoritative flow state per rendered transition step: supplies transition
   // metadata AND validates that this screen matches the session's server step.
+  // Batch 3 §6.2.3: consume the preparation started by the departure page when
+  // present (shared in-flight promise, no duplicate request); only a cache miss
+  // issues a flow-state request here. The effect intentionally does NOT depend
+  // on warmValidated: ready entries resolve instantly (no extra request), and
+  // leaving it out prevents a confirmStep prune on the departure page from
+  // re-arming this effect while it is still mounted.
   React.useEffect(() => {
-    if (isFixtureMode || !sessionId) return;
+    if (isFixtureMode || !sessionId || continued) return;
     let isCancelled = false;
-    setFlowChecked(false);
+    setColdFlowChecked(false);
     async function loadFlowState() {
-      try {
-        const state = await getFlowState(sessionId as string);
-        if (!isCancelled) {
-          setFlowState(state);
-          routeToServerStep(state.current_step);
+      const entry = await sharedFlow.ensurePrepared(sessionId as string, transitionKey);
+      if (isCancelled) return;
+      if (entry.status === "ready" && entry.flowState) {
+        // Materialize as the fallback source so metadata survives any later
+        // preparation pruning during this page's lifetime.
+        setFetchedFlowState(entry.flowState);
+        // DEV-SPEC §3/§6 server authority: follow the session's ACTUAL persisted
+        // step when this screen does not match it (history/refresh/other tabs).
+        if (entry.flowState.current_step !== transitionKey) {
+          routeToServerStep(entry.flowState.current_step);
         }
-      } catch {
-        // Flow state metadata fallback: without a server verdict we cannot
-        // validate the step, so stay on the current screen; the server's flow
-        // guard still protects Continue.
-      } finally {
-        if (!isCancelled) setFlowChecked(true);
       }
+      // Error: without a server verdict we cannot validate the step, so stay on
+      // the current screen; the server's flow guard still protects Continue.
+      setColdFlowChecked(true);
     }
     loadFlowState();
     return () => {
       isCancelled = true;
     };
-    // NOTE: intentionally does NOT depend on the shared flow context — writing
-    // context state inside an effect that also reads the context re-triggers
-    // the effect on every context identity change (infinite refetch loop).
-  }, [isFixtureMode, sessionId, step, routeToServerStep]);
+    // NOTE: depends only on concrete session/step values and STABLE actions —
+    // never on the whole shared flow context object (223fc60).
+  }, [
+    isFixtureMode,
+    sessionId,
+    transitionKey,
+    continued,
+    routeToServerStep,
+    sharedFlow.ensurePrepared,
+  ]);
 
   // §18.1 transition view per rendered step (fixture preview stays untracked).
   const transitionTrackedStepRef = React.useRef<number | null>(null);
@@ -232,6 +286,9 @@ function LoadingContent() {
   }, [isFixtureMode, step]);
 
   const handleContinue = async () => {
+    // In-handler double-submit guard (batch 2): the Continue button is already
+    // disabled while loading, but this blocks any duplicate invocation path.
+    if (isLoading) return;
     // Note: Fixture mode (?fixture=true in dev) is an isolated static preview
     // for UI inspection only, and intentionally bypasses the backend flow state machine.
     // In live mode (standard dev and all production), continueTransition() strictly queries
@@ -269,19 +326,31 @@ function LoadingContent() {
 
     setIsLoading(true);
     setError(null);
+    // Audit P1: a newer local operation (another continue, unmount, session
+    // switch) supersedes this continuation's async result.
+    const seq = sharedFlow.bumpOp();
     trackSoulmateEvent({ name: "soulmate_transition_continue", properties: { step } });
     try {
       const res = await continueTransition(sessionId, `transition_${step}`);
+      if (!sharedFlow.isCurrentOp(seq) || !mountedRef.current) {
+        return; // superseded or unmounted — never route on a stale continuation
+      }
+      // Server-confirmed step (batch 3 §6.2.4): the destination page (warm quiz
+      // entry) adopts this only after it agrees with the URL it is navigated to.
+      sharedFlow.confirmStep(res.next_step);
       if (step === 5) {
         // Step 5 stays on this page through the interstitial popups, so the
         // advanced flow state is retained for metadata; steps 0–4 navigate
         // immediately and the destination screen loads its own state.
-        setFlowState(res.flow_state ?? null);
+        setContinued(true);
+        setFetchedFlowState(res.flow_state ?? null);
         setActivePopup("spiritual");
       } else if (res.next_step.startsWith("q")) {
+        prefetchFlowRoute(router, res.next_step);
         router.push(`/soulmate/quiz?code=${res.next_step}`);
       } else if (res.next_step.startsWith("transition_")) {
         const nextStepNum = res.next_step.replace("transition_", "");
+        prefetchFlowRoute(router, res.next_step);
         router.push(`/soulmate/loading?step=${nextStepNum}`);
       } else {
         router.push("/soulmate/quiz");
@@ -295,7 +364,7 @@ function LoadingContent() {
         try {
           const state = await getFlowState(sessionId);
           if (state.current_step !== `transition_${step}`) {
-            setFlowState(state);
+            setFetchedFlowState(state);
             routeToServerStep(state.current_step);
             return;
           }
@@ -343,7 +412,11 @@ function LoadingContent() {
       };
       const code = codeMap[activePopup];
       const val = activePopup === "warning" ? (answer ? "yes" : "no") : answer;
+      const seq = sharedFlow.bumpOp();
       await submitInterstitialAnswer(sessionId, code, val);
+      if (!sharedFlow.isCurrentOp(seq) || !mountedRef.current) {
+        return; // superseded or unmounted — never advance a stale popup answer
+      }
       trackSoulmateEvent({
         name: "soulmate_interstitial_answered",
         properties: { code, value: val },

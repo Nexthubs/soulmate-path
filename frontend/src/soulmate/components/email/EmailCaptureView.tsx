@@ -178,8 +178,11 @@ export function EmailCaptureView({
       data-variant={isMaleVariant ? "male" : "female"}
       data-user-gender={userGender}
       data-sample-data={isSampleData ? "true" : "false"}
-      className={`relative min-h-screen w-full max-w-[390px] mx-auto bg-gradient-to-b from-[#fbfaff] via-[#f7f5fb] to-[#ffffff] overflow-x-hidden flex flex-col justify-between ${className}`}
+      // Full-width background layer with its own cool gradient (batch 1); the
+      // centered max-390px slot keeps the 390px geometry.
+      className={`relative w-full sp-fill-vh bg-gradient-to-b from-[#fbfaff] via-[#f7f5fb] to-[#ffffff] overflow-x-hidden flex flex-col ${className}`}
     >
+      <div className="relative w-full max-w-[390px] mx-auto flex flex-col flex-1 justify-between">
       {/* Top Background Section & Sketch Preview (Figma 102:486 / 102:557: h=248px, heading at y=64) */}
       <div className="relative w-full h-[248px] min-h-[248px] pt-16 px-6 flex flex-col items-center text-center overflow-hidden">
         {/* Background Sketch Illustration */}
@@ -213,7 +216,7 @@ export function EmailCaptureView({
       </div>
 
       {/* Main Interaction Card (Figma 102:492 / 102:563) */}
-      <div className="relative z-20 w-full bg-white rounded-t-[32px] shadow-2xl px-6 pt-8 pb-10 flex flex-col flex-1 border-t border-neutral-100/60">
+      <div className="relative z-20 w-full bg-white rounded-t-[32px] shadow-2xl px-6 pt-8 pb-[calc(2.5rem+var(--sp-safe-bottom))] flex flex-col flex-1 border-t border-neutral-100/60">
         {/* Card Header */}
         <div className="text-center space-y-1 mb-6">
           <p className="font-sans font-bold text-[18px] leading-[26px] text-[#5b2f91]">
@@ -426,6 +429,7 @@ export function EmailCaptureView({
           </div>
           </div>
         </div>
+      </div>
       </div>
     </div>
   );

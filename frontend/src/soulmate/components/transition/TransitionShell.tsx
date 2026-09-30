@@ -87,10 +87,13 @@ export function TransitionShell({
   const errorMessage = typeof error === "string" ? error : error?.message;
   const onRetry = typeof error === "object" && error !== null ? error.onRetry : undefined;
   return (
+    // Full-width warm background layer (batch 1); the centered max-390px slot
+    // keeps the 390px geometry while the gradient covers the whole viewport.
     <div
       data-testid={`transition-shell-step-${step}`}
-      className={`flex flex-col min-h-screen justify-between items-center w-full max-w-[390px] mx-auto bg-gradient-to-b from-[#fff0f3] via-[#fef4e9] to-[#fef3de] text-neutral-900 px-6 py-8 overflow-x-hidden ${className}`}
+      className={`flex flex-col w-full sp-fill-vh bg-gradient-to-b from-[#fff0f3] via-[#fef4e9] to-[#fef3de] text-neutral-900 overflow-x-hidden ${className}`}
     >
+      <div className="w-full max-w-[390px] mx-auto flex flex-col flex-1 justify-between items-center px-6 pt-[calc(2rem+var(--sp-safe-top))] pb-[calc(2rem+var(--sp-safe-bottom))]">
       {/* Top Spacer / Status Header */}
       <div className="w-full flex flex-col items-center pt-4">
         {badge && (
@@ -180,6 +183,7 @@ export function TransitionShell({
           )}
         </button>
       </footer>
+      </div>
     </div>
   );
 }

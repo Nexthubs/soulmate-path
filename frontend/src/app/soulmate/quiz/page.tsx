@@ -18,6 +18,8 @@ import {
 import { getSafeUserErrorMessage } from "@/soulmate/api/errors";
 import { FlowShellFallback } from "@/soulmate/components/flow/FlowShellFallback";
 import { useSharedFlow } from "@/soulmate/components/flow/SharedFlowContext";
+import { prefetchFlowRoute, flowRouteForStep } from "@/soulmate/components/flow/flowTargets";
+import type { PreparedStepEntry } from "@/soulmate/components/flow/stepPreparation";
 import { trackOnce, trackSoulmateEvent } from "@/soulmate/analytics";
 import quizData from "@/soulmate/quiz/soulmate-quiz-v1.json";
 
@@ -67,6 +69,9 @@ function QuizPageContent() {
   // Form values for current question
   const [singleValue, setSingleValue] = useState<string>("female");
   const [dateValue, setDateValue] = useState<string>("1995-06-15");
+  // Wheel columns are mid-gesture (batch 4 §8 item 5): Next stays disabled
+  // until every column settles and the settled draft is committed.
+  const [wheelMoving, setWheelMoving] = useState<boolean>(false);
   const [multiValues, setMultiValues] = useState<string[]>([
     "building_a_family",
     "traveling_the_world",
@@ -79,6 +84,29 @@ function QuizPageContent() {
   // the full-screen skeleton is reserved for real entry/loading, not step moves.
   const [isBackPending, setIsBackPending] = useState<boolean>(false);
   const [error, setError] = useState<{ message: string; onRetry?: () => void } | null>(null);
+
+  // Local submitting hint (batch 2): a small non-blocking chip appears only when
+  // a submission takes longer than ~400ms. The timer controls the hint's
+  // appearance only — step advance timing stays server-driven (§4.2). Cleared on
+  // success, failure, and unmount.
+  const [showSubmitHint, setShowSubmitHint] = useState<boolean>(false);
+  const submitHintTimer = useRef<number | null>(null);
+  const clearSubmitHint = () => {
+    if (submitHintTimer.current !== null) {
+      clearTimeout(submitHintTimer.current);
+      submitHintTimer.current = null;
+    }
+    setShowSubmitHint(false);
+  };
+  const startSubmitHint = () => {
+    clearSubmitHint();
+    submitHintTimer.current = window.setTimeout(() => {
+      setShowSubmitHint(true);
+    }, 400);
+  };
+  useEffect(() => {
+    return () => clearSubmitHint();
+  }, []);
 
   const questionStartTime = useRef<number>(Date.now());
   // §18.1 quiz funnel tracking state (one-shot start + per-question duration base)
@@ -154,24 +182,28 @@ function QuizPageContent() {
       // network and no skeleton swap, so entering the quiz from a transition
       // renders the question immediately.
       if (sharedFlow.sessionId && sharedFlow.sessionData && sharedFlow.quizConfig) {
-        setSessionId(sharedFlow.sessionId);
-        setSessionData(sharedFlow.sessionData);
-        setActiveQuizConfig(sharedFlow.quizConfig);
         const urlCode = initialCodeRef.current;
-        const warmStep =
-          urlCode && sharedFlow.quizConfig.questions.some((q) => q.code === urlCode)
-            ? urlCode
-            : sharedFlow.sessionData.current_step?.startsWith("q")
-            ? sharedFlow.sessionData.current_step
-            : "q02";
-        setActiveStepCode(warmStep);
-        questionStartTime.current = Date.now();
-        restoreAnswerForQuestion(
-          warmStep,
-          sharedFlow.sessionData.answers[warmStep],
-          sharedFlow.quizConfig
-        );
-        return;
+        const confirmed = sharedFlow.confirmedStep;
+        // Batch 3 §6.4 + audit P1: warm adoption requires the server-confirmed
+        // step to EQUAL the URL code (a normal client-side advance). Any other
+        // case — refresh, history restore, edited/foreign deep link, missing
+        // confirmation — falls through to the cold server-recovery path below,
+        // which re-queries the server and corrects the URL from its verdict.
+        if (confirmed && confirmed.startsWith("q") && confirmed === urlCode) {
+          setSessionId(sharedFlow.sessionId);
+          setSessionData(sharedFlow.sessionData);
+          setActiveQuizConfig(sharedFlow.quizConfig);
+          setActiveStepCode(confirmed);
+          questionStartTime.current = Date.now();
+          restoreAnswerForQuestion(
+            confirmed,
+            sharedFlow.sessionData.answers[confirmed],
+            sharedFlow.quizConfig
+          );
+          return;
+        }
+        // Mismatch (or no confirmation): fall through to cold recovery. The
+        // provider is re-populated from the fresh server response there.
       }
 
       setIsLoading(true);
@@ -298,6 +330,7 @@ function QuizPageContent() {
 
   // Helper to advance to next authoritative step returned by backend
   const advanceToNextStep = (nextStep: string) => {
+    clearSubmitHint();
     setIsSubmitting(false);
     questionStartTime.current = Date.now();
 
@@ -320,6 +353,65 @@ function QuizPageContent() {
     } else {
       router.push("/soulmate");
     }
+  };
+
+  // Component-lifetime guard (audit P1): async continuations (dwell, answer
+  // confirmation, preparation) must never act after the page unmounted.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const dwell = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+  // Batch 3 §6.3.3 + audit P2: navigation to a transition target happens ONLY
+  // after its prepared metadata is validated (session + current_step). On
+  // preparation failure the current content stays and Retry re-prepares —
+  // the saved answer is never resubmitted. If the server has moved on (e.g.
+  // another tab), route to its ACTUAL step instead of the expected one.
+  const advanceAfterPreparation = (entry: PreparedStepEntry, expectedStep: string) => {
+    if (entry.status !== "ready" || !entry.flowState) {
+      clearSubmitHint();
+      setIsSubmitting(false);
+      setError({
+        message: "Still connecting to the next step. Tap retry to keep loading.",
+        onRetry: () => void retryAdvance(expectedStep),
+      });
+      return;
+    }
+    if (entry.flowState.session_id !== sessionId) {
+      // Preparation belongs to a superseded session — abort without navigating.
+      clearSubmitHint();
+      setIsSubmitting(false);
+      return;
+    }
+    if (entry.flowState.current_step !== expectedStep) {
+      clearSubmitHint();
+      setIsSubmitting(false);
+      const actual = flowRouteForStep(entry.flowState.current_step);
+      if (actual) router.push(actual);
+      else advanceToNextStep(expectedStep);
+      return;
+    }
+    advanceToNextStep(expectedStep);
+  };
+
+  const retryAdvance = async (step: string) => {
+    if (!sessionId) return;
+    setError(null);
+    setIsSubmitting(true);
+    startSubmitHint();
+    const seq = sharedFlow.bumpOp();
+    const entry = await sharedFlow.ensurePrepared(sessionId, step);
+    if (!sharedFlow.isCurrentOp(seq) || !mountedRef.current) {
+      clearSubmitHint();
+      setIsSubmitting(false);
+      return;
+    }
+    advanceAfterPreparation(entry, step);
   };
 
   // 2. Single-Select Option Click Handler (DEV-SPEC §4.2)
@@ -345,6 +437,10 @@ function QuizPageContent() {
     if (!sessionId) return;
 
     setIsSubmitting(true);
+    startSubmitHint();
+    // Local op sequence (batch 3 §6.1): a newer local operation (Back, another
+    // submit) supersedes this submission's async results.
+    const seq = sharedFlow.bumpOp();
     const duration = Math.max(0, Date.now() - questionStartTime.current);
 
     try {
@@ -352,16 +448,24 @@ function QuizPageContent() {
         value: optionCode,
         duration_ms: duration,
       });
-
-      // Update local answers cache
-      if (sessionData) {
-        sessionData.answers[activeStepCode] = {
-          question_code: activeStepCode,
-          answer: { value: optionCode },
-          value: optionCode,
-          answered_at: new Date().toISOString(),
-        };
+      if (!sharedFlow.isCurrentOp(seq)) {
+        clearSubmitHint();
+        setIsSubmitting(false);
+        return; // superseded locally — discard the stale confirmation
       }
+
+      // Server-confirmed answers snapshot (batch 3 §6.2.1): immutable update in
+      // the local copy and the shared provider — never a direct mutation.
+      const savedAnswer: SavedAnswerDetail = {
+        question_code: activeStepCode,
+        answer: { value: optionCode },
+        value: optionCode,
+        answered_at: new Date().toISOString(),
+      };
+      setSessionData((prev) =>
+        prev ? { ...prev, answers: { ...prev.answers, [activeStepCode]: savedAnswer } } : prev
+      );
+      sharedFlow.confirmAnswer(activeStepCode, savedAnswer, res.next_step, sessionId);
 
       // §18.1: save success, option code only (§18.2 — never the raw answer text)
       trackSoulmateEvent({
@@ -374,11 +478,37 @@ function QuizPageContent() {
       });
       if (!res.next_step.startsWith("q")) trackQuizCompleted();
 
-      // 150ms visual selection feedback before advancing (DEV-SPEC §4.2)
-      setTimeout(() => {
+      prefetchFlowRoute(router, res.next_step);
+
+      // Batch 3 §6.3.2 + audit P2: the transition target's metadata is prepared
+      // in parallel with the 150ms dwell; navigation waits for BOTH and only
+      // proceeds on a session/step-validated preparation (§6.3.3).
+      if (res.next_step.startsWith("transition_")) {
+        const prep = sharedFlow.ensurePrepared(sessionId, res.next_step);
+        const [, entry] = await Promise.all([dwell(150), prep]);
+        if (!sharedFlow.isCurrentOp(seq) || !mountedRef.current) {
+          clearSubmitHint();
+          setIsSubmitting(false);
+          return; // superseded or unmounted — do not advance
+        }
+        advanceAfterPreparation(entry, res.next_step);
+      } else {
+        // 150ms visual selection feedback before advancing (DEV-SPEC §4.2)
+        await dwell(150);
+        if (!sharedFlow.isCurrentOp(seq) || !mountedRef.current) {
+          clearSubmitHint();
+          setIsSubmitting(false);
+          return; // superseded or unmounted — do not advance
+        }
         advanceToNextStep(res.next_step);
-      }, 150);
+      }
     } catch (err: unknown) {
+      if (!sharedFlow.isCurrentOp(seq)) {
+        clearSubmitHint();
+        setIsSubmitting(false);
+        return; // superseded — keep the current UI, never surface a stale error
+      }
+      clearSubmitHint();
       setIsSubmitting(false);
       const msg = err instanceof Error ? err.message : "Failed to save answer";
       setError({
@@ -406,6 +536,8 @@ function QuizPageContent() {
     if (!sessionId) return;
 
     setIsSubmitting(true);
+    startSubmitHint();
+    const seq = sharedFlow.bumpOp();
     const duration = Math.max(0, Date.now() - questionStartTime.current);
 
     try {
@@ -413,15 +545,23 @@ function QuizPageContent() {
         value: dateValue,
         duration_ms: duration,
       });
-
-      if (sessionData) {
-        sessionData.answers[activeStepCode] = {
-          question_code: activeStepCode,
-          answer: { value: dateValue },
-          value: dateValue,
-          answered_at: new Date().toISOString(),
-        };
+      if (!sharedFlow.isCurrentOp(seq)) {
+        clearSubmitHint();
+        setIsSubmitting(false);
+        return; // superseded locally — discard the stale confirmation
       }
+
+      // Server-confirmed answers snapshot (immutable, batch 3 §6.2.1)
+      const savedAnswer: SavedAnswerDetail = {
+        question_code: activeStepCode,
+        answer: { value: dateValue },
+        value: dateValue,
+        answered_at: new Date().toISOString(),
+      };
+      setSessionData((prev) =>
+        prev ? { ...prev, answers: { ...prev.answers, [activeStepCode]: savedAnswer } } : prev
+      );
+      sharedFlow.confirmAnswer(activeStepCode, savedAnswer, res.next_step, sessionId);
 
       // §18.2: the raw date value (DOB) is PII — the analytics event carries
       // the question + duration only, with NO option_codes content.
@@ -435,8 +575,28 @@ function QuizPageContent() {
       });
       if (!res.next_step.startsWith("q")) trackQuizCompleted();
 
-      advanceToNextStep(res.next_step);
+      prefetchFlowRoute(router, res.next_step);
+
+      // Audit P2: transition targets wait for their prepared metadata and a
+      // session/step validation before navigation (§6.3.3).
+      if (res.next_step.startsWith("transition_")) {
+        const entry = await sharedFlow.ensurePrepared(sessionId, res.next_step);
+        if (!sharedFlow.isCurrentOp(seq) || !mountedRef.current) {
+          clearSubmitHint();
+          setIsSubmitting(false);
+          return; // superseded or unmounted — do not advance
+        }
+        advanceAfterPreparation(entry, res.next_step);
+      } else {
+        advanceToNextStep(res.next_step);
+      }
     } catch (err: unknown) {
+      if (!sharedFlow.isCurrentOp(seq)) {
+        clearSubmitHint();
+        setIsSubmitting(false);
+        return; // superseded — keep the current UI
+      }
+      clearSubmitHint();
       setIsSubmitting(false);
       const msg = err instanceof Error ? err.message : "Failed to save birth date";
       setError({
@@ -464,6 +624,8 @@ function QuizPageContent() {
     if (!sessionId) return;
 
     setIsSubmitting(true);
+    startSubmitHint();
+    const seq = sharedFlow.bumpOp();
     const duration = Math.max(0, Date.now() - questionStartTime.current);
 
     try {
@@ -471,15 +633,23 @@ function QuizPageContent() {
         values: multiValues,
         duration_ms: duration,
       });
-
-      if (sessionData) {
-        sessionData.answers[activeStepCode] = {
-          question_code: activeStepCode,
-          answer: { values: multiValues },
-          values: multiValues,
-          answered_at: new Date().toISOString(),
-        };
+      if (!sharedFlow.isCurrentOp(seq)) {
+        clearSubmitHint();
+        setIsSubmitting(false);
+        return; // superseded locally — discard the stale confirmation
       }
+
+      // Server-confirmed answers snapshot (immutable, batch 3 §6.2.1)
+      const savedAnswer: SavedAnswerDetail = {
+        question_code: activeStepCode,
+        answer: { values: multiValues },
+        values: multiValues,
+        answered_at: new Date().toISOString(),
+      };
+      setSessionData((prev) =>
+        prev ? { ...prev, answers: { ...prev.answers, [activeStepCode]: savedAnswer } } : prev
+      );
+      sharedFlow.confirmAnswer(activeStepCode, savedAnswer, res.next_step, sessionId);
 
       // §18.1: option codes only (§18.2 — never free text)
       trackSoulmateEvent({
@@ -492,8 +662,28 @@ function QuizPageContent() {
       });
       if (!res.next_step.startsWith("q")) trackQuizCompleted();
 
-      advanceToNextStep(res.next_step);
+      prefetchFlowRoute(router, res.next_step);
+
+      // Audit P2: transition targets wait for their prepared metadata and a
+      // session/step validation before navigation (§6.3.3).
+      if (res.next_step.startsWith("transition_")) {
+        const entry = await sharedFlow.ensurePrepared(sessionId, res.next_step);
+        if (!sharedFlow.isCurrentOp(seq) || !mountedRef.current) {
+          clearSubmitHint();
+          setIsSubmitting(false);
+          return; // superseded or unmounted — do not advance
+        }
+        advanceAfterPreparation(entry, res.next_step);
+      } else {
+        advanceToNextStep(res.next_step);
+      }
     } catch (err: unknown) {
+      if (!sharedFlow.isCurrentOp(seq)) {
+        clearSubmitHint();
+        setIsSubmitting(false);
+        return; // superseded — keep the current UI
+      }
+      clearSubmitHint();
       setIsSubmitting(false);
       const msg = err instanceof Error ? err.message : "Failed to save choices";
       setError({
@@ -527,10 +717,16 @@ function QuizPageContent() {
     // and switches only when the server-authoritative response arrives.
     setIsBackPending(true);
     setError(null);
+    // Any in-flight answer confirmation is superseded by this back navigation.
+    const seq = sharedFlow.bumpOp();
 
     try {
       const flowState = await navigateBack(sessionId);
       const prevStep = flowState.current_step;
+      if (!sharedFlow.isCurrentOp(seq)) return; // superseded — never apply a stale back
+      // Server-confirmed step (batch 3 §6.2.4): prunes preparations that no
+      // longer match the step the session actually sits on.
+      sharedFlow.confirmStep(prevStep);
 
       // §18.1 back navigation (to_q is null when back leaves the question flow)
       trackSoulmateEvent({
@@ -568,6 +764,25 @@ function QuizPageContent() {
 
   return (
     <div className="relative">
+      {/* Local submitting hint (batch 2): appears only after ~400ms of an
+          in-flight submission; non-blocking, no layout shift, never gates the
+          server-driven step advance. */}
+      {showSubmitHint && (
+        <div
+          data-testid="quiz-submit-hint"
+          aria-live="polite"
+          className="fixed bottom-[calc(1rem+var(--sp-safe-bottom))] left-0 right-0 z-30 flex justify-center pointer-events-none"
+        >
+          <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#2c2c2e]/80 text-white text-xs font-medium shadow-md">
+            <svg className="animate-spin h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+            </svg>
+            Saving…
+          </span>
+        </div>
+      )}
+
       {/* Fixture banner (only displayed in development when fixture=true) */}
       {!isProduction && isFixtureMode && (
         <div
@@ -640,7 +855,7 @@ function QuizPageContent() {
                 label={opt.label}
                 selected={singleValue === opt.code}
                 selectionType="single"
-                disabled={isSubmitting || isLoading || isBackPending}
+                locked={isSubmitting || isBackPending}
                 onClick={() => handleSingleOptionClick(opt.code)}
               />
             ))}
@@ -660,7 +875,9 @@ function QuizPageContent() {
           bottomAction={
             <QuizNextButton
               onClick={handleDateSubmit}
-              disabled={!dateValue || isSubmitting || isLoading || isBackPending}
+              disabled={
+                !dateValue || isSubmitting || isLoading || isBackPending || wheelMoving
+              }
               loading={isSubmitting}
               label="Next"
               ariaLabel="Confirm date and continue"
@@ -670,6 +887,7 @@ function QuizPageContent() {
           <WheelDatePicker
             value={dateValue}
             onChange={setDateValue}
+            onMovingChange={setWheelMoving}
             disabled={isSubmitting || isLoading || isBackPending}
           />
         </QuizShell>
@@ -700,7 +918,7 @@ function QuizPageContent() {
               label={opt.label}
               selected={multiValues.includes(opt.code)}
               selectionType="multi"
-              disabled={isSubmitting || isLoading || isBackPending}
+              locked={isSubmitting || isBackPending}
               onClick={() => {
                 if (isSubmitting || isLoading || isBackPending) return;
                 setMultiValues((prev) =>

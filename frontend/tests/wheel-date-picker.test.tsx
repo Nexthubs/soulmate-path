@@ -3,10 +3,70 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   WheelDatePicker,
+  clampYMD,
   getDaysInMonth,
   parseDateValue,
+  reconcileExternalValue,
   serializeDateValue,
 } from "../src/soulmate/components/quiz/WheelDatePicker";
+
+describe("WheelDatePicker external-value reconcile (audit P2: display == submitted)", () => {
+  it("keeps a valid in-range value without emitting a parent sync", () => {
+    const r = reconcileExternalValue("1995-06-15", 1926, 2026);
+    expect(r.draft).toEqual({ year: 1995, month: 5, day: 15 });
+    expect(r.emitValue).toBeNull();
+  });
+
+  it("clamps a valid but out-of-range date and emits it back to the parent", () => {
+    const r = reconcileExternalValue("1900-02-28", 1926, 2026);
+    expect(r.draft).toEqual({ year: 1926, month: 1, day: 28 });
+    expect(r.emitValue).toBe("1926-02-28");
+  });
+
+  it("emits the picker default for an empty/invalid stored value", () => {
+    const r = reconcileExternalValue("", 1926, 2026);
+    expect(r.draft).toEqual({ year: 1995, month: 5, day: 15 });
+    expect(r.emitValue).toBe("1995-06-15");
+  });
+
+  it("emits the picker default for an unparseable date (invalid day/non-leap)", () => {
+    // parseDateValue rejects day>month-length and non-leap Feb-29 outright,
+    // so those fall into the same default-sync branch as empty values.
+    const r = reconcileExternalValue("2023-04-31", 1926, 2026);
+    expect(r.draft).toEqual({ year: 1995, month: 5, day: 15 });
+    expect(r.emitValue).toBe("1995-06-15");
+  });
+
+  it("keeps a leap-day value that is in range and valid", () => {
+    const r = reconcileExternalValue("2024-02-29", 1926, 2026);
+    expect(r.draft).toEqual({ year: 2024, month: 1, day: 29 });
+    expect(r.emitValue).toBeNull();
+  });
+});
+
+describe("WheelDatePicker draft clamping (batch 4 §8 item 6)", () => {
+  it("clamps the day when the month has fewer days (Jan 31 → Feb)", () => {
+    expect(clampYMD(2023, 1, 31, 1926, 2026)).toEqual({ year: 2023, month: 1, day: 28 });
+  });
+
+  it("keeps Feb 29 in leap years and clamps it in common years", () => {
+    expect(clampYMD(2024, 1, 29, 1926, 2026)).toEqual({ year: 2024, month: 1, day: 29 });
+    expect(clampYMD(2023, 1, 29, 1926, 2026)).toEqual({ year: 2023, month: 1, day: 28 });
+    expect(clampYMD(2000, 1, 29, 1926, 2026)).toEqual({ year: 2000, month: 1, day: 29 });
+    // 1900 is outside the picker range — the year clamps to minYear (1926, common Feb)
+    expect(clampYMD(1900, 1, 29, 1926, 2026)).toEqual({ year: 1926, month: 1, day: 28 });
+  });
+
+  it("clamps 30/31-day months down to 30-day months", () => {
+    expect(clampYMD(2024, 3, 31, 1926, 2026)).toEqual({ year: 2024, month: 3, day: 30 });
+  });
+
+  it("clamps the year into the picker range and the month into 0-11", () => {
+    expect(clampYMD(1800, 5, 15, 1926, 2026)).toEqual({ year: 1926, month: 5, day: 15 });
+    expect(clampYMD(2026, 13, 15, 1926, 2026)).toEqual({ year: 2026, month: 11, day: 15 });
+    expect(clampYMD(2026, -1, 15, 1926, 2026)).toEqual({ year: 2026, month: 0, day: 15 });
+  });
+});
 
 describe("WheelDatePicker date helpers (owner-directed q08 redesign)", () => {
   it("getDaysInMonth covers leap-year and month boundaries", () => {

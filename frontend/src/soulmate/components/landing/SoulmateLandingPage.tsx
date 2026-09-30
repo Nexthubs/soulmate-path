@@ -89,9 +89,13 @@ export function SoulmateLandingPage({
   };
 
   return (
-    <div className="flex flex-col min-h-screen justify-between items-center w-full max-w-[390px] mx-auto bg-gradient-to-b from-[#fff0f3] via-[#fef4e9] to-[#fef3de] text-neutral-900 overflow-x-hidden selection:bg-purple-200">
+    // Full-width warm background layer (batch 1 follow-up); the centered
+    // max-390px slot keeps the 390px geometry while the gradient covers the
+    // whole viewport on wide screens — same split as QuizShell/TransitionShell.
+    <div className="flex flex-col w-full sp-fill-vh bg-gradient-to-b from-[#fff0f3] via-[#fef4e9] to-[#fef3de] text-neutral-900 overflow-x-hidden">
+      <div className="flex flex-col flex-1 justify-between items-center w-full max-w-[390px] mx-auto selection:bg-purple-200">
       {/* Header — TopAppBar (Figma Node 102:46) */}
-      <header className="flex items-center justify-between px-6 pt-6 pb-2 w-full">
+      <header className="flex items-center justify-between px-6 pt-[calc(1.5rem+var(--sp-safe-top))] pb-2 w-full">
         <h1 className="font-serif text-[28px] leading-[26px] tracking-[0.425px] text-[#000000] select-none">
           Hint Soulmate
         </h1>
@@ -207,6 +211,7 @@ export function SoulmateLandingPage({
           For entertainment purposes only
         </p>
       </footer>
+      </div>
     </div>
   );
 }

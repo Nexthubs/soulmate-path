@@ -133,6 +133,44 @@ describe("SP-103: OptionCard Component Variants & Semantics", () => {
     });
   });
 
+  describe("Locked state (batch 2, SP-1103): submit lock ≠ disabled visuals", () => {
+    it("keeps normal visuals while locked; announces unavailability without dimming", () => {
+      const html = renderToStaticMarkup(
+        <OptionCard label="Face/Body" selected={true} locked={true} onClick={() => {}} />
+      );
+
+      // Announced unavailable for assistive tech…
+      expect(html).toContain('aria-disabled="true"');
+      // …but stays focusable and keeps the exact selected visual state
+      expect(html).toContain('tabindex="0"');
+      expect(html).not.toContain("opacity-50");
+      expect(html).not.toContain("pointer-events-none");
+      expect(html).toContain("border-[#5c3c4f]");
+      expect(html).toContain("data-testid=\"option-checkmark\"");
+    });
+
+    it("locked unselected card keeps its unselected visual state", () => {
+      const html = renderToStaticMarkup(
+        <OptionCard label="An interesting soul" selected={false} locked={true} onClick={() => {}} />
+      );
+
+      expect(html).toContain("bg-white/60");
+      expect(html).toContain("border-transparent");
+      expect(html).not.toContain("opacity-50");
+      expect(html).toContain('aria-disabled="true"');
+    });
+
+    it("disabled remains visually distinct from locked (dimmed, unfocusable)", () => {
+      const html = renderToStaticMarkup(
+        <OptionCard label="Unavailable" selected={false} disabled={true} onClick={() => {}} />
+      );
+
+      expect(html).toContain("opacity-50");
+      expect(html).toContain("pointer-events-none");
+      expect(html).toContain('tabindex="-1"');
+    });
+  });
+
   describe("Error State", () => {
     it("renders error highlight when hasError is true", () => {
       const html = renderToStaticMarkup(

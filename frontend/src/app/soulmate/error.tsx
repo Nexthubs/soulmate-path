@@ -19,7 +19,7 @@ export default function SoulmateError({ error, reset }: SoulmateErrorProps) {
   return (
     <div
       data-testid="soulmate-error-boundary"
-      className="w-full max-w-[390px] min-h-screen mx-auto flex flex-col items-center justify-center p-6 text-center bg-white shadow-sm"
+      className="w-full sp-fill-vh flex flex-col items-center justify-center p-6 text-center bg-gradient-to-b from-[#fff0f3] via-[#fef4e9] to-[#fef3de]"
     >
       <div className="w-16 h-16 mb-4 rounded-full bg-red-100 flex items-center justify-center text-red-600 text-2xl font-bold">
         !

@@ -241,4 +241,24 @@ describe("SP-207: Connect Quiz UI to Live APIs & State Management", () => {
       }
     });
   });
+
+  describe("Batch 2 (SP-1103): stable submit feedback", () => {
+    it("renders option cards unlocked at rest (no aria-disabled, no submitting hint)", () => {
+      const html = renderToStaticMarkup(<SoulmateQuizPage />);
+
+      // Cards are interactive at rest…
+      expect(html).toContain('aria-disabled="false"');
+      // …and the local 400ms submitting hint only ever exists mid-submission.
+      expect(html).not.toContain('data-testid="quiz-submit-hint"');
+    });
+
+    it("keeps the whole option group rendered (no skeleton swap for live questions)", () => {
+      const html = renderToStaticMarkup(<SoulmateQuizPage />);
+
+      // Live rendering shows real option cards; the skeleton is reserved for
+      // entry/loading — never for step moves or submissions.
+      expect(html).toContain('data-testid="quiz-radiogroup"');
+      expect(html).not.toContain('data-testid="quiz-loading-skeleton"');
+    });
+  });
 });

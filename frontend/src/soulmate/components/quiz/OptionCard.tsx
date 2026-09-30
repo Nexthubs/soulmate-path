@@ -25,9 +25,18 @@ export interface OptionCardProps {
   selectionType?: "single" | "multi";
 
   /**
-   * Whether the option card is disabled (e.g. during answer submission per DEV-SPEC §4.2).
+   * Whether the option card is disabled (e.g. permanently unavailable option).
+   * Disabled options keep their disabled styling (dimmed, not clickable).
    */
   disabled?: boolean;
+
+  /**
+   * Transient interaction lock (e.g. while an answer request is in flight per
+   * DEV-SPEC §4.2). Blocks pointer, keyboard, and repeated handler calls but
+   * keeps the card's normal visual state — the selected border/checkmark stay
+   * clearly visible while waiting (batch 2: submit lock ≠ disabled visuals).
+   */
+  locked?: boolean;
 
   /**
    * Error state indicator (e.g. when field has a validation error).
@@ -60,15 +69,19 @@ export function OptionCard({
   onClick,
   selectionType = "single",
   disabled = false,
+  locked = false,
   hasError = false,
   testId,
   ariaLabel,
   className = "",
 }: OptionCardProps) {
   const role = selectionType === "single" ? "radio" : "checkbox";
+  // Logical lock: blocks pointer, keyboard, and duplicate handler calls even
+  // though the card stays focusable and keeps its normal visuals while locked.
+  const interactionBlocked = disabled || locked;
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (disabled) return;
+    if (interactionBlocked) return;
     if (e.key === " " || e.key === "Enter") {
       e.preventDefault();
       onClick();
@@ -93,10 +106,10 @@ export function OptionCard({
       role={role}
       tabIndex={disabled ? -1 : 0}
       aria-checked={selected}
-      aria-disabled={disabled}
+      aria-disabled={interactionBlocked}
       aria-label={ariaLabel}
       data-testid={testId || `option-card-${selectionType}`}
-      onClick={disabled ? undefined : onClick}
+      onClick={interactionBlocked ? undefined : onClick}
       onKeyDown={handleKeyDown}
       className={`w-full min-h-[68px] p-5 rounded-2xl flex items-center justify-between text-left transition-all duration-150 select-none cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-600 focus-visible:ring-offset-2 ${stateClasses} ${className}`}
     >
