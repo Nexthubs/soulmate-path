@@ -20,7 +20,7 @@
 import http from "node:http";
 import fs from "node:fs";
 
-const FRONTEND_UPSTREAM = { host: "127.0.0.1", port: 3001 };
+const FRONTEND_UPSTREAM = { host: "127.0.0.1", port: parseInt(process.env.FRONTEND_PORT || "3001", 10) };
 const BACKEND_UPSTREAM = { host: "127.0.0.1", port: 8000 };
 const BROWSER_PORT = 3002;
 const CONTROL_PORT = 3005;
@@ -35,6 +35,9 @@ const state = {
 const INJECTED_SCRIPT = `<script>
 (function(){
   window.__SP_PROXY_READY = true;
+  window.__SP_JS_ERRORS = [];
+  window.addEventListener('error', function(e){ window.__SP_JS_ERRORS.push('error: ' + (e.message||'') + ' | file=' + String(e.filename||'').slice(-90) + ' @' + (e.lineno||0)); });
+  window.addEventListener('unhandledrejection', function(e){ window.__SP_JS_ERRORS.push('rejection: ' + String(e.reason && e.reason.message || e.reason).slice(0, 200)); });
   // --- same-origin rewrite for baked production API base URL ---
   var REMOTE = "https://soulmate.giaogiao.work/api/";
   var origFetch = window.fetch && window.fetch.bind(window);
@@ -50,10 +53,39 @@ const INJECTED_SCRIPT = `<script>
       return origFetch(input, init);
     };
   }
+  // --- fallback-swap observer: full-screen FlowShellFallback sightings ---
+  // The route-level fallback renders a role=status spinner as a DIRECT child of
+  // the full-viewport gradient host; button spinners never match this pattern.
+  window.__SP_FALLBACK_SIGHTINGS = [];
+  try {
+    const obs = new MutationObserver((muts) => {
+      for (const m of muts) {
+        for (const n of m.addedNodes || []) {
+          if (!(n instanceof HTMLElement)) continue;
+          const spinners = n.querySelectorAll ? n.querySelectorAll('[role="status"]') : [];
+          const direct = n.matches && n.matches('[role="status"]') ? [n] : [];
+          for (const s of [...direct, ...spinners]) {
+            const parent = s.parentElement;
+            const isFullscreenFallback =
+              parent && parent.className && typeof parent.className === "string" &&
+              parent.className.includes("sp-fill-vh");
+            window.__SP_FALLBACK_SIGHTINGS.push({
+              t: Date.now(),
+              fullscreen: !!isFullscreenFallback,
+              cls: (s.className || "").slice(0, 60),
+            });
+          }
+        }
+      }
+    });
+    obs.observe(document.documentElement, { childList: true, subtree: true });
+  } catch (e) {}
+
   // --- minimal React DevTools hook: identify which function components rendered ---
   // React 19 removed the PerformedWork flag, so a component is counted as rendered in
   // a commit when it is newly mounted, or its memoizedProps/memoizedState reference
   // differs from its alternate (double-buffer) copy.
+  var injectIdCounter = 0;
   var stats = { total: 0, withRender: 0, byName: {}, last: null, errors: 0, injected: 0 };
   window.__SP_COMMITS = stats;
   function nameOf(type){
@@ -91,9 +123,15 @@ const INJECTED_SCRIPT = `<script>
   }
   window.__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
     supportsFiber: true,
+    renderers: new Map(),
     inject: function(internals){
       stats.injected++;
       this._internals = internals;
+      // React Refresh (dev) expects DevTools-compatible renderer IDs AND a
+      // renderers map (hook.renderers.forEach in react-refresh-runtime).
+      var id = ++injectIdCounter;
+      this.renderers.set(id, internals);
+      return id;
     },
     onCommitFiberRoot: function(rendererID, root){
       try {

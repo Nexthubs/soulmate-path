@@ -215,6 +215,10 @@ function QuizPageContent() {
           // Attempt cookie-based session recovery
           currentSess = await getCurrentSession();
         } catch (err: unknown) {
+          // Superseded mount (StrictMode double-invoke, fast remount) must not
+          // fire its own createSession — two concurrent creates leave the
+          // cookie and the state on different sessions (ownership 403 later).
+          if (isCancelled) return;
           if (isSessionMissingError(err)) {
             // Genuinely no active/valid session exists (401, 403, 404) -> initialize fresh session
             const created = await createSession();
@@ -872,6 +876,7 @@ function QuizPageContent() {
           backDisabled={isBackPending}
           isLoading={isLoading}
           error={error}
+          centerContent
           bottomAction={
             <QuizNextButton
               onClick={handleDateSubmit}

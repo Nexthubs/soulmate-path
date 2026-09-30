@@ -51,6 +51,14 @@ export interface QuizShellProps {
   error?: { message: string; onRetry?: () => void } | string | null;
 
   /**
+   * Vertically center the interactive content slot in the space between the
+   * question header and the bottom action (owner feedback for the compact
+   * date-wheel block). Off by default — option lists stay top-aligned per
+   * Figma 102:121/102:201.
+   */
+  centerContent?: boolean;
+
+  /**
    * Optional extra container styling.
    */
   className?: string;
@@ -71,6 +79,7 @@ export function QuizShell({
   bottomAction,
   isLoading = false,
   error = null,
+  centerContent = false,
   className = "",
 }: QuizShellProps) {
   const router = useRouter();
@@ -199,7 +208,9 @@ export function QuizShell({
               <div className="h-16 bg-white/70 rounded-2xl w-full" />
             </div>
           ) : (
-            <div className="w-full max-w-[342px] flex flex-col gap-3.5">
+            <div
+              className={`w-full max-w-[342px] flex flex-col gap-3.5 ${centerContent ? "my-auto" : ""}`}
+            >
               {children}
             </div>
           )}

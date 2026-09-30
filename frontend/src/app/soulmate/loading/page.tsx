@@ -166,6 +166,12 @@ function LoadingContent() {
           sharedFlow.setSession(sess.session_id, sess);
         }
       } catch (err: unknown) {
+        // Audit-grade guard (owner bug report, incognito): a superseded mount
+        // (StrictMode double-invoke, fast remount) must not fire its own
+        // createSession — two concurrent creates leave the cookie and the
+        // state on DIFFERENT sessions, and Continue then fails ownership
+        // with 403 ("Access to the requested session is forbidden.").
+        if (isCancelled) return;
         if (isSessionMissingError(err)) {
           try {
             const created = await createSession();
