@@ -216,7 +216,7 @@ export function WheelDatePicker({
         <div className="relative">
           <div
             aria-hidden
-            className="pointer-events-none absolute inset-x-2 top-1/2 z-0 h-[44px] -translate-y-1/2 rounded-2xl bg-white shadow-[0_12px_30px_rgba(36,26,74,0.14)] ring-1 ring-black/5"
+            className="pointer-events-none absolute -inset-x-1 top-1/2 z-0 h-[44px] -translate-y-1/2 rounded-2xl bg-white shadow-[0_12px_30px_rgba(36,26,74,0.14)] ring-1 ring-black/5"
           />
           <div
             aria-hidden
