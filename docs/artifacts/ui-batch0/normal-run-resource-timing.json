@@ -1,0 +1,197 @@
+[
+  {
+    "dur": 15,
+    "name": "/api/soulmate/sessions/current",
+    "start": 13193
+  },
+  {
+    "dur": 33,
+    "name": "/api/soulmate/sessions",
+    "start": 13210
+  },
+  {
+    "dur": 19,
+    "name": "/api/soulmate/sessions/ses_d910e32607d8e8a1d787bf2d5d228df1/flow/state",
+    "start": 13243
+  },
+  {
+    "dur": 66,
+    "name": "/api/soulmate/sessions/ses_d910e32607d8e8a1d787bf2d5d228df1/transitions/transition_0/continue",
+    "start": 52716
+  },
+  {
+    "dur": 15,
+    "name": "/api/soulmate/sessions/current",
+    "start": 52813
+  },
+  {
+    "dur": 7,
+    "name": "/api/soulmate/quiz/config?version=soulmate-quiz-v1",
+    "start": 52829
+  },
+  {
+    "dur": 62,
+    "name": "/api/soulmate/sessions/ses_d910e32607d8e8a1d787bf2d5d228df1/answers/q02",
+    "start": 166318
+  },
+  {
+    "dur": 46,
+    "name": "/api/soulmate/sessions/ses_d910e32607d8e8a1d787bf2d5d228df1/answers/q03",
+    "start": 271137
+  },
+  {
+    "dur": 30,
+    "name": "/api/soulmate/sessions/ses_d910e32607d8e8a1d787bf2d5d228df1/answers/q04",
+    "start": 275103
+  },
+  {
+    "dur": 27,
+    "name": "/api/soulmate/sessions/ses_d910e32607d8e8a1d787bf2d5d228df1/answers/q05",
+    "start": 279069
+  },
+  {
+    "dur": 42,
+    "name": "/api/soulmate/sessions/ses_d910e32607d8e8a1d787bf2d5d228df1/answers/q06",
+    "start": 283036
+  },
+  {
+    "dur": 18,
+    "name": "/api/soulmate/sessions/ses_d910e32607d8e8a1d787bf2d5d228df1/flow/state",
+    "start": 283248
+  },
+  {
+    "dur": 53,
+    "name": "/api/soulmate/sessions/ses_d910e32607d8e8a1d787bf2d5d228df1/transitions/transition_1/continue",
+    "start": 336381
+  },
+  {
+    "dur": 47,
+    "name": "/api/soulmate/sessions/ses_d910e32607d8e8a1d787bf2d5d228df1/answers/q07",
+    "start": 337332
+  },
+  {
+    "dur": 14,
+    "name": "/api/soulmate/sessions/ses_d910e32607d8e8a1d787bf2d5d228df1/flow/state",
+    "start": 337543
+  },
+  {
+    "dur": 54,
+    "name": "/api/soulmate/sessions/ses_d910e32607d8e8a1d787bf2d5d228df1/transitions/transition_2/continue",
+    "start": 364260
+  },
+  {
+    "dur": 58,
+    "name": "/api/soulmate/sessions/ses_d910e32607d8e8a1d787bf2d5d228df1/answers/q08",
+    "start": 595500
+  },
+  {
+    "dur": 46,
+    "name": "/api/soulmate/sessions/ses_d910e32607d8e8a1d787bf2d5d228df1/answers/q09",
+    "start": 730261
+  },
+  {
+    "dur": 40,
+    "name": "/api/soulmate/sessions/ses_d910e32607d8e8a1d787bf2d5d228df1/answers/q10",
+    "start": 732301
+  },
+  {
+    "dur": 18,
+    "name": "/api/soulmate/sessions/ses_d910e32607d8e8a1d787bf2d5d228df1/flow/state",
+    "start": 732512
+  },
+  {
+    "dur": 70,
+    "name": "/api/soulmate/sessions/ses_d910e32607d8e8a1d787bf2d5d228df1/transitions/transition_3/continue",
+    "start": 796437
+  },
+  {
+    "dur": 52,
+    "name": "/api/soulmate/sessions/ses_d910e32607d8e8a1d787bf2d5d228df1/answers/q11",
+    "start": 798282
+  },
+  {
+    "dur": 32,
+    "name": "/api/soulmate/sessions/ses_d910e32607d8e8a1d787bf2d5d228df1/flow/state",
+    "start": 798498
+  },
+  {
+    "dur": 41,
+    "name": "/api/soulmate/sessions/ses_d910e32607d8e8a1d787bf2d5d228df1/transitions/transition_4/continue",
+    "start": 800523
+  },
+  {
+    "dur": 49,
+    "name": "/api/soulmate/sessions/ses_d910e32607d8e8a1d787bf2d5d228df1/answers/q12",
+    "start": 850980
+  },
+  {
+    "dur": 37,
+    "name": "/api/soulmate/sessions/ses_d910e32607d8e8a1d787bf2d5d228df1/answers/q13",
+    "start": 851930
+  },
+  {
+    "dur": 31,
+    "name": "/api/soulmate/sessions/ses_d910e32607d8e8a1d787bf2d5d228df1/answers/q14",
+    "start": 852880
+  },
+  {
+    "dur": 34,
+    "name": "/api/soulmate/sessions/ses_d910e32607d8e8a1d787bf2d5d228df1/answers/q15",
+    "start": 853830
+  },
+  {
+    "dur": 32,
+    "name": "/api/soulmate/sessions/ses_d910e32607d8e8a1d787bf2d5d228df1/answers/q16",
+    "start": 854780
+  },
+  {
+    "dur": 35,
+    "name": "/api/soulmate/sessions/ses_d910e32607d8e8a1d787bf2d5d228df1/answers/q17",
+    "start": 855731
+  },
+  {
+    "dur": 59,
+    "name": "/api/soulmate/sessions/ses_d910e32607d8e8a1d787bf2d5d228df1/answers/q18",
+    "start": 903199
+  },
+  {
+    "dur": 18,
+    "name": "/api/soulmate/sessions/ses_d910e32607d8e8a1d787bf2d5d228df1/flow/state",
+    "start": 903274
+  },
+  {
+    "dur": 97,
+    "name": "/api/soulmate/sessions/ses_d910e32607d8e8a1d787bf2d5d228df1/transitions/transition_5/continue",
+    "start": 972856
+  },
+  {
+    "dur": 69,
+    "name": "/api/soulmate/sessions/ses_d910e32607d8e8a1d787bf2d5d228df1/interstitials/spiritual_person",
+    "start": 974793
+  },
+  {
+    "dur": 63,
+    "name": "/api/soulmate/sessions/ses_d910e32607d8e8a1d787bf2d5d228df1/interstitials/familiar_psychic_artistry",
+    "start": 976443
+  },
+  {
+    "dur": 57,
+    "name": "/api/soulmate/sessions/ses_d910e32607d8e8a1d787bf2d5d228df1/interstitials/warning_response",
+    "start": 978082
+  },
+  {
+    "dur": 50,
+    "name": "/api/soulmate/guard/check?target_route=%2Fsoulmate%2Femail",
+    "start": 978157
+  },
+  {
+    "dur": 36,
+    "name": "/api/soulmate/sessions/current",
+    "start": 978158
+  },
+  {
+    "dur": 16,
+    "name": "/api/soulmate/sessions/ses_d910e32607d8e8a1d787bf2d5d228df1/email-summary",
+    "start": 978194
+  }
+]

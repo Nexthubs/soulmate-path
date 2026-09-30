@@ -1518,6 +1518,103 @@ All P0/P1 test cases pass and rollback/disable strategy is documented.
 
 ---
 
+## SP-1101 — UI improvement batch 0: baseline & Figma visual checklist
+
+**Priority:** P1
+**Depends:** none (baseline recorded on `63b2902`)
+**Status:** DONE (docs/handoffs/SP-1101.md; 2026-09-30 — production-build baseline + Figma checklist + three network conditions recorded)
+**Context refs:** DEV-SPEC §2.1, §4–6, §16 | Decisions: — | Dependency handoffs: SP-102, SP-103, SP-104, SP-105, SP-207
+**Scope ref:** `docs/UI-IMPROVEMENT-EXECUTION-PLAN.md` §3 (batch 0); full baseline record: `docs/UI-BATCH0-BASELINE.md`
+
+### Cases
+- inspect relevant Figma nodes (102:121/130/137/201/241/242/161/245/304/320/345/372/386/425/445/466/486/557) and map design node → component → planned visual change → acceptance screenshot;
+- record in production build mode at 390×844: single-select, date wheel, quiz→transition, transition→quiz, Transition-5→email, with screen recordings, network waterfall, and parent-component render counts;
+- record normal network, injected +500ms response latency, and network-level request failure.
+
+### Acceptance
+Baseline record exists with test code version, browser/device, viewport, network settings and concrete paths; unavailable items marked NOT_RUN (real devices, non-390 viewports, native touch gestures). No application code changed by this task.
+
+---
+
+## SP-1102 — UI improvement batch 1: background & safe area
+
+**Priority:** P1
+**Depends:** SP-1101 (baseline)
+**Status:** DONE (docs/handoffs/SP-1102.md; 2026-09-30 — full-bleed backgrounds with centered content slots, viewport-fit cover, safe-area padding, consistent fallbacks)
+**Context refs:** DEV-SPEC §2.1, §16 | Decisions: — | Dependency handoffs: SP-102, SP-104, SP-105, SP-1101
+**Scope ref:** `docs/UI-IMPROVEMENT-EXECUTION-PLAN.md` §4 (batch 1)
+
+### Scope
+- `frontend/src/app/layout.tsx`: `viewportFit: "cover"`.
+- `frontend/src/app/globals.css`: reusable viewport-height (`100vh` fallback → `100dvh`) and safe-area CSS custom properties.
+- `frontend/src/app/soulmate/layout.tsx`: remove the shared shell's 390px/white-card constraint; provide a full-width host without forcing one gradient on all children.
+- `QuizShell.tsx` / `TransitionShell.tsx` / `EmailCaptureView.tsx`: separate full-width background layer from the centered max-390px content slot; 390px geometry preserved; 320px shrinks; ≥430px background covers viewport with centered content.
+- `FlowShellFallback.tsx` + quiz/loading/email Suspense fallbacks: same background rules.
+- Out-of-scope shared-layout pages: keep their own backgrounds (already self-constrained); `soulmate/error.tsx` aligned to the warm gradient, no white-card fallback.
+- Safe area: outermost bottom padding = existing base + `env(safe-area-inset-bottom)`; top padding where content is edge-attached; no double-stacking.
+
+### Acceptance
+320/375/390/430/768/1440 no horizontal overflow; background covers the viewport with no narrow white card or edge shadow; 390px geometry unchanged vs the SP-1101 baseline screenshots; quiz/transition body and loading states share one continuous background; other soulmate pages keep their own backgrounds; guard/error pages show no obvious background regression. Real iOS/Android safe-area checks NOT_RUN (no device tooling) — recorded in the handoff.
+
+---
+
+## SP-1103 — UI improvement batch 2: stable submit feedback
+
+**Priority:** P1
+**Depends:** SP-1101 (baseline); independent of SP-1102
+**Status:** DONE (docs/handoffs/SP-1103.md; 2026-09-30 — submit-lock separated from disabled visuals, logical lock, 400ms local hint, retry path re-verified)
+**Context refs:** DEV-SPEC §4.2–4.4 | Decisions: — | Dependency handoffs: SP-103, SP-207, SP-1101
+**Scope ref:** `docs/UI-IMPROVEMENT-EXECUTION-PLAN.md` §5 (batch 2)
+
+### Scope
+- `OptionCard.tsx`: new `locked` state — interaction lock (pointer, keyboard, duplicate handler) WITHOUT disabled visuals; `disabled` keeps its disabled styling for genuinely unavailable options; focus and accessible names preserved while locked.
+- `quiz/page.tsx`: submission passes `locked` (not disabled-grey); local submitting hint appears after ~400ms (timer controls the hint only, never step advance; cleaned up on success/failure/unmount); 150ms selection feedback and server-authoritative advance unchanged.
+- `loading/page.tsx`: Continue keeps an in-handler double-submit guard (button-level disabled/loading already existed).
+- Failure path: selection retained, unlock, in-place error + retry via existing API (regression-verified).
+
+### Acceptance
+During submission the option group keeps its normal visuals and the selected state stays clearly visible; rapid taps/keyboard activation cannot produce parallel submissions or multi-step jumps; slow requests never replace the page body; failure does not navigate and retry succeeds; single-select dwell remains 150ms; date/multi keep their own submit behavior.
+
+---
+
+## SP-1104 — UI improvement batch 3: phase-switch data preparation & caching
+
+**Priority:** P1
+**Depends:** SP-1103 (batch 2), SP-1101 (baseline metrics)
+**Status:** DONE (docs/handoffs/SP-1104.md; 2026-09-30 — confirmed-step/answer snapshots, per-target preparation store with in-flight dedup, warm Continue, route prefetch; effect gate passed)
+**Context refs:** DEV-SPEC §4, §5, §6, §15.2–15.3 | Decisions: — | Dependency handoffs: SP-207, SP-1101, SP-1103
+**Scope ref:** `docs/UI-IMPROVEMENT-EXECUTION-PLAN.md` §6 (batch 3)
+
+### Scope
+- `SharedFlowContext.tsx` + a minimal pure preparation-store module: session/pinned-config, last server-confirmed step, immutable answer snapshots, local operation sequence (stale-response discarding only), and per-`sessionId+step` prepared metadata with idle/pending/ready/error states. In-memory only (no localStorage). API signatures unchanged.
+- Quiz → Transition: after an answer is confirmed, the target transition's flow state is fetched once in parallel with the existing 150ms feedback; the loading page consumes the prepared result (session+step validated) instead of refetching.
+- Transition → Quiz: Continue confirms the resolved step; the warm quiz path adopts it only when it matches the URL (cold/refresh/history still run server recovery).
+- Continue enablement: warm validated entries enable Continue on first render (no disable-then-enable); cold entries keep the existing recovery flow; 409/Back/new session invalidate mismatched preparations.
+- Immutable route prefetch for the resolved target (no second step mapping).
+
+### Acceptance
+Warm session/config path still performs zero duplicate bootstrap calls; one flow-state request per target step (in-flight reused across pages); warm Continue enabled on first render; answers committed exactly once with stale responses, Back, refresh, 409 and session switches unable to mis-advance; recordings under normal network and injected 500ms show no full-content→full-page-spinner→full-content replacement between phases. Batch 3B (persistent host) NOT triggered.
+
+---
+
+## SP-1105 — UI improvement batch 4: date wheel state isolation
+
+**Priority:** P1
+**Depends:** SP-1104 (batch 3), SP-1101 (baseline metrics)
+**Status:** DONE (docs/handoffs/SP-1105.md; 2026-09-30 — local date draft with settle-commit, moving/Next gating, direct programmatic positioning, day clamping; baseline isolation artifact corrected)
+**Context refs:** DEV-SPEC §4.4 | Decisions: AGE-01 (not enforced, unchanged) | Dependency handoffs: SP-1101, SP-1104
+**Scope ref:** `docs/UI-IMPROVEMENT-EXECUTION-PLAN.md` §8 (batch 4)
+
+### Scope
+- `WheelDatePicker.tsx`: internal full-date draft — column scrolls/taps update only the draft (SELECTED pill reflects it instantly); one `onChange` per settle (scrollend where supported, ~120ms no-scroll fallback), final-position check with instant snap before settling; `onMovingChange` gates the quiz Next button while any column moves; programmatic moves (mount/restore/clamp) position instantly and are marked so passing rows never become the committed value; user far-row taps glide smoothly; external `value` overrides the draft; timers cleared on unmount/disable.
+- `quiz/page.tsx`: minimal wiring — wheel moving state disables Next until all columns settle; date submit keeps its existing contract.
+- Baseline record correction: the SP-1101 "wheel already isolated" conclusion is identified as an instrumentation artifact (label overwrite) and corrected in `docs/UI-BATCH0-BASELINE.md`.
+
+### Acceptance
+Rapid multi-column operations, far-row taps and inertial scrolling keep the displayed and submitted values identical (server zodiac cross-check); no stale-date submission while moving; Next disables while moving and recovers; February/leap-year/30-31 clamping and Back restore correct; wheel row changes no longer re-render QuizPageContent per row (render-count probe). Real iOS/Android gesture/frame recording NOT_RUN (no device tooling) — honest limits recorded.
+
+---
+
 # 11. Cross-cutting review tasks
 
 These are not replacements for implementation tasks; they are explicit quality gates.

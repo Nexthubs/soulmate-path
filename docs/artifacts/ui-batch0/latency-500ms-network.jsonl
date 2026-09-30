@@ -1,0 +1,16 @@
+{"ts":"2026-09-30T09:24:39.966Z","mode":"latency","fresh":true,"method":"GET","url":"/soulmate?cb=1790760279955","cookieStripped":false,"status":200,"durMs":7}
+{"ts":"2026-09-30T09:24:40.090Z","mode":"latency","fresh":true,"method":"GET","url":"/_next/image?url=%2Fimages%2Flanding%2Fsoulmate-hero-illustration.png&w=640&q=75","cookieStripped":false,"status":200,"durMs":96}
+{"ts":"2026-09-30T09:24:41.554Z","mode":"latency","fresh":true,"method":"GET","url":"/soulmate/loading?step=0&_rsc=KmXxbIrQOL6VXry-","cookieStripped":false,"status":200,"durMs":3}
+{"ts":"2026-09-30T09:24:42.072Z","mode":"latency","fresh":true,"method":"GET","url":"/api/soulmate/sessions/current","cookieStripped":true,"status":403,"durMs":509}
+{"ts":"2026-09-30T09:24:42.607Z","mode":"latency","fresh":false,"method":"POST","url":"/api/soulmate/sessions","cookieStripped":true,"status":201,"durMs":531}
+{"ts":"2026-09-30T09:24:43.133Z","mode":"latency","fresh":false,"method":"GET","url":"/api/soulmate/sessions/ses_7f9c0945bca3117dfa7230ebef29ea7d/flow/state","cookieStripped":false,"status":200,"durMs":522}
+{"ts":"2026-09-30T09:24:45.119Z","mode":"latency","fresh":false,"method":"GET","url":"/favicon.ico","cookieStripped":false,"status":404,"durMs":2}
+{"ts":"2026-09-30T09:24:45.618Z","mode":"latency","fresh":false,"method":"POST","url":"/api/soulmate/sessions/ses_7f9c0945bca3117dfa7230ebef29ea7d/transitions/transition_0/continue","cookieStripped":false,"status":200,"durMs":535}
+{"ts":"2026-09-30T09:24:45.622Z","mode":"latency","fresh":false,"method":"GET","url":"/soulmate/quiz?code=q02&_rsc=8NKkZ_NlS2QFs5MT","cookieStripped":false,"status":200,"durMs":2}
+{"ts":"2026-09-30T09:24:46.147Z","mode":"latency","fresh":false,"method":"GET","url":"/api/soulmate/sessions/current","cookieStripped":false,"status":200,"durMs":514}
+{"ts":"2026-09-30T09:24:46.654Z","mode":"latency","fresh":false,"method":"GET","url":"/api/soulmate/quiz/config?version=soulmate-quiz-v1","cookieStripped":false,"status":200,"durMs":505}
+{"ts":"2026-09-30T09:24:48.637Z","mode":"latency","fresh":false,"method":"PUT","url":"/api/soulmate/sessions/ses_7f9c0945bca3117dfa7230ebef29ea7d/answers/q02","cookieStripped":false,"status":200,"durMs":529}
+{"ts":"2026-09-30T09:24:51.262Z","mode":"latency","fresh":false,"method":"PUT","url":"/api/soulmate/sessions/ses_7f9c0945bca3117dfa7230ebef29ea7d/answers/q03","cookieStripped":false,"status":200,"durMs":530}
+{"ts":"2026-09-30T09:24:53.897Z","mode":"latency","fresh":false,"method":"PUT","url":"/api/soulmate/sessions/ses_7f9c0945bca3117dfa7230ebef29ea7d/answers/q04","cookieStripped":false,"status":200,"durMs":528}
+{"ts":"2026-09-30T09:25:00.119Z","mode":"latency","fresh":false,"method":"GET","url":"/favicon.ico","cookieStripped":false,"status":404,"durMs":4}
+{"ts":"2026-09-30T09:25:20.132Z","mode":"latency","fresh":false,"method":"GET","url":"/favicon.ico","cookieStripped":false,"status":404,"durMs":4}
